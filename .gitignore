@@ -1,0 +1,21 @@
+# Swift Package Manager build output
+.build/
+Packages/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+
+# Packaged app bundle
+dist/
+
+# Xcode per-user state
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+
+# macOS
+.DS_Store
+
+# Coding-agent working state: session transcripts and QA captures.
+# These contain raw tool output, including credentials read during debugging.
+.omo/
+.senpi/
