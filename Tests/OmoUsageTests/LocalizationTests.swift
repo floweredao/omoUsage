@@ -2,25 +2,94 @@ import Foundation
 import Testing
 @testable import OmoUsage
 
+private let systemLanguagesKey = "AppleLanguages"
+
 @Suite
 struct LocalizationTests {
     @Test
-    func languageStoreDefaultsToKoreanAndRepairsMalformedValue() {
-        let suiteName = "LocalizationTests.default.\(UUID())"
+    func freshInstallFollowsSystemLanguageWithoutPersistingIt() {
+        let suiteName = "LocalizationTests.systemDefault.\(UUID())"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer {
             defaults.removePersistentDomain(forName: suiteName)
         }
+        defaults.set(
+            ["en-KR", "ko-KR"],
+            forKey: systemLanguagesKey
+        )
         let store = AppLanguageStore(defaults: defaults)
 
-        #expect(store.load() == .korean)
+        #expect(store.load() == .english)
+        #expect(defaults.string(forKey: AppLanguageStore.key) == nil)
+    }
 
+    @Test
+    func legacyKoreanDefaultMigratesToSystemLanguage() {
+        let suiteName = "LocalizationTests.legacyKorean.\(UUID())"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+        defaults.set(
+            AppLanguage.korean.rawValue,
+            forKey: AppLanguageStore.key
+        )
+        defaults.set(
+            ["en-KR", "ko-KR"],
+            forKey: systemLanguagesKey
+        )
+        let store = AppLanguageStore(defaults: defaults)
+
+        #expect(store.load() == .english)
+        #expect(defaults.string(forKey: AppLanguageStore.key) == nil)
+    }
+
+    @Test
+    func legacyEnglishPreferenceRemainsExplicit() {
+        let suiteName = "LocalizationTests.legacyEnglish.\(UUID())"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+        defaults.set(
+            AppLanguage.english.rawValue,
+            forKey: AppLanguageStore.key
+        )
+        defaults.set(["ko-KR"], forKey: systemLanguagesKey)
+        let store = AppLanguageStore(defaults: defaults)
+
+        #expect(store.load() == .english)
+    }
+
+    @Test
+    func malformedPreferenceFallsBackToSystemLanguage() {
+        let suiteName = "LocalizationTests.malformed.\(UUID())"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+        }
         defaults.set("unsupported", forKey: AppLanguageStore.key)
+        defaults.set(["en-KR"], forKey: systemLanguagesKey)
+        let store = AppLanguageStore(defaults: defaults)
 
-        #expect(store.load() == .korean)
+        #expect(store.load() == .english)
+        #expect(defaults.string(forKey: AppLanguageStore.key) == nil)
+    }
+
+    @Test
+    func systemLanguageUsesFirstSupportedPreference() {
+        let suiteName = "LocalizationTests.supportedSystem.\(UUID())"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+        defaults.set(
+            ["ja-JP", "ko-KR"],
+            forKey: systemLanguagesKey
+        )
+
         #expect(
-            defaults.string(forKey: AppLanguageStore.key)
-                == AppLanguage.korean.rawValue
+            AppLanguageStore(defaults: defaults).load() == .korean
         )
     }
 
@@ -32,6 +101,7 @@ struct LocalizationTests {
             defaults.removePersistentDomain(forName: suiteName)
         }
 
+        defaults.set(["ko-KR"], forKey: systemLanguagesKey)
         AppLanguageStore(defaults: defaults).save(.english)
 
         #expect(
@@ -60,6 +130,7 @@ struct LocalizationTests {
         defer {
             defaults.removePersistentDomain(forName: suiteName)
         }
+        defaults.set(["ko-KR"], forKey: systemLanguagesKey)
         let controller = LocalizationController(
             store: AppLanguageStore(defaults: defaults)
         )
@@ -82,6 +153,7 @@ struct LocalizationTests {
         defer {
             defaults.removePersistentDomain(forName: suiteName)
         }
+        defaults.set(["ko-KR"], forKey: systemLanguagesKey)
         let controller = LocalizationController(
             store: AppLanguageStore(defaults: defaults)
         )

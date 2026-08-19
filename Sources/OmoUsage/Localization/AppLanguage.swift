@@ -16,30 +16,73 @@ enum AppLanguage: String, CaseIterable, Identifiable, Sendable {
             Locale(identifier: "en_US")
         }
     }
+
+    static func systemDefault(
+        preferredLanguages: [String] = Locale.preferredLanguages
+    ) -> AppLanguage {
+        for identifier in preferredLanguages {
+            let languageCode = Locale(identifier: identifier)
+                .language
+                .languageCode?
+                .identifier
+            switch languageCode {
+            case "ko":
+                return .korean
+            case "en":
+                return .english
+            default:
+                continue
+            }
+        }
+        return .english
+    }
 }
 
 struct AppLanguageStore {
     static let key = "OmoUsage.appLanguage"
+    private static let explicitSelectionKey =
+        "OmoUsage.appLanguageExplicitlySelected"
 
     private let defaults: UserDefaults
+    private let systemLanguage: () -> AppLanguage
 
-    init(defaults: UserDefaults) {
+    init(
+        defaults: UserDefaults,
+        systemLanguage: (() -> AppLanguage)? = nil
+    ) {
         self.defaults = defaults
+        self.systemLanguage = systemLanguage ?? {
+            AppLanguage.systemDefault(
+                preferredLanguages: defaults.stringArray(
+                    forKey: "AppleLanguages"
+                ) ?? Locale.preferredLanguages
+            )
+        }
     }
 
     func load() -> AppLanguage {
-        guard
-            let rawValue = defaults.string(forKey: Self.key),
-            let language = AppLanguage(rawValue: rawValue)
-        else {
-            save(.korean)
-            return .korean
+        let language = defaults
+            .string(forKey: Self.key)
+            .flatMap(AppLanguage.init(rawValue:))
+
+        if defaults.bool(forKey: Self.explicitSelectionKey),
+           let language {
+            return language
         }
-        return language
+
+        if language == .english {
+            defaults.set(true, forKey: Self.explicitSelectionKey)
+            return .english
+        }
+
+        defaults.removeObject(forKey: Self.key)
+        defaults.removeObject(forKey: Self.explicitSelectionKey)
+        return systemLanguage()
     }
 
     func save(_ language: AppLanguage) {
         defaults.set(language.rawValue, forKey: Self.key)
+        defaults.set(true, forKey: Self.explicitSelectionKey)
     }
 }
 

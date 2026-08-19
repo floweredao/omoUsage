@@ -330,7 +330,7 @@ enum SettingsRowVisualTokens {
     static let border = Color(nsColor: .separatorColor)
 }
 
-enum ProviderConnectionControl: Equatable {
+enum ProviderConnectionControl: Equatable, Hashable {
     case connect
     case disconnect
     case reconnect
@@ -339,17 +339,17 @@ enum ProviderConnectionControl: Equatable {
     static func resolve(
         availability: ProviderAvailability?,
         isDisconnected: Bool
-    ) -> ProviderConnectionControl {
+    ) -> [ProviderConnectionControl] {
         if isDisconnected {
-            return .reconnect
+            return [.reconnect]
         }
         switch availability {
         case nil, .authenticationRequired:
-            return .connect
+            return [.connect]
         case .failed:
-            return .retry
+            return [.retry, .disconnect]
         case .available, .unavailable:
-            return .disconnect
+            return [.disconnect]
         }
     }
 }
@@ -434,39 +434,44 @@ private struct ProviderSettingsRow: View {
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)
                 if !descriptor.acceptsAPIKey {
-                    switch ProviderConnectionControl.resolve(
-                        availability: availability,
-                        isDisconnected: isDisconnected
-                    ) {
-                    case .connect:
-                        Button(
-                            localization.text(.startConnection),
-                            action: onSetup
-                        )
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                    case .disconnect:
-                        Button(
-                            localization.text(.disconnect),
-                            action: onDisconnect
-                        )
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                            .tint(.red)
-                    case .reconnect:
-                        Button(
-                            localization.text(.reconnectProvider),
-                            action: onReconnect
-                        )
-                            .buttonStyle(.borderedProminent)
-                            .controlSize(.small)
-                    case .retry:
-                        Button(
-                            localization.text(.refresh),
-                            action: onRetry
-                        )
-                            .buttonStyle(.borderedProminent)
-                            .controlSize(.small)
+                    ForEach(
+                        ProviderConnectionControl.resolve(
+                            availability: availability,
+                            isDisconnected: isDisconnected
+                        ),
+                        id: \.self
+                    ) { control in
+                        switch control {
+                        case .connect:
+                            Button(
+                                localization.text(.startConnection),
+                                action: onSetup
+                            )
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                        case .disconnect:
+                            Button(
+                                localization.text(.disconnect),
+                                action: onDisconnect
+                            )
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                                .tint(.red)
+                        case .reconnect:
+                            Button(
+                                localization.text(.reconnectProvider),
+                                action: onReconnect
+                            )
+                                .buttonStyle(.borderedProminent)
+                                .controlSize(.small)
+                        case .retry:
+                            Button(
+                                localization.text(.refresh),
+                                action: onRetry
+                            )
+                                .buttonStyle(.borderedProminent)
+                                .controlSize(.small)
+                        }
                     }
                 }
             }
