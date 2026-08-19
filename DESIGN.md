@@ -80,8 +80,8 @@ credentials and never starts third-party authentication.
 ## 5. Components
 
 - `ProviderSectionView`: authenticated provider usage only.
-- `ProviderSettingsRow`: icon, name, connection status, native help, and one
-  provider-appropriate connection control; API-key providers expose editable
+- `ProviderSettingsRow`: icon, name, connection status, native help, and
+  provider-appropriate connection controls; API-key providers expose editable
   authentication controls instead.
 - `ProviderHelpView`: native Korean setup guidance plus an optional official
   provider link; it never routes through OpenUsage.
@@ -131,7 +131,8 @@ credentials and never starts third-party authentication.
   OmoUsage launches only their installed official authentication flow.
 - Provider help may link to official documentation. The main Settings row
   starts authentication for missing, malformed, or expired credentials and
-  offers refresh retry for transient provider failures.
+  offers refresh retry for transient provider failures while keeping
+  disconnect available.
 - The menu-bar item uses the native
   `gauge.with.dots.needle.50percent` SF Symbol as a 14 pt, medium-weight
   monochrome template image.
