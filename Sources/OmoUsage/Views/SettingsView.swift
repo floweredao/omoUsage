@@ -204,12 +204,16 @@ struct SettingsView: View {
     }
 
     private func reconnectProvider(_ provider: ProviderID) {
-        viewModel.reconnectProvider(provider)
+        ProviderConnectionControl.performReconnect(
+            provider: provider,
+            reenable: viewModel.reconnectProvider,
+            startConnection: startConnection,
+            refresh: viewModel.refresh
+        )
         feedback = .formatted(
             .reconnectedProvider,
             provider.displayName
         )
-        Task { await viewModel.refresh() }
     }
 
     private func saveKey(for provider: ProviderID) {
@@ -335,6 +339,21 @@ enum ProviderConnectionControl: Equatable, Hashable {
     case disconnect
     case reconnect
     case retry
+
+    @MainActor
+    @discardableResult
+    static func performReconnect(
+        provider: ProviderID,
+        reenable: @escaping (ProviderID) -> Void,
+        startConnection: @escaping (ProviderID) -> Void,
+        refresh: @escaping () async -> Void
+    ) -> Task<Void, Never> {
+        reenable(provider)
+        startConnection(provider)
+        return Task {
+            await refresh()
+        }
+    }
 
     static func resolve(
         availability: ProviderAvailability?,

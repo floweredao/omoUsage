@@ -394,10 +394,26 @@ enum ProviderSetup {
         {
             return bundled
         }
+        let temporaryDirectory = FileManager.default.temporaryDirectory
+            .resolvingSymlinksInPath()
+            .standardizedFileURL
+            .path
         var directories = environment["PATH", default: ""]
             .split(separator: ":")
             .map(String.init)
             .filter { $0.hasPrefix("/") }
+            .filter { directory in
+                let resolved = URL(
+                    filePath: directory,
+                    directoryHint: .isDirectory
+                )
+                .resolvingSymlinksInPath()
+                .standardizedFileURL
+                .path
+                return
+                    resolved != temporaryDirectory
+                    && !resolved.hasPrefix("\(temporaryDirectory)/")
+            }
         directories.append(
             contentsOf: [
                 homeDirectory.appending(
