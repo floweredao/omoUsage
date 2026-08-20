@@ -95,6 +95,7 @@ enum ProviderSetup {
                 instruction: "Claude Code OAuth 로그인",
                 executable: "claude",
                 arguments: ["auth", "login"],
+                opensFallback: false,
                 help: help(
                     provider,
                     [
