@@ -179,6 +179,25 @@ struct ProviderHelpSetupTests {
     }
 
     @Test
+    func temporarySessionShimIsNotTreatedAsInstalledClaude() {
+        let shimDirectory = FileManager.default.temporaryDirectory
+            .appending(
+                components: "cmux-cli-shims",
+                UUID().uuidString
+            )
+        let shim = shimDirectory.appending(path: "claude").path
+
+        let resolved = ProviderSetup.resolvedExecutablePath(
+            "claude",
+            environment: ["PATH": shimDirectory.path],
+            homeDirectory: URL(filePath: "/Users/test"),
+            isExecutable: { $0 == shim }
+        )
+
+        #expect(resolved == nil)
+    }
+
+    @Test
     func installedChatGPTBundleLaunchesCodexOAuthWithoutDownloadPage() throws {
         let home = FileManager.default.temporaryDirectory
             .appending(path: "OmoUsageCodexCLI-\(UUID().uuidString)")
