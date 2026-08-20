@@ -31,9 +31,7 @@ struct ProviderHelpSetupTests {
                         executable: "claude",
                         arguments: ["auth", "login"]
                     ),
-                    fallbackURL: URL(
-                        string: "https://claude.ai/code"
-                    )!
+                    fallbackURL: nil
                 )
         )
         #expect(
@@ -134,6 +132,44 @@ struct ProviderHelpSetupTests {
                 == URL(string: "https://openrouter.ai/keys")!
         )
         #expect(try descriptor(.zai).action == .apiKey)
+    }
+
+    @Test
+    func missingClaudeCLIReportsInstallationRequirementWithoutOpeningWeb() throws {
+        guard
+            case .terminal(let specification, let fallbackURL) =
+                try descriptor(.claude).action
+        else {
+            Issue.record("Claude must use a terminal authentication action")
+            return
+        }
+        var launchedCommands: [String] = []
+        var openedURLs: [URL] = []
+
+        let result = ProviderSetup.performTerminal(
+            specification,
+            fallbackURL: fallbackURL,
+            environment: ["PATH": ""],
+            homeDirectory: URL(filePath: "/Users/test"),
+            isExecutable: { _ in false },
+            launchTerminal: {
+                launchedCommands.append($0)
+                return true
+            },
+            openURL: {
+                openedURLs.append($0)
+                return true
+            }
+        )
+
+        #expect(
+            result
+                == .failure(
+                    .requiredExecutableMissing(["claude"])
+                )
+        )
+        #expect(launchedCommands.isEmpty)
+        #expect(openedURLs.isEmpty)
     }
 
     @Test
