@@ -7,7 +7,7 @@ struct CodexReliabilityTests {
     private let hephaestusNow = Date(timeIntervalSince1970: 1_785_675_000)
 
     @Test
-    func fiveHourOnlyPayloadIsNotReportedAsWeeklyUsage() {
+    func reportsPrimaryAndWeeklyResetWindows() throws {
         let payload = Data(
             """
             {
@@ -16,16 +16,32 @@ struct CodexReliabilityTests {
                 "primary_window": {
                   "used_percent": 37,
                   "limit_window_seconds": 18000,
-                  "reset_at": 1785675000
+                  "reset_at": 1785682200
+                },
+                "secondary_window": {
+                  "used_percent": 12,
+                  "limit_window_seconds": 604800,
+                  "reset_at": 1786100400
                 }
               }
             }
             """.utf8
         )
 
-        #expect(throws: UsageParsingError.invalidPayload) {
-            try CodexUsageParser.parse(payload, now: hephaestusNow)
-        }
+        let meters = try CodexUsageParser.parse(
+            payload,
+            now: hephaestusNow
+        ).groups.flatMap(\.meters)
+
+        #expect(meters.map(\.id) == ["codex.session", "codex.week"])
+        #expect(meters.map(\.title) == ["세션 (5시간)", "주간"])
+        #expect(meters.map(\.period) == [.session, .week])
+        #expect(meters.map(\.percentRemaining) == [63, 88])
+        #expect(
+            meters.map(\.resetsAt?.timeIntervalSince1970)
+                == [1_785_682_200, 1_786_100_400]
+        )
+        #expect(meters.map(\.showsMenuBarBadge) == [true, false])
     }
 
     @Test
