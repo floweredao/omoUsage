@@ -8,10 +8,11 @@ enum CodexUsageParser {
         now: Date
     ) throws -> ProviderUsage {
         let object = try UsageJSON.object(data)
-        guard
-            let rateLimit = UsageJSON.object(object["rate_limit"]),
-            let weekly = weeklyWindow(rateLimit)
-        else {
+        guard let rateLimit = UsageJSON.object(object["rate_limit"]) else {
+            throw UsageParsingError.invalidPayload
+        }
+        let meters = usageWindows(rateLimit)
+        guard !meters.isEmpty else {
             throw UsageParsingError.invalidPayload
         }
 
@@ -21,7 +22,7 @@ enum CodexUsageParser {
         let group = UsageGroup(
             id: "codex.main",
             title: nil,
-            meters: [weekly],
+            meters: meters,
             creditText: credits.map { "크레딧 \($0)" }
         )
         let reportedPlan = planName(object["plan_type"])
@@ -36,31 +37,44 @@ enum CodexUsageParser {
         )
     }
 
-    private static func weeklyWindow(_ rateLimit: [String: Any]) -> UsageMeter? {
-        let candidates = ["primary_window", "secondary_window"]
-            .compactMap { UsageJSON.object(rateLimit[$0]) }
-        let weekly = candidates.first {
-            guard let seconds = UsageJSON.number($0["limit_window_seconds"]) else {
-                return false
+    private static func usageWindows(
+        _ rateLimit: [String: Any]
+    ) -> [UsageMeter] {
+        let windows = ["primary_window", "secondary_window"]
+            .compactMap { key -> ([String: Any], Double)? in
+                guard
+                    let window = UsageJSON.object(rateLimit[key]),
+                    let seconds = UsageJSON.number(
+                        window["limit_window_seconds"]
+                    ),
+                    seconds > 0,
+                    UsageJSON.number(window["used_percent"]) != nil
+                else {
+                    return nil
+                }
+                return (window, seconds)
             }
-            return seconds >= Double(weeklySeconds)
-        }
 
-        guard
-            let weekly,
-            let used = UsageJSON.number(weekly["used_percent"])
-        else {
-            return nil
+        return windows.enumerated().compactMap { index, candidate in
+            let (window, seconds) = candidate
+            guard let used = UsageJSON.number(window["used_percent"]) else {
+                return nil
+            }
+            let isWeekly = seconds >= Double(weeklySeconds)
+            let period: UsagePeriod = isWeekly ? .week : .session
+            let title = isWeekly
+                ? "주간"
+                : "세션 (\(max(1, Int(seconds / 3_600)))시간)"
+            return UsageMeter(
+                id: isWeekly ? "codex.week" : "codex.session",
+                title: title,
+                period: period,
+                percentRemaining: Int((100 - used).rounded()),
+                resetsAt: UsageJSON.date(window["reset_at"]),
+                resetText: window["reset_text"] as? String,
+                showsMenuBarBadge: index == 0
+            )
         }
-        return UsageMeter(
-            id: "codex.week",
-            title: "주간",
-            period: .week,
-            percentRemaining: Int((100 - used).rounded()),
-            resetsAt: UsageJSON.date(weekly["reset_at"]),
-            resetText: weekly["reset_text"] as? String,
-            showsMenuBarBadge: true
-        )
     }
 
     private static func planName(_ value: Any?) -> String {

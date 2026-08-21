@@ -82,6 +82,12 @@ struct FixtureUsageProvider: UsageProvider {
       "rate_limit": {
         "primary_window": {
           "used_percent": 40,
+          "limit_window_seconds": 18000,
+          "reset_at": 4070926800,
+          "reset_text": "3시간 후 리셋"
+        },
+        "secondary_window": {
+          "used_percent": 12,
           "limit_window_seconds": 604800,
           "reset_at": 4071340800,
           "reset_text": "5일 후 리셋"
