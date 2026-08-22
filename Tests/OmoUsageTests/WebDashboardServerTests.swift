@@ -653,6 +653,27 @@ struct WebDashboardServerTests {
     }
 
     @Test
+    func capsAndCancelsTrackedConnections() {
+        let pool = WebDashboardConnectionPool(maximumCount: 2)
+        let first = RecordingWebDashboardConnection()
+        let second = RecordingWebDashboardConnection()
+        let rejected = RecordingWebDashboardConnection()
+
+        #expect(pool.accept(first))
+        #expect(pool.accept(second))
+        #expect(!pool.accept(rejected))
+        #expect(pool.count == 2)
+        #expect(rejected.cancelCount == 1)
+
+        pool.remove(first)
+        pool.cancelAll()
+
+        #expect(first.cancelCount == 0)
+        #expect(second.cancelCount == 1)
+        #expect(pool.count == 0)
+    }
+
+    @Test
     func indexRouteServesMobileDashboard() {
         let router = WebDashboardRouter(
             snapshotData: { Data() },
@@ -777,6 +798,21 @@ struct WebDashboardServerTests {
         #expect(
             html.contains(
                 "settingsMutationsInFlight.set(mutationKey, expected);"
+            )
+        )
+        #expect(
+            html.contains(
+                #"action.startsWith("move-provider-")"#
+            )
+        )
+        #expect(
+            html.contains(
+                #"? "providerOrder""#
+            )
+        )
+        #expect(
+            html.contains(
+                #"mutateSettings("providerOrder","#
             )
         )
         #expect(
@@ -933,6 +969,24 @@ private final class RecordingWebDashboardListener:
     func stop() {
         lock.withLock {
             stopped = true
+        }
+    }
+}
+
+private final class RecordingWebDashboardConnection:
+    WebDashboardConnection,
+    @unchecked Sendable
+{
+    private let lock = NSLock()
+    private var cancellations = 0
+
+    var cancelCount: Int {
+        lock.withLock { cancellations }
+    }
+
+    func cancel() {
+        lock.withLock {
+            cancellations += 1
         }
     }
 }

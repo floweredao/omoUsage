@@ -1329,7 +1329,9 @@
 
     function settingsButton(label, action, provider, disabled) {
       const button = element("button", "", label);
-      const mutationKey = `${action}:${provider}`;
+      const mutationKey = action.startsWith("move-provider-")
+        ? "providerOrder"
+        : `${action}:${provider}`;
       const isPending = settingsMutationsInFlight.has(mutationKey);
       button.type = "button";
       button.dataset.action = action;
@@ -1402,7 +1404,7 @@
               next[index - 1]
             ];
             mutateSettings(
-              `move-provider-up:${provider}`,
+              "providerOrder",
               { providerOrder: next },
               { providerOrder: next }
             );
@@ -1428,7 +1430,7 @@
               next[index]
             ];
             mutateSettings(
-              `move-provider-down:${provider}`,
+              "providerOrder",
               { providerOrder: next },
               { providerOrder: next }
             );

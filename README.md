@@ -87,12 +87,26 @@ your private iCloud key-value store. Credentials, cookies, API keys, and file
 paths never leave the Mac. Both targets must share a development team and
 ubiquity key-value identifier.
 
+## Private web dashboard
+
+While OmoUsage is running, it serves a private dashboard at
+`http://127.0.0.1:7827`. The browser receives only the same sanitized usage
+snapshot used by the iPhone companion. It can refresh usage, reorder providers,
+hide or show providers, and choose an independent Korean or English web
+language; credential setup remains native-only.
+
+The server accepts loopback connections only. To reach it from another device,
+configure Tailscale Serve to proxy `127.0.0.1:7827` inside your authenticated
+tailnet. Do not expose it with Tailscale Funnel or bind it directly to a LAN or
+public interface.
+
 ## Privacy
 
 Everything runs locally. OmoUsage talks only to each provider's own API, has no
-analytics or telemetry, and no backend of its own. API keys are written solely
-to their documented local config files and are never rendered again after save
-or written to diagnostics.
+analytics or telemetry, and no backend of its own. Its web server is an
+always-on loopback-only companion surface while the app is running. API keys
+are written solely to their documented local config files and are never
+rendered again after save or written to diagnostics.
 
 ## Layout
 
@@ -101,8 +115,10 @@ Sources/OmoUsage/
   Credentials/   local credential discovery per provider
   Providers/     one UsageProvider per service + response parsing
   Dashboard/     view model, refresh scheduler, provider protocol
+  WebDashboard/  loopback HTTP server, commands, packaged assets
   Views/         popover, settings, meters, provider icons
   Localization/  Korean (default) and English strings
+  Resources/     app icon, provider icons, web dashboard shell
   Mobile/        iOS companion
 Tests/OmoUsageTests/
 Scripts/         app packaging and icon generation

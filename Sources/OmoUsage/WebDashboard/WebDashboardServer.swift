@@ -570,6 +570,60 @@ final class WebDashboardSnapshotStore: @unchecked Sendable {
     }
 }
 
+protocol WebDashboardConnection: AnyObject {
+    func cancel()
+}
+
+extension NWConnection: WebDashboardConnection {}
+
+final class WebDashboardConnectionPool: @unchecked Sendable {
+    private let maximumCount: Int
+    private let lock = NSLock()
+    private var connections: [
+        ObjectIdentifier: any WebDashboardConnection
+    ] = [:]
+
+    init(maximumCount: Int) {
+        precondition(maximumCount > 0)
+        self.maximumCount = maximumCount
+    }
+
+    var count: Int {
+        lock.withLock { connections.count }
+    }
+
+    func accept(_ connection: any WebDashboardConnection) -> Bool {
+        let accepted = lock.withLock {
+            guard connections.count < maximumCount else {
+                return false
+            }
+            connections[ObjectIdentifier(connection)] = connection
+            return true
+        }
+        if !accepted {
+            connection.cancel()
+        }
+        return accepted
+    }
+
+    func remove(_ connection: any WebDashboardConnection) {
+        _ = lock.withLock {
+            connections.removeValue(
+                forKey: ObjectIdentifier(connection)
+            )
+        }
+    }
+
+    func cancelAll() {
+        let active = lock.withLock {
+            let active = Array(connections.values)
+            connections.removeAll()
+            return active
+        }
+        active.forEach { $0.cancel() }
+    }
+}
+
 enum WebDashboardListenerState: Sendable {
     case ready
     case failed
@@ -713,6 +767,9 @@ final class NWWebDashboardListener:
         label: "com.omo.usage.web-dashboard"
     )
     private let lock = NSLock()
+    private let connections = WebDashboardConnectionPool(
+        maximumCount: 32
+    )
     private var listener: NWListener?
 
     init(port: UInt16) {
@@ -754,6 +811,7 @@ final class NWWebDashboardListener:
                 }
                 listener.cancel()
                 if shouldNotify {
+                    connections.cancelAll()
                     stateChanged(.failed)
                 }
             default:
@@ -765,6 +823,24 @@ final class NWWebDashboardListener:
                 connection.cancel()
                 return
             }
+            let isAccepting = lock.withLock {
+                self.listener != nil
+            }
+            guard
+                isAccepting,
+                connections.accept(connection)
+            else {
+                connection.cancel()
+                return
+            }
+            let timeout = DispatchWorkItem { [weak self, weak connection] in
+                guard let self, let connection else { return }
+                finish(connection)
+            }
+            queue.asyncAfter(
+                deadline: .now() + 10,
+                execute: timeout
+            )
             connection.stateUpdateHandler = { [weak self] state in
                 guard let self else {
                     connection.cancel()
@@ -778,7 +854,7 @@ final class NWWebDashboardListener:
                         response: response
                     )
                 case .failed, .cancelled:
-                    connection.cancel()
+                    finish(connection)
                 default:
                     break
                 }
@@ -805,6 +881,7 @@ final class NWWebDashboardListener:
             return listener
         }
         listener?.cancel()
+        connections.cancelAll()
     }
 
     private func receive(
@@ -823,7 +900,7 @@ final class NWWebDashboardListener:
             maximumLength: remaining
         ) { [weak self] data, _, isComplete, error in
             guard let self, error == nil else {
-                connection.cancel()
+                self?.finish(connection)
                 return
             }
             var request = accumulated
@@ -880,8 +957,13 @@ final class NWWebDashboardListener:
             contentContext: .finalMessage,
             isComplete: true,
             completion: .contentProcessed { _ in
-                connection.cancel()
+                self.finish(connection)
             }
         )
+    }
+
+    private func finish(_ connection: NWConnection) {
+        connections.remove(connection)
+        connection.cancel()
     }
 }

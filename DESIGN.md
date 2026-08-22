@@ -30,11 +30,11 @@ credential owner and publishes the latest usage snapshot through the user's
 private iCloud key-value store. The mobile app never receives provider
 credentials and never starts third-party authentication.
 
-The web dashboard is another read-only companion surface. The Mac serves only
-the sanitized snapshot on loopback, and Tailscale supplies private tailnet
-identity and HTTPS. The web surface never receives credentials, invokes
-provider APIs, or exposes authentication mutations. Its sole dashboard
-command is a nonce-protected request to the existing local
+The web dashboard is another companion surface. The Mac serves only the
+sanitized snapshot and narrowly scoped display controls on loopback, and
+Tailscale supplies private tailnet identity and HTTPS. The web surface never
+receives credentials, invokes provider APIs, or exposes authentication
+mutations. Its refresh command delegates to the existing local
 `UsageDashboardViewModel.refresh()` owner; the browser never becomes a second
 provider-fetch owner.
 
@@ -227,10 +227,10 @@ launches, and other privileged controls remain native-only.
 - The web server binds only to `127.0.0.1:7827`. Tailscale Serve proxies that
   loopback endpoint to the authenticated tailnet; Tailscale Funnel and direct
   LAN/public binding are forbidden.
-- Web control chrome remains English. The selected Web language is persisted
-  separately from native App language and localizes provider-generated
-  dashboard text only; changing it never mutates the native
-  `LocalizationController` or App language preference.
+- Web control chrome and provider-generated dashboard text follow the selected
+  Web language. That preference is persisted separately from native App
+  language; changing it never mutates the native `LocalizationController` or
+  App language preference.
 - Read routes are `GET /`, `GET /settings`, `GET /api/snapshot`,
   `GET /api/settings`, `GET /favicon.svg`, and
   `GET /apple-touch-icon.png`. Mutating routes are limited to

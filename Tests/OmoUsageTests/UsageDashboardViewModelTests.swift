@@ -96,13 +96,10 @@ struct UsageDashboardViewModelTests {
         let first = Task { await viewModel.refresh() }
         _ = await iterator.next()
 
-        let second = Task {
-            await viewModel.refresh()
-        }
+        await viewModel.refresh()
 
         await gate.open()
         await first.value
-        await second.value
         #expect(await gate.callCount == 1)
         #expect(viewModel.isRefreshing == false)
     }
@@ -212,14 +209,11 @@ struct UsageDashboardViewModelTests {
         let first = Task { await viewModel.refresh() }
         _ = await iterator.next()
 
-        let second = Task {
-            await viewModel.refresh()
-        }
+        await viewModel.refresh()
         #expect(published.map(\.isRefreshing) == [false, true])
 
         await gate.open()
         await first.value
-        await second.value
 
         #expect(published.map(\.isRefreshing) == [false, true, false])
         #expect(await gate.callCount == 1)
