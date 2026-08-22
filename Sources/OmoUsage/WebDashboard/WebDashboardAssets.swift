@@ -4,9 +4,9 @@ import Foundation
 enum WebDashboardAssets {
     private static let indexTemplate: Data = {
         guard
-            let url = resourceBundle.url(
-                forResource: "index",
-                withExtension: "html"
+            let url = bundledResourceURL(
+                name: "index",
+                extension: "html"
             ),
             let data = try? Data(contentsOf: url)
         else {
@@ -17,9 +17,9 @@ enum WebDashboardAssets {
 
     static let appIconSVG: Data = {
         guard
-            let url = resourceBundle.url(
-                forResource: "AppIcon",
-                withExtension: "svg"
+            let url = bundledResourceURL(
+                name: "AppIcon",
+                extension: "svg"
             ),
             let data = try? Data(contentsOf: url)
         else {
@@ -52,12 +52,48 @@ enum WebDashboardAssets {
         )
     }
 
-    private static var resourceBundle: Bundle {
+    private static func bundledResourceURL(
+        name: String,
+        extension fileExtension: String
+    ) -> URL? {
         #if SWIFT_PACKAGE
-        Bundle.module
+        resourceURL(
+            name: name,
+            extension: fileExtension,
+            mainBundle: .main,
+            packageBundle: { Bundle.module }
+        )
         #else
-        Bundle.main
+        resourceURL(
+            name: name,
+            extension: fileExtension,
+            mainBundle: .main,
+            packageBundle: { nil }
+        )
         #endif
+    }
+
+    static func resourceURL(
+        name: String,
+        extension fileExtension: String,
+        mainBundle: Bundle,
+        packageBundle: () -> Bundle?
+    ) -> URL? {
+        let packaged = mainBundle.resourceURL?
+            .appending(path: "\(name).\(fileExtension)")
+        if
+            let packaged,
+            FileManager.default.fileExists(atPath: packaged.path)
+        {
+            return packaged
+        }
+        guard mainBundle.bundleURL.pathExtension != "app" else {
+            return nil
+        }
+        return packageBundle()?.url(
+            forResource: name,
+            withExtension: fileExtension
+        )
     }
 
     private static func renderPNG(
