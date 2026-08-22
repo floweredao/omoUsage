@@ -653,24 +653,32 @@ struct WebDashboardServerTests {
     }
 
     @Test
-    func capsAndCancelsTrackedConnections() {
+    func atomicallyGatesAndFinishesTrackedConnections() {
         let pool = WebDashboardConnectionPool(maximumCount: 2)
+        let beforeStart = RecordingWebDashboardConnection()
         let first = RecordingWebDashboardConnection()
         let second = RecordingWebDashboardConnection()
         let rejected = RecordingWebDashboardConnection()
+        let afterStop = RecordingWebDashboardConnection()
 
+        #expect(!pool.accept(beforeStart))
+        #expect(beforeStart.finishCount == 1)
+        pool.startAccepting()
         #expect(pool.accept(first))
         #expect(pool.accept(second))
         #expect(!pool.accept(rejected))
         #expect(pool.count == 2)
-        #expect(rejected.cancelCount == 1)
+        #expect(rejected.finishCount == 1)
 
         pool.remove(first)
-        pool.cancelAll()
+        first.finish()
+        pool.stopAcceptingAndFinishAll()
 
-        #expect(first.cancelCount == 0)
-        #expect(second.cancelCount == 1)
+        #expect(first.finishCount == 1)
+        #expect(second.finishCount == 1)
         #expect(pool.count == 0)
+        #expect(!pool.accept(afterStop))
+        #expect(afterStop.finishCount == 1)
     }
 
     @Test
@@ -982,15 +990,15 @@ private final class RecordingWebDashboardConnection:
     @unchecked Sendable
 {
     private let lock = NSLock()
-    private var cancellations = 0
+    private var finishes = 0
 
-    var cancelCount: Int {
-        lock.withLock { cancellations }
+    var finishCount: Int {
+        lock.withLock { finishes }
     }
 
-    func cancel() {
+    func finish() {
         lock.withLock {
-            cancellations += 1
+            finishes += 1
         }
     }
 }

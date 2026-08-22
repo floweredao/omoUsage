@@ -571,10 +571,15 @@ final class WebDashboardSnapshotStore: @unchecked Sendable {
 }
 
 protocol WebDashboardConnection: AnyObject {
-    func cancel()
+    func finish()
 }
 
-extension NWConnection: WebDashboardConnection {}
+extension NWConnection: WebDashboardConnection {
+    func finish() {
+        stateUpdateHandler = nil
+        cancel()
+    }
+}
 
 final class WebDashboardConnectionPool: @unchecked Sendable {
     private let maximumCount: Int
@@ -582,6 +587,7 @@ final class WebDashboardConnectionPool: @unchecked Sendable {
     private var connections: [
         ObjectIdentifier: any WebDashboardConnection
     ] = [:]
+    private var isAccepting = false
 
     init(maximumCount: Int) {
         precondition(maximumCount > 0)
@@ -592,16 +598,25 @@ final class WebDashboardConnectionPool: @unchecked Sendable {
         lock.withLock { connections.count }
     }
 
+    func startAccepting() {
+        lock.withLock {
+            isAccepting = true
+        }
+    }
+
     func accept(_ connection: any WebDashboardConnection) -> Bool {
         let accepted = lock.withLock {
-            guard connections.count < maximumCount else {
+            guard
+                isAccepting,
+                connections.count < maximumCount
+            else {
                 return false
             }
             connections[ObjectIdentifier(connection)] = connection
             return true
         }
         if !accepted {
-            connection.cancel()
+            connection.finish()
         }
         return accepted
     }
@@ -614,13 +629,14 @@ final class WebDashboardConnectionPool: @unchecked Sendable {
         }
     }
 
-    func cancelAll() {
+    func stopAcceptingAndFinishAll() {
         let active = lock.withLock {
+            isAccepting = false
             let active = Array(connections.values)
             connections.removeAll()
             return active
         }
-        active.forEach { $0.cancel() }
+        active.forEach { $0.finish() }
     }
 }
 
@@ -811,7 +827,7 @@ final class NWWebDashboardListener:
                 }
                 listener.cancel()
                 if shouldNotify {
-                    connections.cancelAll()
+                    connections.stopAcceptingAndFinishAll()
                     stateChanged(.failed)
                 }
             default:
@@ -820,19 +836,10 @@ final class NWWebDashboardListener:
         }
         listener.newConnectionHandler = { [weak self] connection in
             guard let self else {
-                connection.cancel()
+                connection.finish()
                 return
             }
-            let isAccepting = lock.withLock {
-                self.listener != nil
-            }
-            guard
-                isAccepting,
-                connections.accept(connection)
-            else {
-                connection.cancel()
-                return
-            }
+            guard connections.accept(connection) else { return }
             let timeout = DispatchWorkItem { [weak self, weak connection] in
                 guard let self, let connection else { return }
                 finish(connection)
@@ -841,9 +848,11 @@ final class NWWebDashboardListener:
                 deadline: .now() + 10,
                 execute: timeout
             )
-            connection.stateUpdateHandler = { [weak self] state in
+            connection.stateUpdateHandler = {
+                [weak self, weak connection] state in
+                guard let connection else { return }
                 guard let self else {
-                    connection.cancel()
+                    connection.finish()
                     return
                 }
                 switch state {
@@ -871,6 +880,7 @@ final class NWWebDashboardListener:
             listener.cancel()
             return
         }
+        connections.startAccepting()
         listener.start(queue: queue)
     }
 
@@ -881,7 +891,7 @@ final class NWWebDashboardListener:
             return listener
         }
         listener?.cancel()
-        connections.cancelAll()
+        connections.stopAcceptingAndFinishAll()
     }
 
     private func receive(
@@ -900,7 +910,11 @@ final class NWWebDashboardListener:
             maximumLength: remaining
         ) { [weak self] data, _, isComplete, error in
             guard let self, error == nil else {
-                self?.finish(connection)
+                if let self {
+                    finish(connection)
+                } else {
+                    connection.finish()
+                }
                 return
             }
             var request = accumulated
@@ -964,6 +978,6 @@ final class NWWebDashboardListener:
 
     private func finish(_ connection: NWConnection) {
         connections.remove(connection)
-        connection.cancel()
+        connection.finish()
     }
 }
