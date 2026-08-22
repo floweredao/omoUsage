@@ -182,6 +182,39 @@ struct CodexUsageParsingTests {
     }
 
     @Test
+    func reportsAvailableFullResetTickets() throws {
+        let usage = try CodexUsageParser.parse(
+            Data(
+                """
+                {
+                  "plan_type": "pro",
+                  "rate_limit": {
+                    "primary_window": {
+                      "used_percent": 82,
+                      "limit_window_seconds": 604800,
+                      "reset_at": 1787467868
+                    }
+                  },
+                  "credits": {
+                    "balance": 0
+                  },
+                  "rate_limit_reset_credits": {
+                    "available_count": 1,
+                    "applicable_available_count": 0
+                  }
+                }
+                """.utf8
+            ),
+            now: fixedNow
+        )
+
+        #expect(
+            usage.groups.first?.creditText
+                == "크레딧 0    풀 리셋 티켓 1"
+        )
+    }
+
+    @Test
     func usesPersistedManualCodexProMultiplier() throws {
         let defaults = UserDefaults.standard
         let key = "codexPlanMultiplier"

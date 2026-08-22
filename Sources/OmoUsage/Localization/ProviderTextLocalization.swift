@@ -2,63 +2,7 @@ import Foundation
 
 extension LocalizationResolving {
     func providerText(_ value: String) -> String {
-        guard language == .english else { return value }
-        if let exact = ProviderTextLocalization.english[value] {
-            return exact
-        }
-        if
-            value.hasSuffix("분 후 리셋"),
-            let minutes = Int(value.dropLast("분 후 리셋".count))
-        {
-            return format(.resetMinutes, minutes)
-        }
-        if value.hasSuffix("분 후 리셋") {
-            let interval = value.dropLast("분 후 리셋".count)
-                .components(separatedBy: "시간 ")
-            if
-                interval.count == 2,
-                let hours = Int(interval[0]),
-                let minutes = Int(interval[1])
-            {
-                return format(.resetHoursMinutes, hours, minutes)
-            }
-        }
-        if
-            value.hasSuffix("시간 후 리셋"),
-            let hours = Int(value.dropLast("시간 후 리셋".count))
-        {
-            return format(.resetHours, hours)
-        }
-        if
-            value.hasSuffix("일 후 리셋"),
-            let days = Int(value.dropLast("일 후 리셋".count))
-        {
-            return format(.resetDays, days)
-        }
-        if
-            value.hasSuffix("분 전 기준"),
-            let minutes = Int(value.dropLast("분 전 기준".count))
-        {
-            return format(.asOfMinutesAgo, minutes)
-        }
-        if value.hasSuffix(" 주간") {
-            let name = String(value.dropLast(" 주간".count))
-            return format(.usageNamedWeek, name)
-        }
-        if value.hasSuffix(" 기준") {
-            return format(.asOf, String(value.dropLast(" 기준".count)))
-        }
-        return value
-            .replacingOccurrences(of: "최근 30일 ", with: "Last 30 days ")
-            .replacingOccurrences(of: "크레딧", with: "Credits")
-            .replacingOccurrences(of: "프롬프트", with: "Prompt")
-            .replacingOccurrences(of: "플로우", with: "Flow")
-            .replacingOccurrences(of: "추가 잔액", with: "Extra balance")
-            .replacingOccurrences(of: "추가 사용량", with: "Extra usage")
-            .replacingOccurrences(of: " 한도", with: " cap")
-            .replacingOccurrences(of: " 사용", with: " used")
-            .replacingOccurrences(of: "잔액", with: "Balance")
-            .replacingOccurrences(of: "오늘", with: "Today")
+        ProviderTextLocalization.text(value, language: language)
     }
 
     func availabilityText(
@@ -114,8 +58,143 @@ extension LocalizationResolving {
     #endif
 }
 
-private enum ProviderTextLocalization {
-    static let english: [String: String] = [
+extension DashboardSnapshot {
+    func localized(
+        using localization: LocalizationContext
+    ) -> DashboardSnapshot {
+        let localize = {
+            ProviderTextLocalization.text(
+                $0,
+                language: localization.language
+            )
+        }
+        return DashboardSnapshot(
+            providers: providers.map { provider in
+                ProviderUsage(
+                    provider: provider.provider,
+                    planName: localize(provider.planName),
+                    groups: provider.groups.map { group in
+                        UsageGroup(
+                            id: group.id,
+                            title: group.title.map(localize),
+                            meters: group.meters.map { meter in
+                                UsageMeter(
+                                    id: meter.id,
+                                    title: localize(meter.title),
+                                    period: meter.period,
+                                    percentRemaining: meter.percentRemaining,
+                                    resetsAt: meter.resetsAt,
+                                    resetText: meter.resetText.map(localize),
+                                    showsMenuBarBadge:
+                                        meter.showsMenuBarBadge
+                                )
+                            },
+                            creditText: group.creditText.map(localize)
+                        )
+                    },
+                    availability: provider.availability,
+                    updatedAt: provider.updatedAt
+                )
+            },
+            refreshedAt: refreshedAt
+        )
+    }
+}
+
+enum ProviderTextLocalization {
+    static func text(
+        _ value: String,
+        language: AppLanguage
+    ) -> String {
+        guard language == .english else { return value }
+        if let exact = english[value] {
+            return exact
+        }
+        if
+            value.hasSuffix("분 후 리셋"),
+            let minutes = Int(value.dropLast("분 후 리셋".count))
+        {
+            return format(.resetMinutes, language: language, minutes)
+        }
+        if value.hasSuffix("분 후 리셋") {
+            let interval = value.dropLast("분 후 리셋".count)
+                .components(separatedBy: "시간 ")
+            if
+                interval.count == 2,
+                let hours = Int(interval[0]),
+                let minutes = Int(interval[1])
+            {
+                return format(
+                    .resetHoursMinutes,
+                    language: language,
+                    hours,
+                    minutes
+                )
+            }
+        }
+        if
+            value.hasSuffix("시간 후 리셋"),
+            let hours = Int(value.dropLast("시간 후 리셋".count))
+        {
+            return format(.resetHours, language: language, hours)
+        }
+        if
+            value.hasSuffix("일 후 리셋"),
+            let days = Int(value.dropLast("일 후 리셋".count))
+        {
+            return format(.resetDays, language: language, days)
+        }
+        if
+            value.hasSuffix("분 전 기준"),
+            let minutes = Int(value.dropLast("분 전 기준".count))
+        {
+            return format(
+                .asOfMinutesAgo,
+                language: language,
+                minutes
+            )
+        }
+        if value.hasSuffix(" 주간") {
+            let name = String(value.dropLast(" 주간".count))
+            return format(.usageNamedWeek, language: language, name)
+        }
+        if value.hasSuffix(" 기준") {
+            return format(
+                .asOf,
+                language: language,
+                String(value.dropLast(" 기준".count))
+            )
+        }
+        return value
+            .replacingOccurrences(
+                of: "풀 리셋 티켓",
+                with: "Full reset tickets"
+            )
+            .replacingOccurrences(of: "최근 30일 ", with: "Last 30 days ")
+            .replacingOccurrences(of: "크레딧", with: "Credits")
+            .replacingOccurrences(of: "프롬프트", with: "Prompt")
+            .replacingOccurrences(of: "플로우", with: "Flow")
+            .replacingOccurrences(of: "추가 잔액", with: "Extra balance")
+            .replacingOccurrences(of: "추가 사용량", with: "Extra usage")
+            .replacingOccurrences(of: " 한도", with: " cap")
+            .replacingOccurrences(of: " 사용", with: " used")
+            .replacingOccurrences(of: "잔액", with: "Balance")
+            .replacingOccurrences(of: "오늘", with: "Today")
+    }
+
+    private static func format(
+        _ key: AppStringKey,
+        language: AppLanguage,
+        _ arguments: any CVarArg...
+    ) -> String {
+        String(
+            format: AppStrings(language: language).text(key),
+            locale: language.locale,
+            arguments: arguments
+        )
+    }
+
+    private static let english: [String: String] = [
         "세션": "Session",
         "세션 (5시간)": "Session (5 hours)",
         "주간": "Weekly",

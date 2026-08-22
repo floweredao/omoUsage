@@ -217,5 +217,63 @@ struct LocalizationTests {
             localization.providerText("1분 전 기준")
                 == "As of 1 min ago"
         )
+        #expect(
+            localization.providerText("크레딧 0    풀 리셋 티켓 1")
+                == "Credits 0    Full reset tickets 1"
+        )
+    }
+
+    @Test
+    func webSnapshotUsesSelectedLanguageWithoutMutatingStoredUsage() {
+        let snapshot = DashboardSnapshot(
+            providers: [
+                ProviderUsage(
+                    provider: .codex,
+                    planName: "Plus",
+                    groups: [
+                        UsageGroup(
+                            id: "limits",
+                            title: "모델별 주간",
+                            meters: [
+                                UsageMeter(
+                                    id: "session",
+                                    title: "세션 (5시간)",
+                                    period: .session,
+                                    percentRemaining: 72,
+                                    resetText: "3시간 32분 후 리셋"
+                                )
+                            ],
+                            creditText:
+                                "크레딧 0    풀 리셋 티켓 1"
+                        )
+                    ],
+                    availability: .available,
+                    updatedAt: nil
+                )
+            ],
+            refreshedAt: Date(timeIntervalSince1970: 1_786_867_200)
+        )
+
+        let localized = snapshot.localized(
+            using: LocalizationContext(language: .english)
+        )
+
+        #expect(localized.providers[0].groups[0].title == "Weekly by model")
+        #expect(
+            localized.providers[0].groups[0].meters[0].title
+                == "Session (5 hours)"
+        )
+        #expect(
+            localized.providers[0].groups[0].meters[0].resetText
+                == "Resets in 3 hr 32 min"
+        )
+        #expect(
+            localized.providers[0].groups[0].creditText
+                == "Credits 0    Full reset tickets 1"
+        )
+        #expect(
+            snapshot.providers[0].groups[0].meters[0].title
+                == "세션 (5시간)"
+        )
     }
 }

@@ -1,0 +1,1532 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="omo-csrf" content="__OMO_CSRF_TOKEN__">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <title>OmoUsage</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+      font-synthesis: none;
+      --canvas: #f4f4f0;
+      --surface: rgba(255, 255, 252, 0.94);
+      --surface-strong: #ffffff;
+      --text: #18201c;
+      --muted: #68716c;
+      --border: rgba(24, 32, 28, 0.11);
+      --track: rgba(24, 32, 28, 0.10);
+      --standard: #4c8577;
+      --extra: #b7793f;
+      --standard-text: #3f7568;
+      --extra-text: #955f2d;
+      --focus: #3f7568;
+      --shadow: 0 12px 34px rgba(24, 32, 28, 0.07);
+      --card-shadow: 0 8px 26px rgba(24, 32, 28, 0.045);
+      --identity-gradient: linear-gradient(145deg, #568f80, #386d60);
+      --space-1: 4px;
+      --space-2: 8px;
+      --space-3: 12px;
+      --space-4: 16px;
+      --space-5: 20px;
+      --space-6: 24px;
+      --space-7: 28px;
+      --space-8: 32px;
+      --radius-control: 12px;
+      --radius-row: 14px;
+      --radius-card: 20px;
+      --radius-summary: 24px;
+      --motion-fast: 120ms ease-out;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --canvas: #111310;
+        --surface: rgba(28, 31, 27, 0.94);
+        --surface-strong: #20231f;
+        --text: #f2f5f1;
+        --muted: #a6afa8;
+        --border: rgba(242, 245, 241, 0.11);
+        --track: rgba(242, 245, 241, 0.12);
+        --standard-text: #79b5a5;
+        --extra-text: #e0a064;
+        --focus: #79b5a5;
+        --shadow: 0 18px 44px rgba(0, 0, 0, 0.22);
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      min-width: 0;
+      background: var(--canvas);
+    }
+
+    body {
+      min-width: 0;
+      min-height: 100dvh;
+      margin: 0;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 12% 0%, rgba(76, 133, 119, 0.13), transparent 34rem),
+        var(--canvas);
+    }
+
+    .shell {
+      width: min(100%, 720px);
+      min-width: 0;
+      margin-inline: auto;
+      padding:
+        max(16px, env(safe-area-inset-top))
+        max(16px, env(safe-area-inset-right))
+        max(32px, env(safe-area-inset-bottom))
+        max(16px, env(safe-area-inset-left));
+    }
+
+    .summary {
+      position: sticky;
+      z-index: 10;
+      top: max(8px, env(safe-area-inset-top));
+      display: grid;
+      gap: var(--space-3);
+      margin-bottom: var(--space-5);
+      padding: var(--space-4);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-summary);
+      background: var(--surface);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px) saturate(140%);
+      -webkit-backdrop-filter: blur(18px) saturate(140%);
+    }
+
+    .identity,
+    .status-line,
+    .provider-heading,
+    .meter-heading {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .identity-mark {
+      display: grid;
+      flex: 0 0 42px;
+      width: 42px;
+      height: 42px;
+      place-items: center;
+      border-radius: var(--radius-row);
+      color: #f7fbf9;
+      background: var(--identity-gradient);
+      box-shadow: inset 0 1px rgba(255, 255, 255, 0.24);
+    }
+
+    .identity-mark svg {
+      width: var(--space-6);
+      height: var(--space-6);
+    }
+
+    .title-block {
+      flex: 1;
+      min-width: 0;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin: 0;
+    }
+
+    h1 {
+      font-size: clamp(24px, 8vw, 28px);
+      font-weight: 730;
+      letter-spacing: -0.035em;
+      line-height: 1.06;
+    }
+
+    .eyebrow,
+    .metadata,
+    .group-title,
+    .reset-text,
+    .status-text {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .eyebrow {
+      margin-bottom: 3px;
+      font-weight: 650;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .status-line {
+      display: grid;
+      justify-items: start;
+      gap: 4px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+    }
+
+    .connection {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-width: 0;
+    }
+
+    .connection,
+    #refreshed-at {
+      white-space: nowrap;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      flex: 0 0 auto;
+      border-radius: 50%;
+      background: var(--muted);
+      box-shadow: 0 0 0 4px color-mix(in srgb, var(--muted) 13%, transparent);
+    }
+
+    .status-dot[data-state="current"] {
+      background: var(--standard);
+      box-shadow: 0 0 0 4px color-mix(in srgb, var(--standard) 16%, transparent);
+    }
+
+    .status-dot[data-state="unavailable"] {
+      background: var(--extra);
+      box-shadow: 0 0 0 4px color-mix(in srgb, var(--extra) 16%, transparent);
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: var(--space-3);
+      min-width: 0;
+    }
+
+    .provider-card,
+    .state-card {
+      min-width: 0;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-card);
+      background: var(--surface-strong);
+      box-shadow: var(--card-shadow);
+    }
+
+    .provider-card {
+      display: grid;
+      align-content: start;
+      gap: var(--space-4);
+      padding: var(--space-4);
+    }
+
+    .provider-title {
+      min-width: 0;
+      overflow: hidden;
+      font-size: 17px;
+      font-weight: 650;
+      letter-spacing: -0.018em;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .plan {
+      flex: 0 1 auto;
+      min-width: 0;
+      overflow: hidden;
+      padding: 5px 9px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      color: var(--muted);
+      background: color-mix(in srgb, var(--surface-strong) 74%, var(--canvas));
+      font-size: 11px;
+      font-weight: 650;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .availability {
+      color: var(--standard-text);
+      font-size: 12px;
+      font-weight: 600;
+      line-height: 1.35;
+    }
+
+    .availability[data-availability="authenticationRequired"],
+    .availability[data-availability="unavailable"],
+    .availability[data-availability="failed"] {
+      color: var(--extra-text);
+    }
+
+    .group {
+      display: grid;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .group + .group {
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+    }
+
+    .group-title {
+      font-weight: 650;
+      letter-spacing: 0.045em;
+      text-transform: uppercase;
+    }
+
+    .meter {
+      display: grid;
+      gap: 7px;
+      min-width: 0;
+    }
+
+    .meter-title,
+    .meter-value {
+      font-size: 14px;
+      font-weight: 600;
+      line-height: 1.25;
+    }
+
+    .meter-title {
+      min-width: 0;
+      word-break: keep-all;
+      overflow-wrap: anywhere;
+    }
+
+    .meter-value {
+      flex: 0 0 auto;
+      font-variant-numeric: tabular-nums;
+    }
+
+    progress {
+      width: 100%;
+      height: 7px;
+      overflow: hidden;
+      border: 0;
+      border-radius: 999px;
+      appearance: none;
+      background: var(--track);
+    }
+
+    progress::-webkit-progress-bar {
+      border-radius: 999px;
+      background: var(--track);
+    }
+
+    progress::-webkit-progress-value {
+      border-radius: 999px;
+      background: var(--standard);
+    }
+
+    progress.extra::-webkit-progress-value {
+      background: var(--extra);
+    }
+
+    progress::-moz-progress-bar {
+      border-radius: 999px;
+      background: var(--standard);
+    }
+
+    progress.extra::-moz-progress-bar {
+      background: var(--extra);
+    }
+
+    .credit {
+      padding: 10px 12px;
+      border-radius: 12px;
+      color: var(--muted);
+      background: color-mix(in srgb, var(--standard) 8%, transparent);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .state-card {
+      grid-column: 1 / -1;
+      padding: 28px 20px;
+      text-align: center;
+    }
+
+    .state-card h2 {
+      margin-bottom: 7px;
+      font-size: 17px;
+    }
+
+    .state-card p {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    button,
+    select,
+    a {
+      font: inherit;
+    }
+
+    button,
+    select {
+      min-height: 44px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-control);
+      color: var(--text);
+      background: var(--surface-strong);
+    }
+
+    button {
+      padding: 0 14px;
+      cursor: pointer;
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+    }
+
+    button[aria-busy="true"]:disabled,
+    select[aria-busy="true"]:disabled {
+      cursor: wait;
+    }
+
+    button:focus-visible,
+    select:focus-visible,
+    a:focus-visible {
+      outline: 3px solid var(--focus);
+      outline-offset: 2px;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+    }
+
+    .header-actions a,
+    .header-actions button {
+      min-height: 44px;
+      flex: 1;
+      display: inline-grid;
+      place-items: center;
+      padding-inline: 13px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      color: var(--text);
+      background: var(--surface-strong);
+      font-size: 12px;
+      font-weight: 650;
+      text-decoration: none;
+      transition:
+        color var(--motion-fast),
+        background-color var(--motion-fast),
+        border-color var(--motion-fast),
+        opacity var(--motion-fast);
+      white-space: nowrap;
+    }
+
+    @media (hover: hover) {
+      .header-actions a:hover,
+      .header-actions button:hover:not(:disabled),
+      .provider-setting-actions button:hover:not(:disabled) {
+        background: color-mix(
+          in srgb,
+          var(--standard) 12%,
+          var(--surface-strong)
+        );
+      }
+    }
+
+    .header-actions a:active,
+    .header-actions button:active:not(:disabled),
+    .provider-setting-actions button:active:not(:disabled) {
+      color: var(--standard-text);
+      background: color-mix(
+        in srgb,
+        var(--standard) 18%,
+        var(--surface-strong)
+      );
+    }
+
+    .header-actions button[data-refresh-state="busy"] {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: var(--space-2);
+    }
+
+    .header-actions button[data-refresh-state="busy"]::before {
+      width: var(--space-3);
+      height: var(--space-3);
+      border: 2px solid color-mix(in srgb, currentColor 35%, transparent);
+      border-top-color: currentColor;
+      border-radius: 50%;
+      content: "";
+    }
+
+    .header-actions button[data-refresh-state="busy"] {
+      color: var(--muted);
+      background: color-mix(in srgb, var(--standard) 8%, var(--surface-strong));
+    }
+
+    .settings-page {
+      display: grid;
+      gap: var(--space-3);
+    }
+
+    .settings-card {
+      display: grid;
+      gap: var(--space-4);
+      min-width: 0;
+      padding: var(--space-4);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-card);
+      background: var(--surface-strong);
+      box-shadow: var(--card-shadow);
+    }
+
+    .settings-card h2 {
+      font-size: 17px;
+      font-weight: 650;
+      letter-spacing: -0.018em;
+    }
+
+    .settings-card-header {
+      display: grid;
+      gap: 4px;
+    }
+
+    .settings-description,
+    .settings-sync {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .field-label {
+      display: grid;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 650;
+    }
+
+    .field-label select {
+      width: 100%;
+      padding-inline: 12px;
+    }
+
+    .provider-settings {
+      display: grid;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .provider-setting {
+      display: grid;
+      gap: 10px;
+      min-width: 0;
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-row);
+      background: color-mix(in srgb, var(--surface-strong) 76%, var(--canvas));
+    }
+
+    .provider-setting-copy {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .provider-setting-name {
+      min-width: 0;
+      overflow: hidden;
+      font-size: 15px;
+      font-weight: 650;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .provider-setting-state {
+      flex: 0 0 auto;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .provider-setting-actions {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .provider-setting-actions button {
+      min-width: 0;
+      padding-inline: 8px;
+      font-size: 12px;
+      font-weight: 650;
+    }
+
+    .provider-setting-actions .visibility-button {
+      color: var(--standard-text);
+    }
+
+    .provider-setting-actions .visibility-button[data-visible="false"] {
+      color: var(--extra-text);
+    }
+
+    .settings-error {
+      color: var(--extra-text);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .command-error {
+      margin: 0 0 12px;
+      padding: 12px 14px;
+      border: 1px solid color-mix(in srgb, var(--extra) 35%, var(--border));
+      border-radius: 12px;
+      background: color-mix(in srgb, var(--extra) 8%, var(--surface-strong));
+    }
+
+    [hidden] {
+      display: none !important;
+    }
+
+    @media (min-width: 640px) {
+      .shell {
+        padding-inline: 24px;
+      }
+
+      .summary {
+        grid-template-columns: 1fr auto;
+        align-items: center;
+      }
+
+      .cards {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .status-line {
+        display: grid;
+        justify-items: end;
+        gap: 12px;
+        padding-top: 0;
+        padding-left: 18px;
+        border-top: 0;
+        border-left: 1px solid var(--border);
+      }
+
+      .header-actions {
+        justify-content: flex-end;
+      }
+
+      .header-actions a,
+      .header-actions button {
+        flex: 0 0 auto;
+      }
+
+      .settings-page {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+        grid-template-rows: auto 1fr;
+        align-items: start;
+      }
+
+      .settings-card.providers-card {
+        grid-row: span 2;
+      }
+    }
+
+    @media (prefers-reduced-motion: no-preference) {
+      .provider-card {
+        animation: reveal 180ms ease-out both;
+      }
+
+      .header-actions button[data-refresh-state="busy"]::before {
+        animation: spin 700ms linear infinite;
+      }
+
+      @keyframes reveal {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+    }
+  </style>
+</head>
+<body data-omo-dashboard="v1">
+  <div class="shell">
+    <header class="summary">
+      <div class="identity">
+        <div class="identity-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path d="M4 15a8 8 0 1 1 16 0"></path>
+            <path d="M12 12l4-4"></path>
+            <path d="M6.5 18h11"></path>
+          </svg>
+        </div>
+        <div class="title-block">
+          <p class="eyebrow" id="page-eyebrow">Private dashboard</p>
+          <h1>OmoUsage</h1>
+        </div>
+      </div>
+      <div class="status-line" aria-live="polite">
+        <span class="connection">
+          <span class="status-dot" id="status-dot"></span>
+          <span class="status-text" id="status-text">Loading usage</span>
+        </span>
+        <span class="metadata" id="refreshed-at">Connecting to your Mac</span>
+        <div class="header-actions">
+          <a id="page-link" href="/settings">Settings</a>
+          <button
+            id="refresh-button"
+            type="button"
+            data-refresh-state="idle"
+          >Refresh</button>
+        </div>
+      </div>
+    </header>
+
+    <p
+      id="command-error"
+      class="settings-error command-error"
+      aria-live="assertive"
+      hidden
+    ></p>
+
+    <main>
+      <section id="dashboard-page">
+        <section class="cards" id="cards" aria-label="Provider usage">
+          <div class="state-card" id="state-card">
+            <h2 data-i18n="loadingUsage">Loading usage</h2>
+            <p data-i18n="loadingSnapshot">
+              The latest private snapshot is being read from your Mac.
+            </p>
+          </div>
+        </section>
+      </section>
+
+      <div id="settings-page" class="settings-page" hidden>
+        <section class="settings-card">
+          <div class="settings-card-header">
+            <h2 data-i18n="webDisplay">Web display</h2>
+            <p class="settings-description" data-i18n="webDisplayDescription">
+              This preference changes only this private web dashboard.
+            </p>
+          </div>
+          <label class="field-label" for="web-language-select">
+            <span data-i18n="webLanguage">Web language</span>
+            <select id="web-language-select">
+              <option value="korean" lang="ko">한국어</option>
+              <option value="english" lang="en">English</option>
+            </select>
+          </label>
+        </section>
+
+        <section class="settings-card providers-card">
+          <div class="settings-card-header">
+            <h2 data-i18n="providers">Providers</h2>
+            <p class="settings-description" data-i18n="providersDescription">
+              Reorder providers or choose which ones appear in local refreshes.
+            </p>
+          </div>
+          <div
+            id="provider-settings"
+            class="provider-settings"
+          ></div>
+        </section>
+
+        <section class="settings-card">
+          <div class="settings-card-header">
+            <h2 data-i18n="privateSynchronization">
+              Private synchronization
+            </h2>
+            <p
+              class="settings-description"
+              data-i18n="privateSynchronizationDescription"
+            >
+              Credentials, local paths, login items, and API keys never appear
+              on this page.
+            </p>
+          </div>
+          <p id="settings-sync" class="settings-sync" aria-live="polite">
+            Loading local settings
+          </p>
+          <p
+            id="settings-error"
+            class="settings-error"
+            aria-live="polite"
+            hidden
+          ></p>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const providerNames = {
+      claude: "Claude Code",
+      codex: "Codex",
+      cursor: "Cursor",
+      antigravity: "Antigravity",
+      copilot: "Copilot",
+      devin: "Devin",
+      grok: "Grok",
+      opencode: "OpenCode",
+      openrouter: "OpenRouter",
+      zai: "Z.ai"
+    };
+    const localizedCopy = {
+      english: {
+        privateDashboard: "Private dashboard",
+        privateSettings: "Private settings",
+        dashboard: "Dashboard",
+        settings: "Settings",
+        loadingUsage: "Loading usage",
+        loadingSnapshot:
+          "The latest private snapshot is being read from your Mac.",
+        connectingMac: "Connecting to your Mac",
+        providerUsage: "Provider usage",
+        webDisplay: "Web display",
+        webDisplayDescription:
+          "This preference changes only this private web dashboard.",
+        webLanguage: "Web language",
+        providers: "Providers",
+        providersDescription:
+          "Reorder providers or choose which ones appear in local refreshes.",
+        privateSynchronization: "Private synchronization",
+        privateSynchronizationDescription:
+          "Credentials, local paths, login items, and API keys never appear "
+            + "on this page.",
+        loadingLocalSettings: "Loading local settings",
+        unknownRefreshTime: "Unknown refresh time",
+        remaining: "remaining",
+        resets: "Resets {date}",
+        providerUpdated: "Provider updated {date}",
+        available: "Available",
+        authenticationRequired: "Authentication required",
+        unavailable: "Unavailable",
+        refreshFailed: "Refresh failed",
+        refreshing: "Refreshing",
+        noUsage: "No usage yet",
+        noUsageDescription:
+          "Open OmoUsage on your Mac and let it complete a refresh.",
+        privateCurrent: "Private and current",
+        refreshed: "Refreshed {date}",
+        macUnavailable: "Mac unavailable",
+        dashboardUnavailable: "Dashboard unavailable",
+        dashboardUnavailableDescription:
+          "Keep OmoUsage running on your Mac and check your Tailscale "
+            + "connection.",
+        localRefreshInProgress: "Local refresh in progress",
+        synchronized: "Synchronized with local OmoUsage",
+        localSettingsUnavailable: "Local settings are unavailable.",
+        synchronizing: "Synchronizing with local OmoUsage",
+        settingFailed: "The local setting could not be changed.",
+        visible: "Visible",
+        hidden: "Hidden",
+        moveUp: "Move up",
+        moveDown: "Move down",
+        moveProviderUp: "Move {provider} up",
+        moveProviderDown: "Move {provider} down",
+        hide: "Hide",
+        show: "Show",
+        hideProvider: "Hide {provider}",
+        showProvider: "Show {provider}",
+        refresh: "Refresh",
+        refreshDidNotComplete: "The local refresh did not complete."
+      },
+      korean: {
+        privateDashboard: "비공개 대시보드",
+        privateSettings: "비공개 설정",
+        dashboard: "대시보드",
+        settings: "설정",
+        loadingUsage: "사용량 불러오는 중",
+        loadingSnapshot: "Mac에서 최신 비공개 사용량을 읽고 있습니다.",
+        connectingMac: "Mac에 연결하는 중",
+        providerUsage: "제공자 사용량",
+        webDisplay: "웹 표시",
+        webDisplayDescription:
+          "이 설정은 비공개 웹 대시보드에만 적용됩니다.",
+        webLanguage: "웹 언어",
+        providers: "제공자",
+        providersDescription:
+          "제공자 순서를 바꾸거나 로컬 새로고침에 포함할 항목을 고릅니다.",
+        privateSynchronization: "비공개 동기화",
+        privateSynchronizationDescription:
+          "인증 정보, 로컬 경로, 로그인 항목, API 키는 이 페이지에 "
+            + "표시되지 않습니다.",
+        loadingLocalSettings: "로컬 설정 불러오는 중",
+        unknownRefreshTime: "새로고침 시간 알 수 없음",
+        remaining: "남음",
+        resets: "{date}에 초기화",
+        providerUpdated: "제공자 업데이트 {date}",
+        available: "사용 가능",
+        authenticationRequired: "인증 필요",
+        unavailable: "사용할 수 없음",
+        refreshFailed: "새로고침 실패",
+        refreshing: "새로고침 중",
+        noUsage: "아직 사용량 없음",
+        noUsageDescription:
+          "Mac에서 OmoUsage를 열고 새로고침이 끝날 때까지 기다리세요.",
+        privateCurrent: "비공개 최신 상태",
+        refreshed: "새로고침 {date}",
+        macUnavailable: "Mac에 연결할 수 없음",
+        dashboardUnavailable: "대시보드를 사용할 수 없음",
+        dashboardUnavailableDescription:
+          "Mac에서 OmoUsage가 실행 중인지 확인하고 Tailscale 연결을 "
+            + "점검하세요.",
+        localRefreshInProgress: "로컬 새로고침 진행 중",
+        synchronized: "로컬 OmoUsage와 동기화됨",
+        localSettingsUnavailable: "로컬 설정을 불러올 수 없습니다.",
+        synchronizing: "로컬 OmoUsage와 동기화 중",
+        settingFailed: "로컬 설정을 변경하지 못했습니다.",
+        visible: "표시",
+        hidden: "숨김",
+        moveUp: "위로",
+        moveDown: "아래로",
+        moveProviderUp: "{provider} 위로 이동",
+        moveProviderDown: "{provider} 아래로 이동",
+        hide: "숨기기",
+        show: "표시하기",
+        hideProvider: "{provider} 숨기기",
+        showProvider: "{provider} 표시하기",
+        refresh: "새로고침",
+        refreshDidNotComplete: "로컬 새로고침이 완료되지 않았습니다."
+      }
+    };
+    let webLanguage = "english";
+
+    function localized(key, values = {}) {
+      let value = localizedCopy[webLanguage]?.[key]
+        || localizedCopy.english[key]
+        || key;
+      for (const [name, replacement] of Object.entries(values)) {
+        value = value.replaceAll(`{${name}}`, String(replacement));
+      }
+      return value;
+    }
+
+    function applyLanguage(language) {
+      webLanguage = language === "korean" ? "korean" : "english";
+      document.documentElement.lang = webLanguage === "korean" ? "ko" : "en";
+      for (const node of document.querySelectorAll("[data-i18n]")) {
+        node.textContent = localized(node.dataset.i18n);
+      }
+      cards.setAttribute("aria-label", localized("providerUsage"));
+    }
+
+    const providerOrder = new Map(
+      Object.keys(providerNames).map((provider, index) => [provider, index])
+    );
+    const availabilityLabels = {
+      available: "available",
+      authenticationRequired: "authenticationRequired",
+      unavailable: "unavailable",
+      failed: "refreshFailed"
+    };
+
+    const cards = document.querySelector("#cards");
+    const statusDot = document.querySelector("#status-dot");
+    const statusText = document.querySelector("#status-text");
+    const refreshedAt = document.querySelector("#refreshed-at");
+    const stateCard = document.querySelector("#state-card");
+
+    function element(tag, className, text) {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text !== undefined) node.textContent = text;
+      return node;
+    }
+
+    function formatDate(milliseconds) {
+      const date = new Date(milliseconds);
+      if (Number.isNaN(date.getTime())) {
+        return localized("unknownRefreshTime");
+      }
+      return new Intl.DateTimeFormat(
+        webLanguage === "korean" ? "ko-KR" : "en",
+        {
+        dateStyle: "medium",
+        timeStyle: "short"
+        }
+      ).format(date);
+    }
+
+    function meterNode(meter) {
+      const wrapper = element("div", "meter");
+      const heading = element("div", "meter-heading");
+      heading.append(
+        element("span", "meter-title", meter.title),
+        element("span", "meter-value", `${meter.percentRemaining}%`)
+      );
+
+      const progress = element("progress");
+      progress.max = 100;
+      progress.value = meter.percentRemaining;
+      progress.setAttribute(
+        "aria-label",
+        `${meter.title}: ${meter.percentRemaining}% ${localized("remaining")}`
+      );
+      if (meter.period === "extra") progress.classList.add("extra");
+      wrapper.append(heading, progress);
+
+      const reset = meter.resetText
+        || (
+          meter.resetsAt
+            ? localized("resets", { date: formatDate(meter.resetsAt) })
+            : ""
+        );
+      if (reset) wrapper.append(element("p", "reset-text", reset));
+      return wrapper;
+    }
+
+    function groupNode(group) {
+      const wrapper = element("section", "group");
+      if (group.title) {
+        wrapper.append(element("h3", "group-title", group.title));
+      }
+      for (const meter of group.meters || []) {
+        wrapper.append(meterNode(meter));
+      }
+      if (group.creditText) {
+        wrapper.append(element("p", "credit", group.creditText));
+      }
+      return wrapper;
+    }
+
+    function providerNode(provider) {
+      const article = element("article", "provider-card");
+      const heading = element("header", "provider-heading");
+      heading.append(
+        element(
+          "h2",
+          "provider-title",
+          providerNames[provider.provider] || provider.provider
+        ),
+        element("span", "plan", provider.planName)
+      );
+      article.append(heading);
+      const availability = element(
+        "p",
+        "availability",
+        localized(
+          availabilityLabels[provider.availability] || "unavailable"
+        )
+      );
+      availability.dataset.availability = provider.availability
+        || "unavailable";
+      article.append(availability);
+      for (const group of provider.groups || []) {
+        article.append(groupNode(group));
+      }
+      if (provider.updatedAt) {
+        article.append(
+          element(
+            "p",
+            "metadata",
+            localized(
+              "providerUpdated",
+              { date: formatDate(provider.updatedAt) }
+            )
+          )
+        );
+      }
+      return article;
+    }
+
+    function showState(title, message) {
+      stateCard.replaceChildren(
+        element("h2", "", title),
+        element("p", "", message)
+      );
+      cards.replaceChildren(stateCard);
+    }
+
+    async function refresh() {
+      statusDot.dataset.state = "loading";
+      statusText.textContent = localized("refreshing");
+      try {
+        const response = await fetch("/api/snapshot", {
+          cache: "no-store",
+          headers: { Accept: "application/json" }
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const snapshot = await response.json();
+        const providers = (
+          Array.isArray(snapshot.providers)
+            ? [...snapshot.providers]
+            : []
+        ).sort(
+          (left, right) =>
+            (providerOrder.get(left.provider) ?? Number.MAX_SAFE_INTEGER)
+            - (providerOrder.get(right.provider) ?? Number.MAX_SAFE_INTEGER)
+        );
+
+        if (providers.length === 0) {
+          showState(
+            localized("noUsage"),
+            localized("noUsageDescription")
+          );
+        } else {
+          cards.replaceChildren(...providers.map(providerNode));
+        }
+        statusDot.dataset.state = "current";
+        statusText.textContent = localized("privateCurrent");
+        refreshedAt.textContent = localized(
+          "refreshed",
+          { date: formatDate(snapshot.refreshedAt) }
+        );
+      } catch (error) {
+        statusDot.dataset.state = "unavailable";
+        statusText.textContent = localized("macUnavailable");
+        showState(
+          localized("dashboardUnavailable"),
+          localized("dashboardUnavailableDescription")
+        );
+      }
+    }
+
+    refresh();
+    setInterval(refresh, 30_000);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") refresh();
+    });
+  </script>
+  <script>
+    const csrfToken = document
+      .querySelector('meta[name="omo-csrf"]')
+      .content;
+    const isSettingsPage = location.pathname === "/settings";
+    const dashboardPage = document.querySelector("#dashboard-page");
+    const settingsPage = document.querySelector("#settings-page");
+    const pageEyebrow = document.querySelector("#page-eyebrow");
+    const pageLink = document.querySelector("#page-link");
+    const refreshButton = document.querySelector("#refresh-button");
+    const webLanguageSelect = document.querySelector(
+      "#web-language-select"
+    );
+    const providerSettings = document.querySelector("#provider-settings");
+    const settingsSync = document.querySelector("#settings-sync");
+    const settingsError = document.querySelector("#settings-error");
+    const commandError = document.querySelector("#command-error");
+
+    let localSettingsState = null;
+    const settingsMutationsInFlight = new Map();
+    let refreshCommandInFlight = false;
+
+    function configurePage() {
+      dashboardPage.hidden = isSettingsPage;
+      settingsPage.hidden = !isSettingsPage;
+      pageEyebrow.textContent = isSettingsPage
+        ? localized("privateSettings")
+        : localized("privateDashboard");
+      pageLink.href = isSettingsPage ? "/" : "/settings";
+      pageLink.textContent = isSettingsPage
+        ? localized("dashboard")
+        : localized("settings");
+      document.title = isSettingsPage
+        ? `${localized("settings")} · OmoUsage`
+        : "OmoUsage";
+    }
+
+    function delay(milliseconds) {
+      return new Promise((resolve) => setTimeout(resolve, milliseconds));
+    }
+
+    function updateRefreshButton() {
+      const isBusy = refreshCommandInFlight
+        || localSettingsState?.isRefreshing === true;
+      refreshButton.disabled = isBusy;
+      refreshButton.dataset.refreshState = isBusy ? "busy" : "idle";
+      refreshButton.textContent = isBusy
+        ? localized("refreshing")
+        : localized("refresh");
+    }
+
+    function settingsOrderKey(state) {
+      return Array.isArray(state?.providerOrder)
+        ? state.providerOrder.join(",")
+        : "";
+    }
+
+    function presentationSettingsState() {
+      if (!localSettingsState) return null;
+      const presentation = {
+        ...localSettingsState,
+        providerOrder: [...localSettingsState.providerOrder],
+        disconnectedProviders: [
+          ...localSettingsState.disconnectedProviders
+        ]
+      };
+      for (const expected of settingsMutationsInFlight.values()) {
+        if (expected.providerOrder) {
+          presentation.providerOrder = [...expected.providerOrder];
+        } else if (expected.webLanguage) {
+          presentation.webLanguage = expected.webLanguage;
+        } else if (expected.provider) {
+          const disconnected = new Set(
+            presentation.disconnectedProviders
+          );
+          if (expected.visible) {
+            disconnected.delete(expected.provider);
+          } else {
+            disconnected.add(expected.provider);
+          }
+          presentation.disconnectedProviders = [...disconnected];
+        }
+      }
+      return presentation;
+    }
+
+    function settingsPresentationKey(state) {
+      if (!state) return "";
+      return JSON.stringify({
+        webLanguage: state.webLanguage,
+        providerOrder: state.providerOrder,
+        disconnectedProviders: [...state.disconnectedProviders].sort()
+      });
+    }
+
+    function applySettingsState(next) {
+      const previousOrder = settingsOrderKey(localSettingsState);
+      const previousPresentation = settingsPresentationKey(
+        presentationSettingsState()
+      );
+      const webLanguageChanged = localSettingsState?.webLanguage
+        && localSettingsState.webLanguage !== next.webLanguage;
+      const refreshCompleted = localSettingsState?.isRefreshing === true
+        && next.isRefreshing === false;
+      localSettingsState = next;
+      applyLanguage(next.webLanguage);
+
+      providerOrder.clear();
+      for (const [index, provider] of next.providerOrder.entries()) {
+        providerOrder.set(provider, index);
+      }
+      updateRefreshButton();
+      if (
+        isSettingsPage
+        && previousPresentation
+          !== settingsPresentationKey(presentationSettingsState())
+      ) {
+        renderSettings();
+      }
+      if (
+        refreshCompleted
+        || webLanguageChanged
+        || (previousOrder && previousOrder !== settingsOrderKey(next))
+      ) {
+        refresh();
+      }
+      configurePage();
+      return next;
+    }
+
+    async function fetchSettingsState() {
+      const response = await fetch("/api/settings", {
+        cache: "no-store",
+        headers: { Accept: "application/json" }
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return response.json();
+    }
+
+    async function syncSettings() {
+      try {
+        const state = applySettingsState(await fetchSettingsState());
+        settingsError.hidden = true;
+        const syncText = state.isRefreshing
+          ? localized("localRefreshInProgress")
+          : localized("synchronized");
+        if (settingsSync.textContent !== syncText) {
+          settingsSync.textContent = syncText;
+        }
+        return state;
+      } catch (error) {
+        settingsError.hidden = false;
+        settingsError.textContent = localized("localSettingsUnavailable");
+        throw error;
+      }
+    }
+
+    async function sendCommand(path, body) {
+      const headers = { "X-Omo-CSRF": csrfToken };
+      const options = {
+        method: "POST",
+        cache: "no-store",
+        headers
+      };
+      if (body !== undefined) {
+        headers["Content-Type"] = "application/json";
+        options.body = JSON.stringify(body);
+      }
+      const response = await fetch(path, options);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    }
+
+    function settingsMatch(expected) {
+      if (!localSettingsState) return false;
+      if (expected.providerOrder) {
+        return settingsOrderKey(localSettingsState)
+          === expected.providerOrder.join(",");
+      }
+      if (expected.webLanguage) {
+        return localSettingsState.webLanguage === expected.webLanguage;
+      }
+      if (expected.provider) {
+        const disconnected = new Set(
+          localSettingsState.disconnectedProviders
+        );
+        return disconnected.has(expected.provider) !== expected.visible;
+      }
+      return false;
+    }
+
+    async function waitForSettings(expected) {
+      for (let attempt = 0; attempt < 40; attempt += 1) {
+        applySettingsState(await fetchSettingsState());
+        if (settingsMatch(expected)) return;
+        await delay(100);
+      }
+      throw new Error("Local settings synchronization timed out");
+    }
+
+    async function mutateSettings(mutationKey, body, expected) {
+      if (settingsMutationsInFlight.has(mutationKey)) return;
+      settingsMutationsInFlight.set(mutationKey, expected);
+      settingsSync.textContent = localized("synchronizing");
+      settingsError.hidden = true;
+      renderSettings();
+      try {
+        await sendCommand("/api/settings", body);
+        await waitForSettings(expected);
+      } catch (error) {
+        settingsError.hidden = false;
+        settingsError.textContent = localized("settingFailed");
+      } finally {
+        settingsMutationsInFlight.delete(mutationKey);
+        if (settingsMutationsInFlight.size === 0) {
+          settingsSync.textContent = localized("synchronized");
+        }
+        renderSettings();
+      }
+    }
+
+    function settingsButton(label, action, provider, disabled) {
+      const button = element("button", "", label);
+      const mutationKey = `${action}:${provider}`;
+      const isPending = settingsMutationsInFlight.has(mutationKey);
+      button.type = "button";
+      button.dataset.action = action;
+      button.dataset.provider = provider;
+      button.disabled = disabled || isPending;
+      if (isPending) {
+        button.setAttribute("aria-busy", "true");
+      }
+      return button;
+    }
+
+    function renderSettings() {
+      if (!localSettingsState) return;
+      const activeControl = providerSettings.contains(document.activeElement)
+        ? {
+            action: document.activeElement.dataset.action,
+            provider: document.activeElement.dataset.provider
+          }
+        : null;
+      const presentation = presentationSettingsState();
+      const webLanguagePending = settingsMutationsInFlight.has(
+        "webLanguage"
+      );
+      webLanguageSelect.value = presentation.webLanguage;
+      webLanguageSelect.disabled = webLanguagePending;
+      if (webLanguagePending) {
+        webLanguageSelect.setAttribute("aria-busy", "true");
+      } else {
+        webLanguageSelect.removeAttribute("aria-busy");
+      }
+      const disconnected = new Set(
+        presentation.disconnectedProviders
+      );
+      const rows = presentation.providerOrder.map(
+        (provider, index, order) => {
+          const isVisible = !disconnected.has(provider);
+          const row = element("article", "provider-setting");
+          const copy = element("div", "provider-setting-copy");
+          copy.append(
+            element(
+              "h3",
+              "provider-setting-name",
+              providerNames[provider] || provider
+            ),
+            element(
+              "span",
+              "provider-setting-state",
+              isVisible ? localized("visible") : localized("hidden")
+            )
+          );
+
+          const actions = element("div", "provider-setting-actions");
+          const up = settingsButton(
+            localized("moveUp"),
+            "move-provider-up",
+            provider,
+            index === 0
+          );
+          up.setAttribute(
+            "aria-label",
+            localized(
+              "moveProviderUp",
+              { provider: providerNames[provider] || provider }
+            )
+          );
+          up.addEventListener("click", () => {
+            const next = [...order];
+            [next[index - 1], next[index]] = [
+              next[index],
+              next[index - 1]
+            ];
+            mutateSettings(
+              `move-provider-up:${provider}`,
+              { providerOrder: next },
+              { providerOrder: next }
+            );
+          });
+
+          const down = settingsButton(
+            localized("moveDown"),
+            "move-provider-down",
+            provider,
+            index === order.length - 1
+          );
+          down.setAttribute(
+            "aria-label",
+            localized(
+              "moveProviderDown",
+              { provider: providerNames[provider] || provider }
+            )
+          );
+          down.addEventListener("click", () => {
+            const next = [...order];
+            [next[index], next[index + 1]] = [
+              next[index + 1],
+              next[index]
+            ];
+            mutateSettings(
+              `move-provider-down:${provider}`,
+              { providerOrder: next },
+              { providerOrder: next }
+            );
+          });
+
+          const toggle = settingsButton(
+            isVisible ? localized("hide") : localized("show"),
+            "toggle-provider",
+            provider,
+            false
+          );
+          toggle.classList.add("visibility-button");
+          toggle.dataset.visible = String(isVisible);
+          toggle.setAttribute(
+            "aria-label",
+            localized(
+              isVisible ? "hideProvider" : "showProvider",
+              { provider: providerNames[provider] || provider }
+            )
+          );
+          toggle.addEventListener("click", () => {
+            mutateSettings(
+              `toggle-provider:${provider}`,
+              { provider, visible: !isVisible },
+              { provider, visible: !isVisible }
+            );
+          });
+          actions.append(up, down, toggle);
+          row.append(copy, actions);
+          return row;
+        }
+      );
+      providerSettings.replaceChildren(...rows);
+      if (activeControl?.action && activeControl?.provider) {
+        const selector = `[data-action="${activeControl.action}"]`
+          + `[data-provider="${activeControl.provider}"]`;
+        const replacement = providerSettings.querySelector(selector);
+        if (replacement && !replacement.disabled) {
+          replacement.focus();
+        } else {
+          providerSettings
+            .querySelector(
+              `[data-provider="${activeControl.provider}"]:not(:disabled)`
+            )
+            ?.focus();
+        }
+      }
+    }
+
+    async function triggerLocalRefresh() {
+      if (refreshCommandInFlight || localSettingsState?.isRefreshing) return;
+      refreshCommandInFlight = true;
+      updateRefreshButton();
+      commandError.hidden = true;
+      try {
+        const before = (
+          localSettingsState
+          || applySettingsState(await fetchSettingsState())
+        ).refreshRevision;
+        await sendCommand("/api/refresh");
+        for (let attempt = 0; attempt < 120; attempt += 1) {
+          const state = applySettingsState(await fetchSettingsState());
+          if (
+            !state.isRefreshing
+            && state.refreshRevision > before
+          ) {
+            await refresh();
+            return;
+          }
+          await delay(250);
+        }
+        throw new Error("Local refresh synchronization timed out");
+      } catch (error) {
+        commandError.hidden = false;
+        commandError.textContent = localized("refreshDidNotComplete");
+      } finally {
+        refreshCommandInFlight = false;
+        updateRefreshButton();
+      }
+    }
+
+    webLanguageSelect.addEventListener("change", () => {
+      mutateSettings(
+        "webLanguage",
+        { webLanguage: webLanguageSelect.value },
+        { webLanguage: webLanguageSelect.value }
+      );
+    });
+    refreshButton.addEventListener("click", triggerLocalRefresh);
+
+    configurePage();
+    syncSettings().then(refresh).catch(() => {});
+    setInterval(() => syncSettings().catch(() => {}), 2_000);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") {
+        syncSettings().catch(() => {});
+      }
+    });
+  </script>
+</body>
+</html>

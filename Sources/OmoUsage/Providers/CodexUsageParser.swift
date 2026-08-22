@@ -19,11 +19,22 @@ enum CodexUsageParser {
         let credits = UsageJSON.object(object["credits"])
             .flatMap { UsageJSON.number($0["balance"]) }
             .map { max(0, Int($0.rounded(.down))) }
+        let resetTickets = UsageJSON.object(
+            object["rate_limit_reset_credits"]
+        )
+            .flatMap { UsageJSON.number($0["available_count"]) }
+            .map { max(0, Int($0.rounded(.down))) }
+        let creditText = [
+            credits.map { "크레딧 \($0)" },
+            resetTickets.map { "풀 리셋 티켓 \($0)" }
+        ]
+            .compactMap { $0 }
+            .joined(separator: "    ")
         let group = UsageGroup(
             id: "codex.main",
             title: nil,
             meters: meters,
-            creditText: credits.map { "크레딧 \($0)" }
+            creditText: creditText.isEmpty ? nil : creditText
         )
         let reportedPlan = planName(object["plan_type"])
         return ProviderUsage(

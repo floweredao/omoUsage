@@ -26,6 +26,8 @@ cp "Config/Info.plist" "$CONTENTS/Info.plist"
 cp Sources/OmoUsage/Resources/ProviderIcons/*.svg \
     "$CONTENTS/Resources/ProviderIcons/"
 cp Sources/OmoUsage/Resources/AppIcon.svg "$CONTENTS/Resources/AppIcon.svg"
+cp Sources/OmoUsage/Resources/WebDashboard/index.html \
+    "$CONTENTS/Resources/index.html"
 
 rm -rf "$ICONSET"
 swift Scripts/generate-app-icon.swift \

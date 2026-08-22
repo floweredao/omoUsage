@@ -96,15 +96,133 @@ struct UsageDashboardViewModelTests {
         let first = Task { await viewModel.refresh() }
         _ = await iterator.next()
 
-        let secondCompleted = await completesWithinOneSecond {
+        let second = Task {
             await viewModel.refresh()
         }
-        #expect(secondCompleted)
 
         await gate.open()
         await first.value
+        await second.value
         #expect(await gate.callCount == 1)
         #expect(viewModel.isRefreshing == false)
+    }
+
+    @Test
+    @MainActor
+    func reconnectDuringRefreshQueuesAnotherPass() async {
+        let (events, signal) = AsyncStream<Void>.makeStream()
+        var iterator = events.makeAsyncIterator()
+        let gate = ProviderGate()
+        let counter = ProviderFetchCounter()
+        let viewModel = UsageDashboardViewModel(
+            providers: [
+                GatedUsageProvider(
+                    id: .claude,
+                    usage: makeUsage(.claude),
+                    gate: gate,
+                    signal: signal
+                ),
+                CountingUsageProvider(
+                    id: .codex,
+                    usage: makeUsage(.codex),
+                    counter: counter
+                )
+            ],
+            disconnectedProviders: [.codex],
+            now: { now }
+        )
+
+        let refresh = Task { await viewModel.refresh() }
+        _ = await iterator.next()
+
+        viewModel.reconnectProvider(.codex)
+        await gate.open()
+        await refresh.value
+
+        #expect(await counter.count(for: .codex) == 1)
+        #expect(viewModel.snapshot.providers.map(\.provider) == [.claude, .codex])
+    }
+
+    @Test
+    @MainActor
+    func publishesControlStateForLocalMutations() {
+        var published: [UsageDashboardControlState] = []
+        let viewModel = UsageDashboardViewModel(
+            providers: [],
+            providerOrder: ProviderID.allCases,
+            persistProviderOrder: { _ in },
+            disconnectedProviders: [.copilot],
+            persistDisconnectedProviders: { _ in },
+            publishControlState: { published.append($0) },
+            now: { now }
+        )
+
+        var movedOrder = ProviderID.allCases
+        movedOrder.swapAt(0, 1)
+        viewModel.setProviderOrder(movedOrder)
+        viewModel.disconnectProvider(.codex)
+        viewModel.reconnectProvider(.copilot)
+
+        #expect(
+            published == [
+                UsageDashboardControlState(
+                    providerOrder: ProviderID.allCases,
+                    disconnectedProviders: [.copilot],
+                    isRefreshing: false
+                ),
+                UsageDashboardControlState(
+                    providerOrder: movedOrder,
+                    disconnectedProviders: [.copilot],
+                    isRefreshing: false
+                ),
+                UsageDashboardControlState(
+                    providerOrder: movedOrder,
+                    disconnectedProviders: [.copilot, .codex],
+                    isRefreshing: false
+                ),
+                UsageDashboardControlState(
+                    providerOrder: movedOrder,
+                    disconnectedProviders: [.codex],
+                    isRefreshing: false
+                )
+            ]
+        )
+    }
+
+    @Test
+    @MainActor
+    func publishesRefreshingControlState() async {
+        let (events, signal) = AsyncStream<Void>.makeStream()
+        var iterator = events.makeAsyncIterator()
+        let gate = ProviderGate()
+        var published: [UsageDashboardControlState] = []
+        let viewModel = UsageDashboardViewModel(
+            providers: [
+                GatedUsageProvider(
+                    id: .claude,
+                    usage: makeUsage(.claude),
+                    gate: gate,
+                    signal: signal
+                )
+            ],
+            publishControlState: { published.append($0) },
+            now: { now }
+        )
+
+        let first = Task { await viewModel.refresh() }
+        _ = await iterator.next()
+
+        let second = Task {
+            await viewModel.refresh()
+        }
+        #expect(published.map(\.isRefreshing) == [false, true])
+
+        await gate.open()
+        await first.value
+        await second.value
+
+        #expect(published.map(\.isRefreshing) == [false, true, false])
+        #expect(await gate.callCount == 1)
     }
 
     @Test
@@ -369,40 +487,21 @@ private struct GatedUsageProvider: UsageProvider {
 
 private actor ProviderGate {
     private var continuations: [CheckedContinuation<Void, Never>] = []
+    private var isOpen = false
     private(set) var callCount = 0
 
     func wait() async {
         callCount += 1
+        guard !isOpen else { return }
         await withCheckedContinuation { continuation in
             continuations.append(continuation)
         }
     }
 
     func open() {
+        isOpen = true
         let waiting = continuations
         continuations.removeAll()
         waiting.forEach { $0.resume() }
     }
-}
-
-private func completesWithinOneSecond(
-    _ operation: @escaping @MainActor @Sendable () async -> Void
-) async -> Bool {
-    let (events, continuation) = AsyncStream<Bool>.makeStream()
-    let operationTask = Task { @MainActor in
-        await operation()
-        continuation.yield(true)
-    }
-    let timeoutTask = Task {
-        try? await Task.sleep(for: .seconds(1))
-        continuation.yield(false)
-    }
-    var iterator = events.makeAsyncIterator()
-    let completed = await iterator.next() ?? false
-    timeoutTask.cancel()
-    if !completed {
-        operationTask.cancel()
-    }
-    continuation.finish()
-    return completed
 }
