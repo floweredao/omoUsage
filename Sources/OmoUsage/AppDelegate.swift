@@ -95,6 +95,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let viewModel: UsageDashboardViewModel
     private let localization: LocalizationController
     private let snapshotSync: UbiquitousUsageSnapshotStore
+    private let webDashboardSnapshotStore: WebDashboardSnapshotStore
+    private let webDashboardSettingsStore: WebDashboardSettingsStore
+    private let webDashboardLanguageStore: WebDashboardLanguageStore
+    private let webDashboardCommandBridge: WebDashboardCommandBridge
+    private let webDashboardServer: WebDashboardServer
     private var statusItem: NSStatusItem!
     private let statusPopover = NSPopover()
     private let dismissalController = PopoverDismissalController(
@@ -110,23 +115,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     override init() {
         let snapshotSync = UbiquitousUsageSnapshotStore()
-        self.snapshotSync = snapshotSync
-        localization = LocalizationController(
+        let localization = LocalizationController(
             store: AppLanguageStore(defaults: .standard)
         )
+        let webDashboardLanguageStore = WebDashboardLanguageStore(
+            defaults: .standard,
+            fallback: localization.language
+        )
+        let webLanguage = webDashboardLanguageStore.load()
+        webDashboardLanguageStore.save(webLanguage)
         let orderStore = ProviderDisplayOrderStore(
             defaults: .standard
         )
         let disconnectionStore = ProviderDisconnectionStore(
             defaults: .standard
         )
-        viewModel = UsageDashboardViewModel(
+        let providerOrder = orderStore.load()
+        let disconnectedProviders = disconnectionStore.load()
+        let webDashboardSnapshotStore = WebDashboardSnapshotStore(
+            DashboardSnapshot(
+                providers: [],
+                refreshedAt: Date()
+            )
+        )
+        let webDashboardSettingsStore = WebDashboardSettingsStore(
+            controlState: UsageDashboardControlState(
+                providerOrder: providerOrder,
+                disconnectedProviders: disconnectedProviders,
+                isRefreshing: false
+            ),
+            language: webLanguage
+        )
+        let webDashboardCommandBridge = WebDashboardCommandBridge()
+        let mutationNonce = UUID().uuidString.replacingOccurrences(
+            of: "-",
+            with: ""
+        )
+        let viewModel = UsageDashboardViewModel(
             providers: ProviderFactory.current(),
-            providerOrder: orderStore.load(),
+            providerOrder: providerOrder,
             persistProviderOrder: orderStore.save,
-            disconnectedProviders: disconnectionStore.load(),
+            disconnectedProviders: disconnectedProviders,
             persistDisconnectedProviders: disconnectionStore.save,
             publishSnapshot: { snapshot in
+                webDashboardSnapshotStore.update(snapshot)
                 do {
                     try snapshotSync.publish(snapshot)
                 } catch {
@@ -135,9 +167,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                         String(describing: error)
                     )
                 }
-            }
+            },
+            publishControlState: webDashboardSettingsStore.update
         )
+        let webDashboardServer = WebDashboardServer(
+            listener: NWWebDashboardListener(port: 7_827),
+            router: WebDashboardRouter(
+                snapshotData: {
+                    let language = AppLanguage(
+                        rawValue:
+                            webDashboardSettingsStore.state().webLanguage
+                    ) ?? .english
+                    return try UsageSnapshotCodec.encode(
+                        webDashboardSnapshotStore.snapshot().localized(
+                            using: LocalizationContext(language: language)
+                        )
+                    )
+                },
+                settingsData: webDashboardSettingsStore.encoded,
+                indexHTML: WebDashboardAssets.indexHTML(
+                    mutationNonce: mutationNonce
+                ),
+                appIconSVG: WebDashboardAssets.appIconSVG,
+                mutationNonce: mutationNonce,
+                dispatchCommand: webDashboardCommandBridge.send
+            )
+        )
+
+        self.viewModel = viewModel
+        self.localization = localization
+        self.snapshotSync = snapshotSync
+        self.webDashboardSnapshotStore = webDashboardSnapshotStore
+        self.webDashboardSettingsStore = webDashboardSettingsStore
+        self.webDashboardLanguageStore = webDashboardLanguageStore
+        self.webDashboardCommandBridge = webDashboardCommandBridge
+        self.webDashboardServer = webDashboardServer
         super.init()
+        webDashboardCommandBridge.install { [weak self] command in
+            self?.handleWebDashboardCommand(command)
+        }
     }
 
     func applicationDidFinishLaunching(
@@ -148,6 +216,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         configureStatusPopover()
 
         refreshScheduler.start()
+        do {
+            try webDashboardServer.start()
+        } catch {
+            NSLog(
+                "OmoUsage web dashboard start failed: %@",
+                String(describing: error)
+            )
+        }
 
         if
             ProcessInfo.processInfo.environment[
@@ -161,6 +237,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        webDashboardServer.stop()
         dismissalController.stop()
         refreshScheduler.stop()
         stopStabilizingPopoverWindow()
@@ -316,6 +393,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         statusItem?.button?.toolTip = title
         statusItem?.button?.setAccessibilityLabel(title)
         settingsWindow?.title = localization.text(.settingsTitle)
+    }
+
+    private func handleWebDashboardCommand(
+        _ command: WebDashboardCommand
+    ) {
+        switch command {
+        case .refresh:
+            Task { [weak self] in
+                await self?.viewModel.refresh()
+            }
+        case .setProviderOrder(let order):
+            viewModel.setProviderOrder(order)
+        case .setProviderVisibility(let provider, let isVisible):
+            if isVisible {
+                viewModel.reconnectProvider(provider)
+                Task { [weak self] in
+                    await self?.viewModel.refresh()
+                }
+            } else {
+                viewModel.disconnectProvider(provider)
+            }
+        case .setWebLanguage(let language):
+            webDashboardLanguageStore.save(language)
+            webDashboardSettingsStore.update(webLanguage: language)
+        }
     }
 
     private func stopStabilizingPopoverWindow() {

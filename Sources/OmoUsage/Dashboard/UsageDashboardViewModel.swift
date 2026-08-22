@@ -1,6 +1,12 @@
 import Foundation
 import Observation
 
+struct UsageDashboardControlState: Equatable, Sendable {
+    let providerOrder: [ProviderID]
+    let disconnectedProviders: Set<ProviderID>
+    let isRefreshing: Bool
+}
+
 @Observable
 @MainActor
 final class UsageDashboardViewModel {
@@ -14,9 +20,14 @@ final class UsageDashboardViewModel {
     private let persistDisconnectedProviders: (Set<ProviderID>) -> Void
     @ObservationIgnored
     private let publishSnapshot: @MainActor (DashboardSnapshot) -> Void
+    @ObservationIgnored
+    private let publishControlState:
+        @MainActor (UsageDashboardControlState) -> Void
 
     private(set) var snapshot: DashboardSnapshot
     private(set) var isRefreshing = false
+    @ObservationIgnored
+    private var refreshAfterCurrent = false
     private(set) var providerOrder: [ProviderID]
     private(set) var disconnectedProviders: Set<ProviderID>
     private(set) var connectionStates: [
@@ -34,6 +45,9 @@ final class UsageDashboardViewModel {
         publishSnapshot: @escaping @MainActor (
             DashboardSnapshot
         ) -> Void = { _ in },
+        publishControlState: @escaping @MainActor (
+            UsageDashboardControlState
+        ) -> Void = { _ in },
         now: @escaping @Sendable () -> Date = Date.init
     ) {
         self.providers = providers
@@ -44,6 +58,7 @@ final class UsageDashboardViewModel {
         self.disconnectedProviders = disconnectedProviders
         self.persistDisconnectedProviders = persistDisconnectedProviders
         self.publishSnapshot = publishSnapshot
+        self.publishControlState = publishControlState
         self.now = now
         snapshot = DashboardSnapshot(providers: [], refreshedAt: now())
         connectionStates = Dictionary(
@@ -51,6 +66,20 @@ final class UsageDashboardViewModel {
                 ($0, .authenticationRequired)
             }
         )
+        publishCurrentControlState()
+    }
+
+    func setProviderOrder(_ order: [ProviderID]) {
+        let repaired = ProviderDisplayOrder.repaired(order)
+        guard repaired != providerOrder else { return }
+        providerOrder = repaired
+        persistProviderOrder(providerOrder)
+        setSnapshot(.ordered(
+            providers: snapshot.providers,
+            refreshedAt: snapshot.refreshedAt,
+            providerOrder: providerOrder
+        ))
+        publishCurrentControlState()
     }
 
     func moveProvider(
@@ -73,6 +102,7 @@ final class UsageDashboardViewModel {
             refreshedAt: snapshot.refreshedAt,
             providerOrder: providerOrder
         ))
+        publishCurrentControlState()
     }
 
     func isDisconnected(_ provider: ProviderID) -> Bool {
@@ -92,6 +122,7 @@ final class UsageDashboardViewModel {
             refreshedAt: snapshot.refreshedAt,
             providerOrder: providerOrder
         ))
+        publishCurrentControlState()
     }
 
     func reconnectProvider(_ provider: ProviderID) {
@@ -100,109 +131,130 @@ final class UsageDashboardViewModel {
         }
         persistDisconnectedProviders(disconnectedProviders)
         connectionStates[provider] = .authenticationRequired
+        if isRefreshing {
+            refreshAfterCurrent = true
+        }
+        publishCurrentControlState()
     }
 
     func refresh() async {
         guard !isRefreshing else { return }
         isRefreshing = true
-        defer { isRefreshing = false }
+        publishCurrentControlState()
+        defer {
+            isRefreshing = false
+            publishCurrentControlState()
+        }
 
-        let fetchNow = now()
-        let results = await withTaskGroup(
-            of: ProviderFetchResult.self,
-            returning: [ProviderFetchResult].self
-        ) { group in
-            for provider in providers
-            where !disconnectedProviders.contains(provider.id) {
-                group.addTask {
-                    do {
-                        let usage = try await provider.fetch(now: fetchNow)
-                        return ProviderFetchResult(
-                            id: provider.id,
-                            usage: usage.availability == .available
-                                ? usage
-                                : nil,
-                            availability: usage.availability
-                        )
-                    } catch is CancellationError {
-                        return ProviderFetchResult(
-                            id: provider.id,
-                            usage: nil,
-                            availability: .failed,
-                            wasCancelled: true
-                        )
-                    } catch {
-                        return ProviderFetchResult(
-                            id: provider.id,
-                            usage: nil,
-                            availability: Self.availability(for: error),
-                            retainsPreviousUsage:
-                                Self.retainsPreviousUsage(for: error)
-                        )
+        repeat {
+            refreshAfterCurrent = false
+            let fetchNow = now()
+            let results = await withTaskGroup(
+                of: ProviderFetchResult.self,
+                returning: [ProviderFetchResult].self
+            ) { group in
+                for provider in providers
+                where !disconnectedProviders.contains(provider.id) {
+                    group.addTask {
+                        do {
+                            let usage = try await provider.fetch(now: fetchNow)
+                            return ProviderFetchResult(
+                                id: provider.id,
+                                usage: usage.availability == .available
+                                    ? usage
+                                    : nil,
+                                availability: usage.availability
+                            )
+                        } catch is CancellationError {
+                            return ProviderFetchResult(
+                                id: provider.id,
+                                usage: nil,
+                                availability: .failed,
+                                wasCancelled: true
+                            )
+                        } catch {
+                            return ProviderFetchResult(
+                                id: provider.id,
+                                usage: nil,
+                                availability: Self.availability(for: error),
+                                retainsPreviousUsage:
+                                    Self.retainsPreviousUsage(for: error)
+                            )
+                        }
                     }
                 }
+
+                var values: [ProviderFetchResult] = []
+                for await result in group {
+                    values.append(result)
+                }
+                return values
+            }
+            guard
+                !Task.isCancelled,
+                !results.contains(where: \.wasCancelled)
+            else {
+                return
             }
 
-            var values: [ProviderFetchResult] = []
-            for await result in group {
-                values.append(result)
-            }
-            return values
-        }
-        guard
-            !Task.isCancelled,
-            !results.contains(where: \.wasCancelled)
-        else {
-            return
-        }
-
-        let byProvider = Dictionary(
-            uniqueKeysWithValues: results.map { ($0.id, $0) }
-        )
-        connectionStates = Dictionary(
-            uniqueKeysWithValues: ProviderID.allCases.map { provider in
-                (
-                    provider,
-                    disconnectedProviders.contains(provider)
-                        ? .authenticationRequired
-                        : byProvider[provider]?.availability ?? .unavailable
-                )
-            }
-        )
-        let previous = Dictionary(
-            uniqueKeysWithValues: snapshot.providers.map {
-                ($0.provider, $0)
-            }
-        )
-        let usages: [ProviderUsage] = ProviderID.allCases.compactMap {
-            provider -> ProviderUsage? in
-            guard !disconnectedProviders.contains(provider) else {
+            let byProvider = Dictionary(
+                uniqueKeysWithValues: results.map { ($0.id, $0) }
+            )
+            connectionStates = Dictionary(
+                uniqueKeysWithValues: ProviderID.allCases.map { provider in
+                    (
+                        provider,
+                        disconnectedProviders.contains(provider)
+                            ? .authenticationRequired
+                            : byProvider[provider]?.availability ?? .unavailable
+                    )
+                }
+            )
+            let previous = Dictionary(
+                uniqueKeysWithValues: snapshot.providers.map {
+                    ($0.provider, $0)
+                }
+            )
+            let usages: [ProviderUsage] = ProviderID.allCases.compactMap {
+                provider -> ProviderUsage? in
+                guard !disconnectedProviders.contains(provider) else {
+                    return nil
+                }
+                guard let result = byProvider[provider] else {
+                    return nil
+                }
+                if let usage = result.usage {
+                    return usage
+                }
+                if
+                    result.availability == .failed
+                        || result.retainsPreviousUsage
+                {
+                    return previous[provider]
+                }
                 return nil
             }
-            guard let result = byProvider[provider] else {
-                return nil
-            }
-            if let usage = result.usage {
-                return usage
-            }
-            if
-                result.availability == .failed
-                    || result.retainsPreviousUsage
-            {
-                return previous[provider]
-            }
-            return nil
-        }
-        setSnapshot(.ordered(
-            providers: usages,
-            refreshedAt: now(),
-            providerOrder: providerOrder
-        ))
+            setSnapshot(.ordered(
+                providers: usages,
+                refreshedAt: now(),
+                providerOrder: providerOrder
+            ))
+        } while refreshAfterCurrent && !Task.isCancelled
     }
 
     private func setSnapshot(_ snapshot: DashboardSnapshot) {
         self.snapshot = snapshot
         publishSnapshot(snapshot)
+    }
+
+    private func publishCurrentControlState() {
+        publishControlState(
+            UsageDashboardControlState(
+                providerOrder: providerOrder,
+                disconnectedProviders: disconnectedProviders,
+                isRefreshing: isRefreshing
+            )
+        )
     }
 
     nonisolated
