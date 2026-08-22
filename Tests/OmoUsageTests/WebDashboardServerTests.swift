@@ -776,7 +776,7 @@ struct WebDashboardServerTests {
     }
 
     @Test
-    func settingsMutationsScopeBusyStateToAffectedControl() {
+    func settingsMutationsScopeBusyStateToAffectedControl() throws {
         let html = String(
             decoding: WebDashboardAssets.indexHTML(
                 mutationNonce: "test-nonce"
@@ -810,10 +810,14 @@ struct WebDashboardServerTests {
                 #"? "providerOrder""#
             )
         )
+        let orderMutationPattern = try NSRegularExpression(
+            pattern: #"mutateSettings\(\s*"providerOrder","#
+        )
         #expect(
-            html.contains(
-                #"mutateSettings("providerOrder","#
-            )
+            orderMutationPattern.numberOfMatches(
+                in: html,
+                range: NSRange(html.startIndex..<html.endIndex, in: html)
+            ) == 2
         )
         #expect(
             html.contains(
