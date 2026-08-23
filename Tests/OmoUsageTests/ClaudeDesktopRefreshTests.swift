@@ -109,6 +109,48 @@ struct ClaudeDesktopRefreshTests {
     }
 
     @Test
+    func parsesFableOnlyLimitWhenModelIDIsMissing() throws {
+        let data = Data(
+            """
+            {
+              "five_hour": {"utilization": 10},
+              "seven_day": {"utilization": 20},
+              "limits": [
+                {
+                  "kind": "weekly_scoped",
+                  "group": "weekly",
+                  "percent": 44,
+                  "resets_at": "2026-08-20T00:00:00.654321+00:00",
+                  "scope": {
+                    "model": {
+                      "id": null,
+                      "display_name": "Fable"
+                    }
+                  }
+                }
+              ]
+            }
+            """.utf8
+        )
+
+        let usage = try ClaudeUsageParser.parse(
+            data,
+            planName: "Max 20x",
+            now: Date(timeIntervalSince1970: 1_785_675_000)
+        )
+        let fable = try #require(
+            usage.groups
+                .flatMap(\.meters)
+                .first { $0.id == "claude.week.model.fable" }
+        )
+
+        #expect(fable.id == "claude.week.model.fable")
+        #expect(fable.title == "Fable 주간")
+        #expect(fable.percentRemaining == 56)
+        #expect(fable.resetsAt != nil)
+    }
+
+    @Test
     func refreshesFromDesktopSessionWhenCodeCredentialMissing() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appending(path: "OmoUsageClaudeRefresh-\(UUID().uuidString)")
