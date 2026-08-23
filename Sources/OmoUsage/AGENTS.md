@@ -17,15 +17,18 @@ Settings/                UserDefaults-backed stores and ProviderSetup actions
 Views/                   AppKit/SwiftUI popover and settings surfaces
 Localization/            AppStringKey catalog, AppLanguage, provider text mapping
 Sync/                    UsageSnapshotCodec + iCloud KVS store
+WebDashboard/            loopback HTTP server, sanitized snapshot/control surface
 Mobile/                  iOS/Catalyst entry and read-only view
 Resources/ProviderIcons  bundled icon assets
+Resources/WebDashboard  single bundled HTML/CSS/JS dashboard
 ```
 
 ## WHERE TO LOOK
 
-- Composition happens once in `AppDelegate`: it builds the stores, asks `ProviderFactory.current` for the roster, injects persistence and `publishSnapshot` closures into `UsageDashboardViewModel`, then drives `UsageRefreshScheduler` and the popover. Nothing else constructs providers.
+- Composition happens once in `AppDelegate`: it builds stores, providers, `UsageDashboardViewModel`, refresh scheduling, the native popover, and the loopback web server. Nothing else constructs providers or owns refreshes.
 - The view model takes every dependency by closure or array in `init`, including `now`. Tests build it directly; don't reach for singletons inside it.
 - `Sync/UsageSnapshotSync.swift` is the only bridge between halves. macOS encodes a `DashboardSnapshot` through `UsageSnapshotCodec` (version 1, 256 KB cap, millisecond dates) and Mobile decodes it. Any field added to `Models/` that reaches the codec becomes mobile-visible data, so treat model edits as a privacy decision.
+- `WebDashboard/WebDashboardServer.swift` owns HTTP parsing, route authorization, settings commands, listener lifecycle, and synchronized snapshot/settings stores. `Resources/WebDashboard/index.html` is its bundled zero-dependency client.
 - The minimum provider path is `Models/ProviderID.swift`, a new `Providers/*UsageProvider.swift`, `ProviderFactory`, and `Settings/ProviderSetup.swift`; roster and reliability tests complete the change. Display strings go through `Localization/`, never string literals in views.
 - Parsing lives apart from fetching for the messy providers (`ClaudeUsageParser`, `CodexUsageParser`, `AntigravityUsageParser`); shared shapes are in `ProviderPayload` and `UsageParsing`. Put schema tolerance in the parser, HTTP concerns in the provider.
 
@@ -44,6 +47,7 @@ Resources/ProviderIcons  bundled icon assets
 - Don't spawn refreshes outside the view model or add a second scheduler. Cancellation must leave state and timestamp untouched.
 - Don't reintroduce `@MainActor` hops inside provider `fetch`; the fetch group runs off the main actor by design.
 - Don't hardcode provider display text, colors, or ordering in `Views/`; they come from `Localization/`, `ProviderVisualStyle`, and the roster.
+- Don't let `WebDashboard/` call providers or credentials directly; it delegates commands to the existing main-actor view model and serves sanitized snapshots.
 - Don't add a file without deciding its target membership in `project.yml`. SwiftPM building clean proves nothing about the mobile target.
 
 Per-folder AGENTS.md files, where present, win over this file for anything inside them.
