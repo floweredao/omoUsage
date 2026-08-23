@@ -2,7 +2,7 @@
 
 ## OVERVIEW
 
-One SwiftPM test target, 37 files, all Swift Testing (`import Testing`, `@testable import OmoUsage`). No XCTest, no network, no real Keychain. Every provider gets a `*ReliabilityTests.swift` file that pins its real-world failure modes; shared behavior lives in the dashboard, credential, and parsing suites.
+One SwiftPM test target, 38 files, all Swift Testing (`import Testing`, `@testable import OmoUsage`). No XCTest, no network, no real Keychain. Every provider gets a `*ReliabilityTests.swift` file that pins its real-world failure modes; shared behavior lives in the dashboard, credential, parsing, and web-dashboard suites.
 
 ## WHERE TO LOOK
 
@@ -16,6 +16,7 @@ One SwiftPM test target, 37 files, all Swift Testing (`import Testing`, `@testab
 | Payload schema tolerance | `UsageParsingTests.swift` |
 | Visual tokens and layout invariants from `DESIGN.md` | `DashboardVisualContractTests.swift`, `DashboardLayoutTests.swift` |
 | Timestamp text, Korean strings | `RefreshBehaviorTests.swift`, `LocalizationTests.swift` |
+| Loopback HTTP routes, nonce checks, request limits, web tokens | `WebDashboardServerTests.swift` |
 | Reading a request body regardless of stream vs data | `URLRequestTestSupport.swift` |
 
 ## CONVENTIONS
