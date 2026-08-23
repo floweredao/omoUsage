@@ -174,23 +174,29 @@ enum ClaudeUsageParser {
     ) -> [UsageMeter] {
         guard let limits = UsageJSON.array(value) else { return [] }
         return limits.compactMap { limit in
+            let model = UsageJSON.object(
+                UsageJSON.object(limit["scope"])?["model"]
+            )
+            let modelID = (model?["id"] as? String)
+                .flatMap { $0.isEmpty ? nil : $0 }
+            let displayName = (model?["display_name"] as? String)
+                .flatMap { $0.isEmpty ? nil : $0 }
             guard
                 limit["kind"] as? String == "weekly_scoped",
-                let scope = UsageJSON.object(limit["scope"]),
-                let model = UsageJSON.object(scope["model"]),
-                let modelID = model["id"] as? String,
-                !modelID.isEmpty,
+                let title = displayName ?? modelID,
                 let percent = UsageJSON.number(
                     limit["percent"] ?? limit["utilization"]
                 )
             else {
                 return nil
             }
-            let displayName = model["display_name"] as? String
-                ?? modelID
+            let stableID = modelID
+                ?? title
+                    .lowercased()
+                    .replacingOccurrences(of: " ", with: "-")
             return UsageMeter(
-                id: "claude.week.model.\(modelID)",
-                title: "\(displayName) 주간",
+                id: "claude.week.model.\(stableID)",
+                title: "\(title) 주간",
                 period: .week,
                 percentRemaining: Int((100 - percent).rounded()),
                 resetsAt: UsageJSON.date(limit["resets_at"])

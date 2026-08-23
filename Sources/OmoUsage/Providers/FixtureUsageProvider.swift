@@ -67,6 +67,20 @@ struct FixtureUsageProvider: UsageProvider {
         "resets_at": "2099-01-07T00:00:00Z",
         "reset_text": "6일 후 리셋"
       },
+      "limits": [
+        {
+          "kind": "weekly_scoped",
+          "group": "weekly",
+          "percent": 44,
+          "resets_at": "2099-01-07T00:00:00Z",
+          "scope": {
+            "model": {
+              "id": null,
+              "display_name": "Fable"
+            }
+          }
+        }
+      ],
       "extra_usage": {
         "is_enabled": true,
         "used_credits": 7800,
