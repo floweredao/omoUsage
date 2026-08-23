@@ -8,7 +8,7 @@ struct PackageSmokeTests {
     func desktopBundleDeclaresReleaseVersionAndIcon() throws {
         let info = try desktopInfo()
 
-        #expect(info["CFBundleShortVersionString"] as? String == "0.1.4")
+        #expect(info["CFBundleShortVersionString"] as? String == "0.1.5")
         #expect(info["CFBundleIconFile"] as? String == "OmoUsage.icns")
     }
 
