@@ -100,6 +100,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let webDashboardLanguageStore: WebDashboardLanguageStore
     private let webDashboardCommandBridge: WebDashboardCommandBridge
     private let webDashboardServer: WebDashboardServer
+    private let presentationStyleStore: DashboardPresentationStyleStore
+    private var presentationStyle: DashboardPresentationStyle
     private var statusItem: NSStatusItem!
     private let statusPopover = NSPopover()
     private let dismissalController = PopoverDismissalController(
@@ -112,6 +114,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var settingsWindow: NSWindow?
     private weak var stabilizedPopoverWindow: NSWindow?
     private var popoverHeight = DashboardLayout.panelHeight(for: [])
+    private lazy var sideNotchController = SideNotchPanelController(
+        viewModel: viewModel,
+        localization: localization,
+        onExpansionChange: { [weak self] isExpanded in
+            self?.statusItem.button?.highlight(isExpanded)
+        },
+        onSettings: { [weak self] in
+            self?.showSettings()
+        },
+        onQuit: {
+            NSApp.terminate(nil)
+        }
+    )
 
     override init() {
         let snapshotSync = UbiquitousUsageSnapshotStore()
@@ -130,6 +145,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         let disconnectionStore = ProviderDisconnectionStore(
             defaults: .standard
         )
+        let presentationStyleStore = DashboardPresentationStyleStore(
+            defaults: .standard
+        )
+        let presentationStyle = presentationStyleStore.load()
         let providerOrder = orderStore.load()
         let disconnectedProviders = disconnectionStore.load()
         let webDashboardSnapshotStore = WebDashboardSnapshotStore(
@@ -202,6 +221,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         self.webDashboardLanguageStore = webDashboardLanguageStore
         self.webDashboardCommandBridge = webDashboardCommandBridge
         self.webDashboardServer = webDashboardServer
+        self.presentationStyleStore = presentationStyleStore
+        self.presentationStyle = presentationStyle
         super.init()
         webDashboardCommandBridge.install { [weak self] command in
             self?.handleWebDashboardCommand(command)
@@ -214,6 +235,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         NSApp.setActivationPolicy(.accessory)
         configureStatusItem()
         configureStatusPopover()
+        if presentationStyle == .sideNotch {
+            DispatchQueue.main.async { [weak self] in
+                self?.showSideNotch()
+            }
+        }
 
         refreshScheduler.start()
         do {
@@ -231,7 +257,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             ] == "1"
         {
             DispatchQueue.main.async { [weak self] in
-                self?.showPopover()
+                self?.showSelectedPresentation()
             }
         }
     }
@@ -241,6 +267,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         dismissalController.stop()
         refreshScheduler.stop()
         stopStabilizingPopoverWindow()
+        sideNotchController.stop()
         statusPopover.close()
     }
 
@@ -287,7 +314,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         button.image = AppIconFactory.menuBarIcon()
         button.imagePosition = .imageOnly
         button.target = self
-        button.action = #selector(togglePopover)
+        button.action = #selector(toggleDashboardPresentation)
         applyLocalization()
     }
 
@@ -317,6 +344,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     @objc
+    private func toggleDashboardPresentation() {
+        switch presentationStyle {
+        case .popover:
+            togglePopover()
+        case .sideNotch:
+            statusPopover.performClose(statusItem.button)
+            sideNotchController.toggleExpanded(
+                preferredScreen: statusItem.button?.window?.screen
+            )
+        }
+    }
+
     private func togglePopover() {
         if statusPopover.isShown {
             statusPopover.performClose(statusItem.button)
@@ -354,6 +393,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     private func showSettings() {
         statusPopover.performClose(statusItem.button)
+        sideNotchController.collapse(animated: false)
 
         if let settingsWindow {
             AppAppearancePolicy.followSystem(on: settingsWindow)
@@ -366,8 +406,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             rootView: SettingsView(
                 viewModel: viewModel,
                 localization: localization,
+                presentationStyle: presentationStyle,
                 onLanguageChange: { [weak self] in
                     self?.applyLocalization()
+                },
+                onPresentationStyleChange: { [weak self] style in
+                    self?.setPresentationStyle(style)
                 }
             )
         )
@@ -393,6 +437,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         statusItem?.button?.toolTip = title
         statusItem?.button?.setAccessibilityLabel(title)
         settingsWindow?.title = localization.text(.settingsTitle)
+    }
+
+    private func setPresentationStyle(
+        _ style: DashboardPresentationStyle
+    ) {
+        guard presentationStyle != style else { return }
+
+        statusPopover.performClose(statusItem.button)
+        sideNotchController.hide()
+        presentationStyle = style
+        presentationStyleStore.save(style)
+        statusItem.button?.highlight(false)
+
+        if style == .sideNotch {
+            showSideNotch()
+        }
+    }
+
+    private func showSelectedPresentation() {
+        switch presentationStyle {
+        case .popover:
+            showPopover()
+        case .sideNotch:
+            showSideNotch()
+        }
+    }
+
+    private func showSideNotch() {
+        statusPopover.performClose(statusItem.button)
+        sideNotchController.show(
+            preferredScreen: statusItem.button?.window?.screen
+        )
     }
 
     private func handleWebDashboardCommand(

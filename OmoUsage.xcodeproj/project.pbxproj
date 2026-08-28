@@ -83,6 +83,9 @@
 		F314B720CC2B9648F71A3E56 /* index.html in Resources */ = {isa = PBXBuildFile; fileRef = 4C3E6FAD99B86315C4E70B23 /* index.html */; };
 		FC3EA16049207CF4DD0DFF96 /* PopoverDismissalController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D743407BB6070410C37C24ED /* PopoverDismissalController.swift */; };
 		FD484605FEE29F3BF60551D5 /* ProviderVisualStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CE6F47ABFF2010B590849E4 /* ProviderVisualStyle.swift */; };
+		BB1100000000000000000001 /* DashboardPresentationStyleStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1100000000000000000001 /* DashboardPresentationStyleStore.swift */; };
+		BB1100000000000000000002 /* SideNotchPanelController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1100000000000000000002 /* SideNotchPanelController.swift */; };
+		BB1100000000000000000003 /* SideNotchPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1100000000000000000003 /* SideNotchPanelView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -155,6 +158,9 @@
 		F31A95484F3E7C27B3246C59 /* RefreshTimestampPresenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RefreshTimestampPresenter.swift; sourceTree = "<group>"; };
 		FCC12B90FAFA8ABCFFDDAC95 /* AppStrings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStrings.swift; sourceTree = "<group>"; };
 		FDD3136D2B697F932F2F4157 /* UsageDashboardViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageDashboardViewModel.swift; sourceTree = "<group>"; };
+		AA1100000000000000000001 /* DashboardPresentationStyleStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardPresentationStyleStore.swift; sourceTree = "<group>"; };
+		AA1100000000000000000002 /* SideNotchPanelController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SideNotchPanelController.swift; sourceTree = "<group>"; };
+		AA1100000000000000000003 /* SideNotchPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SideNotchPanelView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -246,6 +252,7 @@
 				DC0B81DC5CFBF8B0D0E43BBD /* ProviderSectionView.swift */,
 				F31A95484F3E7C27B3246C59 /* RefreshTimestampPresenter.swift */,
 				F2F93832A03EEFC4678E3EFD /* SettingsView.swift */,
+				AA1100000000000000000003 /* SideNotchPanelView.swift */,
 				E5B22CD5D991B72AA8A5C823 /* UsageMeterView.swift */,
 			);
 			path = Views;
@@ -286,6 +293,7 @@
 				ED1D70323A1B8E46FBA98247 /* LaunchAtLoginController.swift */,
 				703B4FB64DE1CE619CB4CBF3 /* OmoUsageApp.swift */,
 				D743407BB6070410C37C24ED /* PopoverDismissalController.swift */,
+				AA1100000000000000000002 /* SideNotchPanelController.swift */,
 				B5E899256F8FA08A323A9450 /* Credentials */,
 				EA4A11A0B084FCA9322107AD /* Dashboard */,
 				175BD635613164979CE6D4C2 /* Localization */,
@@ -338,6 +346,7 @@
 			isa = PBXGroup;
 			children = (
 				DA2DFDCC52C819D174BBECE1 /* CodexPlanMultiplierStore.swift */,
+				AA1100000000000000000001 /* DashboardPresentationStyleStore.swift */,
 				904BE1BBDC988ADD8BE50A13 /* ProviderAPIKeyStore.swift */,
 				61F5278036864C9CBF1983DB /* ProviderDisconnectionStore.swift */,
 				0F03319A261576E4FBE15484 /* ProviderDisplayOrderStore.swift */,
@@ -493,6 +502,7 @@
 				B025B2016537FDACEC08B10A /* DashboardSnapshot.swift in Sources */,
 				24785217C15545587AFE7E48 /* DashboardView.swift in Sources */,
 				C4EA5C82813C76747D7861AB /* DevinUsageProvider.swift in Sources */,
+				BB1100000000000000000001 /* DashboardPresentationStyleStore.swift in Sources */,
 				5F3ABEB2226604C3D97E3FE9 /* FixtureUsageProvider.swift in Sources */,
 				D82EE3B108EEA1BDA4026430 /* GrokUsageProvider.swift in Sources */,
 				26C516A883C98131D9EEF56A /* InteractiveIconButton.swift in Sources */,
@@ -519,6 +529,8 @@
 				D6712313D01B279FD91F9573 /* SecurityKeychainReader.swift in Sources */,
 				112233445566778899AABB02 /* SecurityKeychainWriter.swift in Sources */,
 				F053355E2A64A69C851FF8C3 /* SettingsView.swift in Sources */,
+				BB1100000000000000000002 /* SideNotchPanelController.swift in Sources */,
+				BB1100000000000000000003 /* SideNotchPanelView.swift in Sources */,
 				90DCF0C3402F0974561CA955 /* UsageDashboardViewModel.swift in Sources */,
 				1F3BE6FCFA852970241D6E25 /* UsageMeterView.swift in Sources */,
 				519728574A52166DC016C745 /* UsageModels.swift in Sources */,

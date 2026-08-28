@@ -8,6 +8,10 @@
 - The August 3 menu-bar and system-monitor screenshots override the earlier
   custom-panel behavior: the dashboard must anchor to its own status item and
   follow the current macOS appearance with high semantic contrast.
+- The August 28 side-notch references define an optional alternate native
+  presentation. They contribute edge glanceability, circular remaining-usage
+  summaries, and inward detail expansion without copying their black
+  silhouette, speech-tail geometry, branding, or "used" percentage semantics.
 - OpenUsage supplies provider/authentication behavior only; its extra product
   surfaces, branding, and help links are not copied.
 - Interaction mechanics adapt beui.dev `button` and `shared-layout-bg`:
@@ -24,6 +28,13 @@ only providers with usable authenticated data. Settings reports local
 credential discovery and owns API-key entry for providers that upstream
 OpenUsage configures in-app. It also launches each companion provider's
 official connection flow without owning or rewriting third-party credentials.
+
+The native dashboard offers two mutually exclusive presentation styles.
+`Popover` is the default and preserves the status-item-anchored 320 pt
+`NSPopover`. `Side Notch` presents a persistent 72 pt usage rail at the
+selected screen's usable right edge; selecting a provider expands a 320 pt
+detail card inward. Both styles share one dashboard view model and refresh
+owner. Switching styles closes the previous surface before enabling the next.
 
 OmoUsage Mobile is a read-only iPhone companion. The Mac remains the only
 credential owner and publishes the latest usage snapshot through the user's
@@ -58,6 +69,9 @@ launches, and other privileged controls remain native-only.
 - Provider colors identify brands without expanding the dashboard chrome.
 - Settings rows use semantic control backgrounds and separator colors; meter
   tracks use 16% semantic contrast in both appearances.
+- The side-notch rail and detail card use regular system material, semantic
+  borders, and the existing eucalyptus/amber usage palette. Provider branding
+  remains inside the existing icon tiles.
 - Mobile canvas and cards use semantic system backgrounds. Mobile meters reuse
   the standard eucalyptus and extra-usage amber tokens without introducing a
   second palette.
@@ -100,6 +114,13 @@ launches, and other privileged controls remain native-only.
 
 - Provider order follows OpenUsage: Claude, Codex, Cursor, Antigravity,
   Copilot, Devin, Grok, OpenCode, OpenRouter, Z.ai.
+- Side-notch mode pins a 72 pt rail to `NSScreen.visibleFrame.maxX`, centers
+  it vertically with 20 pt minimum top and bottom margins, and grows to
+  400 pt inward without moving its right edge. Provider rows remain 68 pt
+  high and scroll instead of shrinking when vertical space is constrained.
+- The side-notch detail card is 320 pt wide and at most 360 pt high. It uses
+  the existing provider section and scrolls only when that provider's complete
+  usage content exceeds the cap.
 - Providers without prior usage are omitted when unavailable or unauthenticated.
   Providers with last-good usage remain visible during transient failures and
   malformed or expired credential recovery.
@@ -138,6 +159,13 @@ launches, and other privileged controls remain native-only.
 - `ProviderHelpView`: native Korean setup guidance plus an optional official
   provider link; it never routes through OpenUsage.
 - `InteractiveIconButton`: 28 pt hit target with hover, focus, and press state.
+- `SideNotchPanelController`: one retained nonactivating floating `NSPanel`,
+  screen-aware frame calculation, outside-click collapse, and Space/display
+  reconfiguration.
+- `SideNotchPanelView`: provider rail, remaining-usage rings, selected provider
+  detail, refresh, Settings, and Quit controls.
+- `DashboardPresentationStyleStore`: repaired UserDefaults preference with
+  Popover as the backward-compatible default.
 - `ProviderIcon`: 20 pt branded tile with SVG or native monogram fallback.
 - `MobileProviderCard`: provider identity, optional plan pill, usage groups,
   meters, credits, and provider timestamp in one semantic grouped surface.
@@ -164,6 +192,11 @@ launches, and other privileged controls remain native-only.
 
 - Hover: 100–120 ms ease-out tint without geometry movement.
 - Press: stronger tint and symbol opacity feedback without scaling.
+- Side-notch provider selection expands on click, Return, or Space rather than
+  hover. Selecting the active provider, pressing Escape, or clicking outside
+  collapses the detail while leaving the rail available.
+- Side-notch width changes use a 200 ms interruptible ease-out. Reduced Motion
+  makes geometry changes immediate while retaining opacity/color feedback.
 - Refresh: continuous rotation only while work is active.
 - Refresh has no persistent accent fill; hover and press are its only
   background states.
@@ -184,6 +217,9 @@ launches, and other privileged controls remain native-only.
 ## 7. Accessibility
 
 - Minimum pointer target: 28×28 pt in the compact footer.
+- Side-notch provider targets are at least 56×64 pt. Each exposes the provider
+  name, localized remaining percentage, and a detail-view hint; color and arc
+  geometry never carry the meaning alone.
 - Keyboard focus uses the native accent outline.
 - Connection state is communicated by text plus color.
 - Korean labels must not clip at the Settings window’s minimum width.
@@ -208,6 +244,13 @@ launches, and other privileged controls remain native-only.
 - The dashboard is presented by `NSPopover.show(relativeTo:of:preferredEdge:)`
   from the OmoUsage `NSStatusItem`; no custom pointer or screen-relative panel
   geometry is used.
+- That popover constraint applies unchanged to the default Popover style.
+  Side Notch is a separate borderless, nonactivating `NSPanel` at floating
+  level with `canJoinAllSpaces`, `fullScreenAuxiliary`, `transient`,
+  `auxiliary`, and `ignoresCycle` collection behavior. It uses only
+  `NSScreen.visibleFrame` geometry and never alters the AppKit-owned popover.
+- Side Notch is disabled by default, restores collapsed after launch, and
+  never persists provider selection or expanded state.
 - OmoUsage never forces Aqua, Dark Aqua, or a SwiftUI color scheme. Dashboard,
   Settings, help, and controls inherit the operating-system appearance.
 - Companion providers keep upstream-style local credential discovery while

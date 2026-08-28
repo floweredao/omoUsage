@@ -34,6 +34,7 @@ struct InteractiveIconButton: View {
     let accessibilityLabel: String
     var isActive = false
     var isDisabled = false
+    var dimsWhenDisabled = true
     let action: () -> Void
 
     @Environment(\.accessibilityReduceMotion)
@@ -43,7 +44,10 @@ struct InteractiveIconButton: View {
     @State private var isHovered = false
 
     var body: some View {
-        Button(action: action) {
+        Button {
+            guard !isDisabled else { return }
+            action()
+        } label: {
             Image(systemName: symbol)
                 .font(.system(size: 13, weight: .semibold))
                 .frame(width: 22, height: 22)
@@ -62,7 +66,9 @@ struct InteractiveIconButton: View {
                 isHovered = hovering
             }
         }
-        .disabled(isDisabled)
+        .disabled(isDisabled && dimsWhenDisabled)
+        .allowsHitTesting(!isDisabled)
+        .accessibilityRespondsToUserInteraction(!isDisabled)
         .help(accessibilityLabel)
         .accessibilityLabel(accessibilityLabel)
         .accessibilityValue(

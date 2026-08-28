@@ -5,6 +5,7 @@ struct SettingsView: View {
     @Bindable var viewModel: UsageDashboardViewModel
     let localization: LocalizationController
     let onLanguageChange: () -> Void
+    let onPresentationStyleChange: (DashboardPresentationStyle) -> Void
     @State private var keyDrafts: [ProviderID: String] = [:]
     @State private var feedback: LocalizedText?
     @State private var setupError: ProviderSetupError?
@@ -12,6 +13,22 @@ struct SettingsView: View {
     @State private var codexPlanMultiplier = CodexPlanMultiplierStore(
         defaults: .standard
     ).load()
+    @State private var presentationStyle: DashboardPresentationStyle
+
+    init(
+        viewModel: UsageDashboardViewModel,
+        localization: LocalizationController,
+        presentationStyle: DashboardPresentationStyle,
+        onLanguageChange: @escaping () -> Void,
+        onPresentationStyleChange:
+            @escaping (DashboardPresentationStyle) -> Void
+    ) {
+        self.viewModel = viewModel
+        self.localization = localization
+        self.onLanguageChange = onLanguageChange
+        self.onPresentationStyleChange = onPresentationStyleChange
+        _presentationStyle = State(initialValue: presentationStyle)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -47,6 +64,38 @@ struct SettingsView: View {
                         .labelsHidden()
                         .pickerStyle(.segmented)
                         .frame(width: 180)
+                    }
+                    .padding(10)
+                    .background(
+                        Color(nsColor: .controlBackgroundColor),
+                        in: RoundedRectangle(
+                            cornerRadius: 10,
+                            style: .continuous
+                        )
+                    )
+
+                    HStack {
+                        Text(localization.text(.dashboardPresentation))
+                            .font(.system(size: 13.5, weight: .semibold))
+                        Spacer()
+                        Picker(
+                            localization.text(.dashboardPresentation),
+                            selection: Binding(
+                                get: { presentationStyle },
+                                set: { style in
+                                    presentationStyle = style
+                                    onPresentationStyleChange(style)
+                                }
+                            )
+                        ) {
+                            Text(localization.text(.popoverPresentation))
+                                .tag(DashboardPresentationStyle.popover)
+                            Text(localization.text(.sideNotchPresentation))
+                                .tag(DashboardPresentationStyle.sideNotch)
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.segmented)
+                        .frame(width: 240)
                     }
                     .padding(10)
                     .background(
