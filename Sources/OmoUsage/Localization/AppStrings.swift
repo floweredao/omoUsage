@@ -5,6 +5,10 @@ enum AppStringKey: String, CaseIterable, Sendable {
     case language
     case korean
     case english
+    case dashboardPresentation
+    case popoverPresentation
+    case sideNotchPresentation
+    case sideNotchShowDetails
     case providerAuthentication
     case reconnect
     case launchAtLogin
@@ -93,6 +97,10 @@ struct AppStrings: Sendable {
         .language: "언어",
         .korean: "한국어",
         .english: "English",
+        .dashboardPresentation: "UI 방식",
+        .popoverPresentation: "기존 팝오버",
+        .sideNotchPresentation: "사이드 노치",
+        .sideNotchShowDetails: "사용량 상세 보기",
         .providerAuthentication: "프로바이더 인증",
         .reconnect: "연결 다시 확인",
         .launchAtLogin: "로그인 시 실행",
@@ -154,7 +162,7 @@ struct AppStrings: Sendable {
         .asOfMinutesAgo: "%d분 전 기준",
         .providerConnectionMethod: "%@ 연결 방법",
         .unableToFindConnection: "%@ 연결 방법을 찾지 못했습니다.",
-        .unableToLaunch: "%@을(를) 열지 못했습니다.",
+        .unableToLaunch: "%@ 열기에 실패했습니다.",
         .unableToOpenOfficialAuthentication: "공식 인증 페이지를 열지 못했습니다.",
         .mobileNoDataTitle: "아직 동기화된 사용량이 없습니다",
         .mobileNoDataDescription:
@@ -171,6 +179,10 @@ struct AppStrings: Sendable {
         .language: "Language",
         .korean: "한국어",
         .english: "English",
+        .dashboardPresentation: "Interface",
+        .popoverPresentation: "Popover",
+        .sideNotchPresentation: "Side Notch",
+        .sideNotchShowDetails: "Show usage details",
         .providerAuthentication: "Provider Authentication",
         .reconnect: "Check Connections",
         .launchAtLogin: "Launch at Login",

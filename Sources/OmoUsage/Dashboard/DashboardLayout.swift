@@ -32,7 +32,7 @@ enum DashboardLayout {
             .contains { $0.period == .extra && $0.resetText != nil }
     }
 
-    private static func sectionHeight(
+    static func sectionHeight(
         _ usage: ProviderUsage
     ) -> CGFloat {
         var children: [CGFloat] = [20]
