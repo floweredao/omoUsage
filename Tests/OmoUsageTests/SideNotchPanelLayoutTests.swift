@@ -6,6 +6,34 @@ import Testing
 @MainActor
 struct SideNotchPanelLayoutTests {
     @Test
+    func revealedRailUsesPointerAnchorInsteadOfScreenCenter() {
+        let visibleFrame = NSRect(
+            x: 0,
+            y: 25,
+            width: 1_920,
+            height: 1_000
+        )
+        let pointerY: CGFloat = 780
+
+        let rail = SideNotchPanelLayout.frame(
+            in: visibleFrame,
+            providerCount: 2,
+            mode: .revealed,
+            anchorY: pointerY
+        )
+        let hiddenTrigger = SideNotchPanelLayout.frame(
+            in: visibleFrame,
+            providerCount: 2,
+            mode: .hidden,
+            anchorY: pointerY
+        )
+
+        #expect(rail.midY == pointerY)
+        #expect(hiddenTrigger.minY == visibleFrame.minY)
+        #expect(hiddenTrigger.height == visibleFrame.height)
+    }
+
+    @Test
     func compactRailUsesReducedGeometry() {
         let visibleFrame = NSRect(
             x: 0,

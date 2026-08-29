@@ -6,7 +6,7 @@ struct SideNotchPanelView: View {
     @Bindable var state: SideNotchPanelState
     let onSelectionChange: (ProviderID?, Bool) -> Void
     let onProviderCountChange: (Int) -> Void
-    let onPointerEntered: () -> Void
+    let onPointerEntered: (CGFloat?) -> Void
     let onPointerExited: () -> Void
     let onRefresh: () -> Void
     let onSettings: () -> Void
@@ -20,7 +20,9 @@ struct SideNotchPanelView: View {
             ZStack(alignment: .topTrailing) {
                 if state.mode == .hidden {
                     SideNotchHiddenHandleView(
-                        onReveal: onPointerEntered
+                        onReveal: {
+                            onPointerEntered(nil)
+                        }
                     )
                     .frame(width: SideNotchPanelLayout.hiddenWidth)
                     .frame(maxHeight: .infinity)
@@ -93,7 +95,9 @@ struct SideNotchPanelView: View {
         }
         .background {
             SideNotchTrackingSurface(
-                onEntered: onPointerEntered,
+                onEntered: { screenY in
+                    onPointerEntered(screenY)
+                },
                 onExited: onPointerExited
             )
         }
@@ -158,10 +162,9 @@ private struct SideNotchHiddenHandleView: View {
     private var localization
 
     var body: some View {
-        RoundedRectangle(cornerRadius: 3, style: .continuous)
-            .fill(Color.primary.opacity(0.24))
-            .frame(width: 4, height: 96)
+        Color.clear
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .contentShape(Rectangle())
             .accessibilityElement()
             .accessibilityLabel(localization.text(.aiUsage))
             .accessibilityHint(
@@ -175,7 +178,7 @@ private struct SideNotchHiddenHandleView: View {
 }
 
 private struct SideNotchTrackingSurface: NSViewRepresentable {
-    let onEntered: () -> Void
+    let onEntered: (CGFloat) -> Void
     let onExited: () -> Void
 
     func makeNSView(context: Context) -> TrackingView {
@@ -191,12 +194,12 @@ private struct SideNotchTrackingSurface: NSViewRepresentable {
     }
 
     final class TrackingView: NSView {
-        var onEntered: () -> Void
+        var onEntered: (CGFloat) -> Void
         var onExited: () -> Void
         private var trackingArea: NSTrackingArea?
 
         init(
-            onEntered: @escaping () -> Void,
+            onEntered: @escaping (CGFloat) -> Void,
             onExited: @escaping () -> Void
         ) {
             self.onEntered = onEntered
@@ -228,7 +231,12 @@ private struct SideNotchTrackingSurface: NSViewRepresentable {
         }
 
         override func mouseEntered(with event: NSEvent) {
-            onEntered()
+            guard let window else { return }
+            onEntered(
+                window.convertPoint(
+                    toScreen: event.locationInWindow
+                ).y
+            )
         }
 
         override func mouseExited(with event: NSEvent) {
