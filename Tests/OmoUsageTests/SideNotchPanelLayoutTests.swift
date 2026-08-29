@@ -34,6 +34,32 @@ struct SideNotchPanelLayoutTests {
     }
 
     @Test
+    func hideAnimationTargetContractsSidewaysInPlace() {
+        let visibleFrame = NSRect(
+            x: 0,
+            y: 25,
+            width: 1_920,
+            height: 1_000
+        )
+        let rail = SideNotchPanelLayout.frame(
+            in: visibleFrame,
+            providerCount: 2,
+            mode: .revealed,
+            anchorY: 800
+        )
+
+        let edgeFrame = SideNotchPanelLayout.hideAnimationTarget(
+            in: visibleFrame,
+            from: rail
+        )
+
+        #expect(edgeFrame.width == SideNotchPanelLayout.hiddenWidth)
+        #expect(edgeFrame.maxX == rail.maxX)
+        #expect(edgeFrame.minY == rail.minY)
+        #expect(edgeFrame.height == rail.height)
+    }
+
+    @Test
     func compactRailUsesReducedGeometry() {
         let visibleFrame = NSRect(
             x: 0,

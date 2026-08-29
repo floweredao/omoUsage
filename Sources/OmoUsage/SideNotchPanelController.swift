@@ -27,6 +27,18 @@ enum SideNotchPanelLayout {
         )
     }
 
+    static func hideAnimationTarget(
+        in visibleFrame: NSRect,
+        from currentFrame: NSRect
+    ) -> NSRect {
+        NSRect(
+            x: visibleFrame.maxX - hiddenWidth,
+            y: currentFrame.minY,
+            width: hiddenWidth,
+            height: currentFrame.height
+        )
+    }
+
     static func frame(
         in visibleFrame: NSRect,
         providerCount: Int,
@@ -227,6 +239,9 @@ final class SideNotchPanelController: NSObject {
     private var pointerAnchorY: CGFloat?
     private var autoHideGeneration = 0
     private var autoHideTask: (any SideNotchAutoHideTask)?
+    private var transitionGeneration = 0
+    private var transitionCompletionTask:
+        (any SideNotchAutoHideTask)?
     static let autoHideDelay: TimeInterval = 0.8
 
     init(
@@ -352,6 +367,7 @@ final class SideNotchPanelController: NSObject {
 
     func hide() {
         cancelAutoHide()
+        cancelTransitionCompletion()
         dismissalController.stop()
         state.transition(to: .hidden)
         onExpansionChange(false)
@@ -435,21 +451,93 @@ final class SideNotchPanelController: NSObject {
         to mode: SideNotchPanelMode,
         animated: Bool
     ) {
+        let previousMode = state.mode
         let shouldAnimate = SideNotchMotionPolicy.shouldAnimate(
             requested: animated,
             reduceMotion:
                 NSWorkspace.shared
                 .accessibilityDisplayShouldReduceMotion
         )
+        cancelTransitionCompletion()
+
+        if shouldAnimate, previousMode != mode {
+            if mode == .hidden {
+                transitionSidewaysToHidden(mode)
+                return
+            }
+            if previousMode == .hidden {
+                transitionSidewaysFromHidden(to: mode)
+                return
+            }
+        }
+
+        transitionState(to: mode, animated: shouldAnimate)
+        reposition(animated: shouldAnimate)
+    }
+
+    private func transitionSidewaysToHidden(
+        _ mode: SideNotchPanelMode
+    ) {
+        guard let screen = targetScreen(nil) else { return }
+        let edgeFrame = SideNotchPanelLayout.hideAnimationTarget(
+            in: screen.visibleFrame,
+            from: panel.frame
+        )
+        transitionState(to: mode, animated: true)
+        animatePanel(to: edgeFrame)
+        scheduleHiddenTriggerReset()
+    }
+
+    private func transitionSidewaysFromHidden(
+        to mode: SideNotchPanelMode
+    ) {
+        guard let screen = targetScreen(nil) else { return }
+        let targetFrame = frame(for: mode, on: screen)
+        let edgeFrame = SideNotchPanelLayout.hideAnimationTarget(
+            in: screen.visibleFrame,
+            from: targetFrame
+        )
+        panel.setFrame(edgeFrame, display: true)
+        transitionState(to: mode, animated: true)
+        animatePanel(to: targetFrame)
+    }
+
+    private func transitionState(
+        to mode: SideNotchPanelMode,
+        animated: Bool
+    ) {
         withAnimation(
-            shouldAnimate
+            animated
                 ? .easeOut(duration: SideNotchMotionPolicy.duration)
                 : nil
         ) {
             state.transition(to: mode)
         }
         onExpansionChange(mode.isPresented)
-        reposition(animated: shouldAnimate)
+    }
+
+    private func scheduleHiddenTriggerReset() {
+        transitionGeneration += 1
+        let generation = transitionGeneration
+        transitionCompletionTask = autoHideScheduler.schedule(
+            after: SideNotchMotionPolicy.duration
+        ) { [weak self] in
+            guard
+                let self,
+                self.transitionGeneration == generation,
+                self.state.mode == .hidden
+            else {
+                return
+            }
+            self.reposition(animated: false)
+            self.transitionCompletionTask = nil
+        }
+    }
+
+    private func cancelTransitionCompletion() {
+        transitionGeneration += 1
+        transitionCompletionTask?.cancel()
+        transitionCompletionTask = nil
     }
 
     private func scheduleAutoHide() {
@@ -490,16 +578,27 @@ final class SideNotchPanelController: NSObject {
         animated: Bool
     ) {
         guard let screen = targetScreen(preferredScreen) else { return }
-        let frame = SideNotchPanelLayout.frame(
-            in: screen.visibleFrame,
-            providerCount: providerCount,
-            mode: state.mode,
-            anchorY: pointerAnchorY
-        )
+        let frame = frame(for: state.mode, on: screen)
         guard animated else {
             panel.setFrame(frame, display: true)
             return
         }
+        animatePanel(to: frame)
+    }
+
+    private func frame(
+        for mode: SideNotchPanelMode,
+        on screen: NSScreen
+    ) -> NSRect {
+        SideNotchPanelLayout.frame(
+            in: screen.visibleFrame,
+            providerCount: providerCount,
+            mode: mode,
+            anchorY: pointerAnchorY
+        )
+    }
+
+    private func animatePanel(to frame: NSRect) {
         NSAnimationContext.runAnimationGroup { context in
             context.duration = SideNotchMotionPolicy.duration
             context.timingFunction = CAMediaTimingFunction(
