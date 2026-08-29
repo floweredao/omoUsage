@@ -6,6 +6,101 @@ import Testing
 @MainActor
 struct SideNotchPanelLayoutTests {
     @Test
+    func detailHeightIncludesActualContentPadding() {
+        let claude = ProviderUsage(
+            provider: .claude,
+            planName: "Max 5x",
+            groups: [
+                UsageGroup(
+                    id: "claude.main",
+                    title: nil,
+                    meters: [
+                        UsageMeter(
+                            id: "claude.session",
+                            title: "Session (5 hours)",
+                            period: .session,
+                            percentRemaining: 65
+                        ),
+                        UsageMeter(
+                            id: "claude.week",
+                            title: "Weekly",
+                            period: .week,
+                            percentRemaining: 45
+                        ),
+                        UsageMeter(
+                            id: "claude.week.model.fable",
+                            title: "Fable weekly",
+                            period: .week,
+                            percentRemaining: 28
+                        )
+                    ],
+                    creditText: nil
+                )
+            ],
+            availability: .available,
+            updatedAt: nil
+        )
+
+        #expect(
+            SideNotchPanelLayout.detailHeight(for: claude) == 190
+        )
+    }
+
+    @Test
+    func detailPanelContainsCardMarginsWithoutClipping() {
+        let claude = ProviderUsage(
+            provider: .claude,
+            planName: "Max 5x",
+            groups: [
+                UsageGroup(
+                    id: "claude.main",
+                    title: nil,
+                    meters: [
+                        UsageMeter(
+                            id: "claude.session",
+                            title: "Session",
+                            period: .session,
+                            percentRemaining: 65
+                        ),
+                        UsageMeter(
+                            id: "claude.week",
+                            title: "Weekly",
+                            period: .week,
+                            percentRemaining: 45
+                        ),
+                        UsageMeter(
+                            id: "claude.fable",
+                            title: "Fable weekly",
+                            period: .week,
+                            percentRemaining: 28
+                        )
+                    ],
+                    creditText: nil
+                )
+            ],
+            availability: .available,
+            updatedAt: nil
+        )
+        let frame = SideNotchPanelLayout.frame(
+            in: NSRect(x: 0, y: 25, width: 1_920, height: 1_055),
+            providerCount: 2,
+            mode: .detail(.claude),
+            anchorY: 500,
+            presentedContentMinimumHeight:
+                SideNotchPanelLayout.requiredPanelHeight(
+                    for: claude
+                )
+        )
+
+        #expect(
+            frame.height
+                >= SideNotchPanelLayout.requiredPanelHeight(
+                    for: claude
+                )
+        )
+    }
+
+    @Test
     func revealedRailUsesPointerAnchorInsteadOfScreenCenter() {
         let visibleFrame = NSRect(
             x: 0,
@@ -225,29 +320,68 @@ struct SideNotchPanelLayoutTests {
     }
 
     @Test
+    func hiddenEdgeCrossingRequiresRevealDwell() throws {
+        let fixture = try controllerFixture()
+        defer { fixture.controller.stop() }
+
+        fixture.controller.pointerEntered()
+
+        #expect(fixture.controller.mode == .hidden)
+        let firstJob = try #require(fixture.scheduler.jobs.first)
+        #expect(firstJob.delay == 0.18)
+
+        fixture.controller.pointerExited()
+        #expect(firstJob.task.isCancelled)
+        fixture.scheduler.fire(0)
+        #expect(fixture.controller.mode == .hidden)
+
+        fixture.controller.pointerEntered()
+        #expect(fixture.scheduler.jobs.count == 2)
+        fixture.scheduler.fire(1)
+        #expect(fixture.controller.mode == .revealed)
+    }
+
+    @Test
     func autoHideScheduleCancelsOnReentryAndIgnoresStaleJob() throws {
         let fixture = try controllerFixture()
         defer { fixture.controller.stop() }
 
         fixture.controller.pointerEntered()
-        #expect(fixture.controller.mode == .revealed)
-
-        fixture.controller.pointerExited()
-        #expect(fixture.scheduler.jobs.count == 1)
-        #expect(
-            fixture.scheduler.jobs[0].delay
-                == SideNotchPanelController.autoHideDelay
-        )
-
-        fixture.controller.pointerEntered()
-        #expect(fixture.scheduler.jobs[0].task.isCancelled)
         fixture.scheduler.fire(0)
         #expect(fixture.controller.mode == .revealed)
 
         fixture.controller.pointerExited()
         #expect(fixture.scheduler.jobs.count == 2)
+        #expect(
+            fixture.scheduler.jobs[1].delay
+                == SideNotchPanelController.autoHideDelay
+        )
+
+        fixture.controller.pointerEntered()
+        #expect(fixture.scheduler.jobs[1].task.isCancelled)
         fixture.scheduler.fire(1)
+        #expect(fixture.controller.mode == .revealed)
+
+        fixture.controller.pointerExited()
+        #expect(fixture.scheduler.jobs.count == 3)
+        fixture.scheduler.fire(2)
         #expect(fixture.controller.mode == .hidden)
+    }
+
+    @Test
+    func autoHideUsesInjectedAndLiveUpdatedDelay() throws {
+        let fixture = try controllerFixture(autoHideDelay: 2)
+        defer { fixture.controller.stop() }
+
+        fixture.controller.pointerEntered()
+        fixture.scheduler.fire(0)
+        fixture.controller.pointerExited()
+        #expect(fixture.scheduler.jobs[1].delay == 2)
+
+        fixture.controller.pointerEntered()
+        fixture.controller.setAutoHideDelay(1.2)
+        fixture.controller.pointerExited()
+        #expect(fixture.scheduler.jobs[2].delay == 1.2)
     }
 
     @Test
@@ -256,17 +390,18 @@ struct SideNotchPanelLayoutTests {
         defer { fixture.controller.stop() }
 
         fixture.controller.pointerEntered()
+        fixture.scheduler.fire(0)
         fixture.controller.select(.codex, animated: false)
         fixture.controller.pointerExited()
 
         #expect(fixture.controller.mode == .detail(.codex))
-        #expect(fixture.scheduler.jobs.isEmpty)
+        #expect(fixture.scheduler.jobs.count == 1)
 
         fixture.controller.select(nil, animated: false)
         #expect(fixture.controller.mode == .revealed)
-        #expect(fixture.scheduler.jobs.count == 1)
+        #expect(fixture.scheduler.jobs.count == 2)
 
-        fixture.scheduler.fire(0)
+        fixture.scheduler.fire(1)
         #expect(fixture.controller.mode == .hidden)
     }
 
@@ -305,7 +440,9 @@ struct SideNotchPanelLayoutTests {
         )
     }
 
-    private func controllerFixture() throws -> (
+    private func controllerFixture(
+        autoHideDelay: TimeInterval = 0.8
+    ) throws -> (
         controller: SideNotchPanelController,
         scheduler: SideNotchFakeAutoHideScheduler
     ) {
@@ -320,6 +457,7 @@ struct SideNotchPanelLayoutTests {
                 store: AppLanguageStore(defaults: defaults)
             ),
             autoHideScheduler: scheduler,
+            autoHideDelay: autoHideDelay,
             onExpansionChange: { _ in },
             onSettings: {},
             onQuit: {}

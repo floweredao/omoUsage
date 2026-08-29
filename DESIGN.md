@@ -122,15 +122,21 @@ launches, and other privileged controls remain native-only.
   `NSScreen.visibleFrame.maxX`, centers it vertically with 20 pt minimum top
   and bottom margins, and grows to 344 pt inward without moving its right
   edge. Provider rows are 58 pt high. Fourteen points of total rail padding
-  plus a 58 pt vertically stacked footer keeps eight providers at 536 pt.
+  plus a 58 pt vertically stacked footer defines the rail's natural height.
+  While presented, the panel also reserves the largest visible provider
+  detail height plus 12 pt top and bottom margins. This prevents vertical
+  movement on provider selection and may leave intentional slack between the
+  last provider row and footer when detail content is taller than the rail.
 - The side-notch detail card is 280 pt wide and at most 320 pt high. It uses
-  the existing provider section and scrolls only when that provider's complete
-  usage content exceeds the cap.
+  the existing provider section, applies 14 pt content padding, and scrolls
+  only when that provider's complete usage content exceeds the cap.
 - Providers without prior usage are omitted when unavailable or unauthenticated.
   Providers with last-good usage remain visible during transient failures and
   malformed or expired credential recovery.
 - Settings lists all ten providers with connection state and exact local
-  credential guidance.
+  credential guidance. When Side Notch is selected, Settings also exposes a
+  localized native menu for 0.4, 0.8, 1.2, or 2.0 second hide delay; 0.8
+  seconds remains the default.
 - CLI- and app-backed providers expose one `연결 시작` control that launches
   the official installed authentication flow. If the required tool is absent,
   the control reports which executable must be installed; help links remain
@@ -165,13 +171,15 @@ launches, and other privileged controls remain native-only.
   provider link; it never routes through OpenUsage.
 - `InteractiveIconButton`: 28 pt hit target with hover, focus, and press state.
 - `SideNotchPanelController`: one retained nonactivating floating `NSPanel`,
-  authoritative hidden/revealed/detail state, cancellable 0.8 s auto-hide,
-  screen-aware frame calculation, outside-click collapse, and Space/display
-  reconfiguration.
+  authoritative hidden/revealed/detail state, cancellable 0.18 s edge-reveal
+  dwell, user-configurable auto-hide, screen-aware frame calculation,
+  outside-click collapse, and Space/display reconfiguration.
 - `SideNotchPanelView`: provider rail, remaining-usage rings, selected provider
   detail, refresh, Settings, Quit, and one AppKit edge tracking surface.
 - `DashboardPresentationStyleStore`: repaired UserDefaults preference with
   Popover as the backward-compatible default.
+- `SideNotchHideDelayStore`: repaired typed UserDefaults preference with 0.8
+  seconds as the omitted-key default.
 - `ProviderIcon`: 20 pt branded tile with SVG or native monogram fallback.
 - `MobileProviderCard`: provider identity, optional plan pill, usage groups,
   meters, credits, and provider timestamp in one semantic grouped surface.
@@ -198,12 +206,17 @@ launches, and other privileged controls remain native-only.
 
 - Hover: 100–120 ms ease-out tint without geometry movement.
 - Press: stronger tint and symbol opacity feedback without scaling.
-- Entering the 6 pt edge handle reveals the rail and cancels a pending hide.
-  Leaving the revealed rail schedules one cancellable 0.8 s hide. Background
-  refresh never reveals the rail.
+- Entering the 6 pt edge handle for 0.18 seconds reveals the rail and cancels
+  a pending hide. Brief crossings cancel the reveal task before it fires.
+  Leaving the revealed rail schedules one cancellable hide using the selected
+  0.4, 0.8, 1.2, or 2.0 second delay. Background refresh and controller-driven
+  frame changes never reveal the rail.
 - Side-notch provider selection expands on click, Return, or Space rather than
   hover. Selecting the active provider, pressing Escape, or clicking outside
   collapses detail to the revealed rail; pointer absence then allows auto-hide.
+- Provider detail uses opacity-only insertion/removal while the AppKit panel
+  alone owns the inward width animation; no second directional SwiftUI move
+  competes with panel geometry.
 - In Side Notch mode, clicking the menu-bar status item only reveals or hides
   the rail. It never selects a provider or opens provider detail.
 - Side-notch width changes use a 200 ms interruptible ease-out. Reduced Motion

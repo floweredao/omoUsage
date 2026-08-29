@@ -49,14 +49,7 @@ struct SideNotchPanelView: View {
                                     .top,
                                     detailTop(in: geometry.size.height)
                                 )
-                                .transition(
-                                    .asymmetric(
-                                        insertion: .opacity.combined(
-                                            with: .move(edge: .trailing)
-                                        ),
-                                        removal: .opacity
-                                    )
-                                )
+                                .transition(.opacity)
                         }
 
                         SideNotchRailView(
@@ -129,21 +122,24 @@ struct SideNotchPanelView: View {
                 where: { $0.provider == selectedProvider }
             )
         else {
-            return 12
+            return SideNotchPanelLayout.detailCardMargin
         }
-        let rowCenter = 12
+        let rowCenter = SideNotchPanelLayout.detailCardMargin
             + CGFloat(index) * SideNotchPanelLayout.providerRowHeight
             + SideNotchPanelLayout.providerRowHeight / 2
         let desiredTop = rowCenter - 24
         let maximumTop = max(
-            12,
+            SideNotchPanelLayout.detailCardMargin,
             containerHeight
                 - SideNotchPanelLayout.detailHeight(
                     for: viewModel.snapshot.providers[index]
                 )
-                - 12
+                - SideNotchPanelLayout.detailCardMargin
         )
-        return min(max(12, desiredTop), maximumTop)
+        return min(
+            max(SideNotchPanelLayout.detailCardMargin, desiredTop),
+            maximumTop
+        )
     }
 
     private var selectedUsage: ProviderUsage? {
@@ -240,6 +236,13 @@ private struct SideNotchTrackingSurface: NSViewRepresentable {
         }
 
         override func mouseExited(with event: NSEvent) {
+            guard let window else { return }
+            let screenPoint = window.convertPoint(
+                toScreen: event.locationInWindow
+            )
+            guard !window.frame.contains(screenPoint) else {
+                return
+            }
             onExited()
         }
     }
@@ -535,7 +538,7 @@ private struct SideNotchDetailView: View {
     var body: some View {
         ScrollView {
             ProviderSectionView(usage: usage)
-                .padding(14)
+                .padding(SideNotchPanelLayout.detailContentPadding)
         }
         .scrollIndicators(.hidden)
         .frame(height: SideNotchPanelLayout.detailHeight(for: usage))
