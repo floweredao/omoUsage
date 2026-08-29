@@ -13,6 +13,8 @@ enum SideNotchPanelLayout {
     static let verticalPadding: CGFloat = 14
     static let footerHeight: CGFloat = 58
     static let detailMaximumHeight: CGFloat = 320
+    static let detailContentPadding: CGFloat = 14
+    static let detailCardMargin: CGFloat = 12
     static let maximumPanelHeight: CGFloat = 540
     static let minimumHeight: CGFloat = 128
     static let screenMargin: CGFloat = 20
@@ -23,8 +25,15 @@ enum SideNotchPanelLayout {
     static func detailHeight(for usage: ProviderUsage) -> CGFloat {
         min(
             detailMaximumHeight,
-            DashboardLayout.sectionHeight(usage) + 24
+            DashboardLayout.sectionHeight(usage)
+                + detailContentPadding * 2
         )
+    }
+
+    static func requiredPanelHeight(
+        for usage: ProviderUsage
+    ) -> CGFloat {
+        detailHeight(for: usage) + detailCardMargin * 2
     }
 
     static func hideAnimationTarget(
@@ -43,7 +52,8 @@ enum SideNotchPanelLayout {
         in visibleFrame: NSRect,
         providerCount: Int,
         mode: SideNotchPanelMode,
-        anchorY: CGFloat? = nil
+        anchorY: CGFloat? = nil,
+        presentedContentMinimumHeight: CGFloat = 0
     ) -> NSRect {
         if mode == .hidden {
             return NSRect(
@@ -54,11 +64,15 @@ enum SideNotchPanelLayout {
             )
         }
 
-        let desiredHeight = max(
+        let railHeight = max(
             minimumHeight,
             verticalPadding
                 + CGFloat(providerCount) * providerRowHeight
                 + footerHeight
+        )
+        let desiredHeight = max(
+            railHeight,
+            presentedContentMinimumHeight
         )
         let maximumHeight = min(
             maximumPanelHeight,
@@ -239,22 +253,30 @@ final class SideNotchPanelController: NSObject {
     private var pointerAnchorY: CGFloat?
     private var autoHideGeneration = 0
     private var autoHideTask: (any SideNotchAutoHideTask)?
+    private var revealGeneration = 0
+    private var revealTask: (any SideNotchAutoHideTask)?
     private var transitionGeneration = 0
     private var transitionCompletionTask:
         (any SideNotchAutoHideTask)?
-    static let autoHideDelay: TimeInterval = 0.8
+    private var configuredAutoHideDelay: TimeInterval
+    static let autoHideDelay =
+        SideNotchHideDelay.standard.rawValue
+    static let revealDelay: TimeInterval = 0.18
 
     init(
         viewModel: UsageDashboardViewModel,
         localization: LocalizationController,
         autoHideScheduler: any SideNotchAutoHideScheduling =
             DispatchSideNotchAutoHideScheduler(),
+        autoHideDelay: TimeInterval =
+            SideNotchHideDelay.standard.rawValue,
         onExpansionChange: @escaping @MainActor (Bool) -> Void,
         onSettings: @escaping @MainActor () -> Void,
         onQuit: @escaping @MainActor () -> Void
     ) {
         self.viewModel = viewModel
         self.autoHideScheduler = autoHideScheduler
+        configuredAutoHideDelay = autoHideDelay
         self.onExpansionChange = onExpansionChange
         panel = Self.makePanel(
             contentRect: NSRect(
@@ -352,6 +374,9 @@ final class SideNotchPanelController: NSObject {
     }
 
     func show(preferredScreen: NSScreen? = nil) {
+        cancelReveal()
+        cancelAutoHide()
+        pointerInside = false
         providerCount = viewModel.snapshot.providers.count
         state.transition(to: .hidden)
         reposition(on: preferredScreen, animated: false)
@@ -359,6 +384,7 @@ final class SideNotchPanelController: NSObject {
     }
 
     func collapse(animated: Bool = true) {
+        cancelReveal()
         transition(to: .revealed, animated: animated)
         if !pointerInside {
             scheduleAutoHide()
@@ -366,6 +392,7 @@ final class SideNotchPanelController: NSObject {
     }
 
     func hide() {
+        cancelReveal()
         cancelAutoHide()
         cancelTransitionCompletion()
         dismissalController.stop()
@@ -380,6 +407,7 @@ final class SideNotchPanelController: NSObject {
             transition(to: .revealed, animated: true)
             return
         }
+        cancelReveal()
         cancelAutoHide()
         let nextMode: SideNotchPanelMode =
             state.mode == .hidden ? .revealed : .hidden
@@ -396,15 +424,20 @@ final class SideNotchPanelController: NSObject {
         }
         cancelAutoHide()
         if state.mode == .hidden {
-            transition(to: .revealed, animated: true)
+            scheduleReveal()
         }
     }
 
     func pointerExited() {
         pointerInside = false
+        cancelReveal()
         if state.mode == .revealed {
             scheduleAutoHide()
         }
+    }
+
+    func setAutoHideDelay(_ delay: TimeInterval) {
+        configuredAutoHideDelay = delay
     }
 
     func stop() {
@@ -417,6 +450,7 @@ final class SideNotchPanelController: NSObject {
         _ provider: ProviderID?,
         animated: Bool
     ) {
+        cancelReveal()
         cancelAutoHide()
         var nextMode = state.mode
         if let provider {
@@ -548,7 +582,7 @@ final class SideNotchPanelController: NSObject {
         autoHideGeneration += 1
         let generation = autoHideGeneration
         autoHideTask = autoHideScheduler.schedule(
-            after: Self.autoHideDelay
+            after: configuredAutoHideDelay
         ) { [weak self] in
             guard
                 let self,
@@ -561,6 +595,35 @@ final class SideNotchPanelController: NSObject {
             self.transition(to: .hidden, animated: true)
             self.autoHideTask = nil
         }
+    }
+
+    private func scheduleReveal() {
+        cancelReveal()
+        guard state.mode == .hidden, pointerInside else {
+            return
+        }
+        revealGeneration += 1
+        let generation = revealGeneration
+        revealTask = autoHideScheduler.schedule(
+            after: Self.revealDelay
+        ) { [weak self] in
+            guard
+                let self,
+                self.revealGeneration == generation,
+                self.pointerInside,
+                self.state.mode == .hidden
+            else {
+                return
+            }
+            self.transition(to: .revealed, animated: true)
+            self.revealTask = nil
+        }
+    }
+
+    private func cancelReveal() {
+        revealGeneration += 1
+        revealTask?.cancel()
+        revealTask = nil
     }
 
     private func cancelAutoHide() {
@@ -594,7 +657,15 @@ final class SideNotchPanelController: NSObject {
             in: screen.visibleFrame,
             providerCount: providerCount,
             mode: mode,
-            anchorY: pointerAnchorY
+            anchorY: pointerAnchorY,
+            presentedContentMinimumHeight:
+                mode.isPresented
+                    ? viewModel.snapshot.providers.map {
+                        SideNotchPanelLayout.requiredPanelHeight(
+                            for: $0
+                        )
+                    }.max() ?? 0
+                    : 0
         )
     }
 

@@ -8,6 +8,8 @@ enum AppStringKey: String, CaseIterable, Sendable {
     case dashboardPresentation
     case popoverPresentation
     case sideNotchPresentation
+    case sideNotchHideDelay
+    case sideNotchHideDelayOption
     case sideNotchShowDetails
     case providerAuthentication
     case reconnect
@@ -100,6 +102,8 @@ struct AppStrings: Sendable {
         .dashboardPresentation: "UI 방식",
         .popoverPresentation: "기존 팝오버",
         .sideNotchPresentation: "사이드 노치",
+        .sideNotchHideDelay: "사이드 노치 숨김 시간",
+        .sideNotchHideDelayOption: "%.1f초 후",
         .sideNotchShowDetails: "사용량 상세 보기",
         .providerAuthentication: "프로바이더 인증",
         .reconnect: "연결 다시 확인",
@@ -182,6 +186,8 @@ struct AppStrings: Sendable {
         .dashboardPresentation: "Interface",
         .popoverPresentation: "Popover",
         .sideNotchPresentation: "Side Notch",
+        .sideNotchHideDelay: "Side Notch Hide Delay",
+        .sideNotchHideDelayOption: "After %.1f sec",
         .sideNotchShowDetails: "Show usage details",
         .providerAuthentication: "Provider Authentication",
         .reconnect: "Check Connections",

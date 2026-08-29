@@ -102,6 +102,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let webDashboardServer: WebDashboardServer
     private let presentationStyleStore: DashboardPresentationStyleStore
     private var presentationStyle: DashboardPresentationStyle
+    private let sideNotchHideDelayStore: SideNotchHideDelayStore
+    private var sideNotchHideDelay: SideNotchHideDelay
     private var statusItem: NSStatusItem!
     private let statusPopover = NSPopover()
     private let dismissalController = PopoverDismissalController(
@@ -117,6 +119,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private lazy var sideNotchController = SideNotchPanelController(
         viewModel: viewModel,
         localization: localization,
+        autoHideDelay: sideNotchHideDelay.rawValue,
         onExpansionChange: { [weak self] isExpanded in
             self?.statusItem.button?.highlight(isExpanded)
         },
@@ -149,6 +152,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             defaults: .standard
         )
         let presentationStyle = presentationStyleStore.load()
+        let sideNotchHideDelayStore = SideNotchHideDelayStore(
+            defaults: .standard
+        )
+        let sideNotchHideDelay = sideNotchHideDelayStore.load()
         let providerOrder = orderStore.load()
         let disconnectedProviders = disconnectionStore.load()
         let webDashboardSnapshotStore = WebDashboardSnapshotStore(
@@ -223,6 +230,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         self.webDashboardServer = webDashboardServer
         self.presentationStyleStore = presentationStyleStore
         self.presentationStyle = presentationStyle
+        self.sideNotchHideDelayStore = sideNotchHideDelayStore
+        self.sideNotchHideDelay = sideNotchHideDelay
         super.init()
         webDashboardCommandBridge.install { [weak self] command in
             self?.handleWebDashboardCommand(command)
@@ -407,11 +416,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 viewModel: viewModel,
                 localization: localization,
                 presentationStyle: presentationStyle,
+                sideNotchHideDelay: sideNotchHideDelay,
                 onLanguageChange: { [weak self] in
                     self?.applyLocalization()
                 },
                 onPresentationStyleChange: { [weak self] style in
                     self?.setPresentationStyle(style)
+                },
+                onSideNotchHideDelayChange: { [weak self] delay in
+                    self?.setSideNotchHideDelay(delay)
                 }
             )
         )
@@ -453,6 +466,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         if style == .sideNotch {
             showSideNotch()
         }
+    }
+
+    private func setSideNotchHideDelay(
+        _ delay: SideNotchHideDelay
+    ) {
+        guard sideNotchHideDelay != delay else { return }
+        sideNotchHideDelay = delay
+        sideNotchHideDelayStore.save(delay)
+        sideNotchController.setAutoHideDelay(delay.rawValue)
     }
 
     private func showSelectedPresentation() {

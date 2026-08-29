@@ -6,6 +6,7 @@ struct SettingsView: View {
     let localization: LocalizationController
     let onLanguageChange: () -> Void
     let onPresentationStyleChange: (DashboardPresentationStyle) -> Void
+    let onSideNotchHideDelayChange: (SideNotchHideDelay) -> Void
     @State private var keyDrafts: [ProviderID: String] = [:]
     @State private var feedback: LocalizedText?
     @State private var setupError: ProviderSetupError?
@@ -14,20 +15,27 @@ struct SettingsView: View {
         defaults: .standard
     ).load()
     @State private var presentationStyle: DashboardPresentationStyle
+    @State private var sideNotchHideDelay: SideNotchHideDelay
 
     init(
         viewModel: UsageDashboardViewModel,
         localization: LocalizationController,
         presentationStyle: DashboardPresentationStyle,
+        sideNotchHideDelay: SideNotchHideDelay,
         onLanguageChange: @escaping () -> Void,
         onPresentationStyleChange:
-            @escaping (DashboardPresentationStyle) -> Void
+            @escaping (DashboardPresentationStyle) -> Void,
+        onSideNotchHideDelayChange:
+            @escaping (SideNotchHideDelay) -> Void
     ) {
         self.viewModel = viewModel
         self.localization = localization
         self.onLanguageChange = onLanguageChange
         self.onPresentationStyleChange = onPresentationStyleChange
+        self.onSideNotchHideDelayChange =
+            onSideNotchHideDelayChange
         _presentationStyle = State(initialValue: presentationStyle)
+        _sideNotchHideDelay = State(initialValue: sideNotchHideDelay)
     }
 
     var body: some View {
@@ -105,6 +113,68 @@ struct SettingsView: View {
                             style: .continuous
                         )
                     )
+
+                    if presentationStyle == .sideNotch {
+                        HStack {
+                            Text(
+                                localization.text(
+                                    .sideNotchHideDelay
+                                )
+                            )
+                                .font(
+                                    .system(
+                                        size: 13.5,
+                                        weight: .semibold
+                                    )
+                                )
+                            Spacer()
+                            Picker(
+                                localization.text(
+                                    .sideNotchHideDelay
+                                ),
+                                selection: Binding(
+                                    get: { sideNotchHideDelay },
+                                    set: { delay in
+                                        sideNotchHideDelay = delay
+                                        onSideNotchHideDelayChange(
+                                            delay
+                                        )
+                                    }
+                                )
+                            ) {
+                                ForEach(
+                                    SideNotchHideDelay.allCases
+                                ) { delay in
+                                    Text(
+                                        localization.format(
+                                            .sideNotchHideDelayOption,
+                                            delay.rawValue
+                                        )
+                                    )
+                                        .tag(delay)
+                                }
+                            }
+                            .labelsHidden()
+                            .pickerStyle(.menu)
+                            .frame(width: 128)
+                            .accessibilityLabel(
+                                localization.text(
+                                    .sideNotchHideDelay
+                                )
+                            )
+                        }
+                        .padding(10)
+                        .background(
+                            Color(
+                                nsColor:
+                                    .controlBackgroundColor
+                            ),
+                            in: RoundedRectangle(
+                                cornerRadius: 10,
+                                style: .continuous
+                            )
+                        )
+                    }
 
                     LaunchAtLoginSettingsRow(
                         controller: launchAtLogin
