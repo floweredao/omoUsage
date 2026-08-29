@@ -30,8 +30,18 @@ enum SideNotchPanelLayout {
     static func frame(
         in visibleFrame: NSRect,
         providerCount: Int,
-        mode: SideNotchPanelMode
+        mode: SideNotchPanelMode,
+        anchorY: CGFloat? = nil
     ) -> NSRect {
+        if mode == .hidden {
+            return NSRect(
+                x: visibleFrame.maxX - hiddenWidth,
+                y: visibleFrame.minY,
+                width: hiddenWidth,
+                height: visibleFrame.height
+            )
+        }
+
         let desiredHeight = max(
             minimumHeight,
             verticalPadding
@@ -54,7 +64,7 @@ enum SideNotchPanelLayout {
         case .detail:
             expandedWidth
         }
-        let proposedY = visibleFrame.midY - height / 2
+        let proposedY = (anchorY ?? visibleFrame.midY) - height / 2
         let minimumY = visibleFrame.minY + screenMargin
         let maximumY = visibleFrame.maxY - screenMargin - height
         let y = min(max(proposedY, minimumY), maximumY)
@@ -214,6 +224,7 @@ final class SideNotchPanelController: NSObject {
     )
     private var providerCount = 0
     private var pointerInside = false
+    private var pointerAnchorY: CGFloat?
     private var autoHideGeneration = 0
     private var autoHideTask: (any SideNotchAutoHideTask)?
     static let autoHideDelay: TimeInterval = 0.8
@@ -252,8 +263,8 @@ final class SideNotchPanelController: NSObject {
                     self?.providerCount = count
                     self?.reposition(animated: false)
                 },
-                onPointerEntered: { [weak self] in
-                    self?.pointerEntered()
+                onPointerEntered: { [weak self] screenY in
+                    self?.pointerEntered(at: screenY)
                 },
                 onPointerExited: { [weak self] in
                     self?.pointerExited()
@@ -362,8 +373,11 @@ final class SideNotchPanelController: NSObject {
         }
     }
 
-    func pointerEntered() {
+    func pointerEntered(at screenY: CGFloat? = nil) {
         pointerInside = true
+        if let screenY {
+            pointerAnchorY = screenY
+        }
         cancelAutoHide()
         if state.mode == .hidden {
             transition(to: .revealed, animated: true)
@@ -479,7 +493,8 @@ final class SideNotchPanelController: NSObject {
         let frame = SideNotchPanelLayout.frame(
             in: screen.visibleFrame,
             providerCount: providerCount,
-            mode: state.mode
+            mode: state.mode,
+            anchorY: pointerAnchorY
         )
         guard animated else {
             panel.setFrame(frame, display: true)
