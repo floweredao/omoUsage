@@ -31,10 +31,11 @@ official connection flow without owning or rewriting third-party credentials.
 
 The native dashboard offers two mutually exclusive presentation styles.
 `Popover` is the default and preserves the status-item-anchored 320 pt
-`NSPopover`. `Side Notch` presents a persistent 72 pt usage rail at the
-selected screen's usable right edge; selecting a provider expands a 320 pt
-detail card inward. Both styles share one dashboard view model and refresh
-owner. Switching styles closes the previous surface before enabling the next.
+`NSPopover`. `Side Notch` keeps a 6 pt reveal handle at the selected screen's
+usable right edge, reveals a 56 pt usage rail on edge entry or menu-bar
+request, and expands a 280 pt provider detail card inward. Both styles share
+one dashboard view model and refresh owner. Switching styles closes the
+previous surface before enabling the next.
 
 OmoUsage Mobile is a read-only iPhone companion. The Mac remains the only
 credential owner and publishes the latest usage snapshot through the user's
@@ -72,6 +73,9 @@ launches, and other privileged controls remain native-only.
 - The side-notch rail and detail card use regular system material, semantic
   borders, and the existing eucalyptus/amber usage palette. Provider branding
   remains inside the existing icon tiles.
+- The hidden side-notch handle is 6 pt wide with an 8 pt edge tracking region.
+  The revealed rail uses 20 pt leading corners and square screen-edge corners;
+  its ring track reuses `UsageMeterVisualTokens.trackOpacity`.
 - Mobile canvas and cards use semantic system backgrounds. Mobile meters reuse
   the standard eucalyptus and extra-usage amber tokens without introducing a
   second palette.
@@ -114,11 +118,12 @@ launches, and other privileged controls remain native-only.
 
 - Provider order follows OpenUsage: Claude, Codex, Cursor, Antigravity,
   Copilot, Devin, Grok, OpenCode, OpenRouter, Z.ai.
-- Side-notch mode pins a 72 pt rail to `NSScreen.visibleFrame.maxX`, centers
-  it vertically with 20 pt minimum top and bottom margins, and grows to
-  400 pt inward without moving its right edge. Provider rows remain 68 pt
-  high and scroll instead of shrinking when vertical space is constrained.
-- The side-notch detail card is 320 pt wide and at most 360 pt high. It uses
+- Side-notch mode pins a 6 pt hidden handle or 56 pt revealed rail to
+  `NSScreen.visibleFrame.maxX`, centers it vertically with 20 pt minimum top
+  and bottom margins, and grows to 344 pt inward without moving its right
+  edge. Provider rows are 58 pt high. Fourteen points of total rail padding
+  plus a 58 pt vertically stacked footer keeps eight providers at 536 pt.
+- The side-notch detail card is 280 pt wide and at most 320 pt high. It uses
   the existing provider section and scrolls only when that provider's complete
   usage content exceeds the cap.
 - Providers without prior usage are omitted when unavailable or unauthenticated.
@@ -160,10 +165,11 @@ launches, and other privileged controls remain native-only.
   provider link; it never routes through OpenUsage.
 - `InteractiveIconButton`: 28 pt hit target with hover, focus, and press state.
 - `SideNotchPanelController`: one retained nonactivating floating `NSPanel`,
+  authoritative hidden/revealed/detail state, cancellable 0.8 s auto-hide,
   screen-aware frame calculation, outside-click collapse, and Space/display
   reconfiguration.
 - `SideNotchPanelView`: provider rail, remaining-usage rings, selected provider
-  detail, refresh, Settings, and Quit controls.
+  detail, refresh, Settings, Quit, and one AppKit edge tracking surface.
 - `DashboardPresentationStyleStore`: repaired UserDefaults preference with
   Popover as the backward-compatible default.
 - `ProviderIcon`: 20 pt branded tile with SVG or native monogram fallback.
@@ -192,12 +198,19 @@ launches, and other privileged controls remain native-only.
 
 - Hover: 100–120 ms ease-out tint without geometry movement.
 - Press: stronger tint and symbol opacity feedback without scaling.
+- Entering the 6 pt edge handle reveals the rail and cancels a pending hide.
+  Leaving the revealed rail schedules one cancellable 0.8 s hide. Background
+  refresh never reveals the rail.
 - Side-notch provider selection expands on click, Return, or Space rather than
   hover. Selecting the active provider, pressing Escape, or clicking outside
-  collapses the detail while leaving the rail available.
+  collapses detail to the revealed rail; pointer absence then allows auto-hide.
+- In Side Notch mode, clicking the menu-bar status item only reveals or hides
+  the rail. It never selects a provider or opens provider detail.
 - Side-notch width changes use a 200 ms interruptible ease-out. Reduced Motion
   makes geometry changes immediate while retaining opacity/color feedback.
-- Refresh: continuous rotation only while work is active.
+- Refresh: a dedicated active subtree rotates only while work is active.
+  Returning to idle removes that subtree and renders a fresh zero-rotation
+  button, so no repeat-forever transaction survives refresh completion.
 - Refresh has no persistent accent fill; hover and press are its only
   background states.
 - Reduced motion: no scale or rotation; opacity/color feedback remains.
@@ -217,9 +230,12 @@ launches, and other privileged controls remain native-only.
 ## 7. Accessibility
 
 - Minimum pointer target: 28×28 pt in the compact footer.
-- Side-notch provider targets are at least 56×64 pt. Each exposes the provider
+- Side-notch provider targets are at least 56×58 pt. Each exposes the provider
   name, localized remaining percentage, and a detail-view hint; color and arc
   geometry never carry the meaning alone.
+- Edge hover is an accelerator, not the sole entry. Menu-bar activation and
+  accessibility focus expose the same revealed state without provider
+  selection.
 - Keyboard focus uses the native accent outline.
 - Connection state is communicated by text plus color.
 - Korean labels must not clip at the Settings window’s minimum width.
@@ -249,8 +265,8 @@ launches, and other privileged controls remain native-only.
   level with `canJoinAllSpaces`, `fullScreenAuxiliary`, `transient`,
   `auxiliary`, and `ignoresCycle` collection behavior. It uses only
   `NSScreen.visibleFrame` geometry and never alters the AppKit-owned popover.
-- Side Notch is disabled by default, restores collapsed after launch, and
-  never persists provider selection or expanded state.
+- Side Notch is disabled by default. When selected it restores hidden after
+  launch and never persists revealed state, provider selection, or detail.
 - OmoUsage never forces Aqua, Dark Aqua, or a SwiftUI color scheme. Dashboard,
   Settings, help, and controls inherit the operating-system appearance.
 - Companion providers keep upstream-style local credential discovery while

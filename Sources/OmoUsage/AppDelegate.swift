@@ -350,7 +350,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             togglePopover()
         case .sideNotch:
             statusPopover.performClose(statusItem.button)
-            sideNotchController.toggleExpanded(
+            sideNotchController.toggleRevealed(
                 preferredScreen: statusItem.button?.window?.screen
             )
         }

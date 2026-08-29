@@ -6,6 +6,8 @@ struct SideNotchPanelView: View {
     @Bindable var state: SideNotchPanelState
     let onSelectionChange: (ProviderID?, Bool) -> Void
     let onProviderCountChange: (Int) -> Void
+    let onPointerEntered: () -> Void
+    let onPointerExited: () -> Void
     let onRefresh: () -> Void
     let onSettings: () -> Void
     let onQuit: () -> Void
@@ -16,7 +18,13 @@ struct SideNotchPanelView: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack(alignment: .topTrailing) {
-                if state.selectedProvider != nil {
+                if state.mode == .hidden {
+                    SideNotchHiddenHandleView(
+                        onReveal: onPointerEntered
+                    )
+                    .frame(width: SideNotchPanelLayout.hiddenWidth)
+                    .frame(maxHeight: .infinity)
+                } else if state.selectedProvider != nil {
                     Color.clear
                         .contentShape(Rectangle())
                         .onTapGesture {
@@ -24,52 +32,69 @@ struct SideNotchPanelView: View {
                         }
                 }
 
-                HStack(alignment: .top, spacing: 8) {
-                    if let usage = selectedUsage {
-                        SideNotchDetailView(usage: usage)
-                            .frame(width: 320)
-                            .padding(
-                                .top,
-                                detailTop(in: geometry.size.height)
-                            )
-                            .transition(
-                                .asymmetric(
-                                    insertion: .opacity.combined(
-                                        with: .move(edge: .trailing)
-                                    ),
-                                    removal: .opacity
+                if state.mode != .hidden {
+                    HStack(
+                        alignment: .top,
+                        spacing: SideNotchPanelLayout.detailSpacing
+                    ) {
+                        if let usage = selectedUsage {
+                            SideNotchDetailView(usage: usage)
+                                .frame(
+                                    width:
+                                        SideNotchPanelLayout.detailWidth
                                 )
-                            )
-                    }
+                                .padding(
+                                    .top,
+                                    detailTop(in: geometry.size.height)
+                                )
+                                .transition(
+                                    .asymmetric(
+                                        insertion: .opacity.combined(
+                                            with: .move(edge: .trailing)
+                                        ),
+                                        removal: .opacity
+                                    )
+                                )
+                        }
 
-                    SideNotchRailView(
-                        providers: viewModel.snapshot.providers,
-                        selectedProvider: state.selectedProvider,
-                        isRefreshing: viewModel.isRefreshing,
-                        onSelect: { provider in
-                            let selection =
-                                state.selectedProvider == provider
-                                    ? nil
-                                    : provider
-                            onSelectionChange(selection, true)
-                        },
-                        onRefresh: onRefresh,
-                        onSettings: onSettings,
-                        onQuit: onQuit
+                        SideNotchRailView(
+                            providers: viewModel.snapshot.providers,
+                            selectedProvider: state.selectedProvider,
+                            isRefreshing: viewModel.isRefreshing,
+                            onSelect: { provider in
+                                let selection =
+                                    state.selectedProvider == provider
+                                        ? nil
+                                        : provider
+                                onSelectionChange(selection, true)
+                            },
+                            onRefresh: onRefresh,
+                            onSettings: onSettings,
+                            onQuit: onQuit
+                        )
+                        .frame(
+                            width:
+                                SideNotchPanelLayout.collapsedWidth
+                        )
+                        .frame(maxHeight: .infinity)
+                    }
+                    .frame(
+                        maxWidth: .infinity,
+                        maxHeight: .infinity,
+                        alignment: .trailing
                     )
-                    .frame(width: SideNotchPanelLayout.collapsedWidth)
-                    .frame(maxHeight: .infinity)
                 }
-                .frame(
-                    maxWidth: .infinity,
-                    maxHeight: .infinity,
-                    alignment: .trailing
-                )
             }
             .frame(
                 maxWidth: .infinity,
                 maxHeight: .infinity,
                 alignment: .trailing
+            )
+        }
+        .background {
+            SideNotchTrackingSurface(
+                onEntered: onPointerEntered,
+                onExited: onPointerExited
             )
         }
         .environment(\.appLocalization, localization.context)
@@ -127,6 +152,91 @@ struct SideNotchPanelView: View {
     }
 }
 
+private struct SideNotchHiddenHandleView: View {
+    let onReveal: () -> Void
+    @Environment(\.appLocalization)
+    private var localization
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 3, style: .continuous)
+            .fill(Color.primary.opacity(0.24))
+            .frame(width: 4, height: 96)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .accessibilityElement()
+            .accessibilityLabel(localization.text(.aiUsage))
+            .accessibilityHint(
+                localization.text(.sideNotchShowDetails)
+            )
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction {
+                onReveal()
+            }
+    }
+}
+
+private struct SideNotchTrackingSurface: NSViewRepresentable {
+    let onEntered: () -> Void
+    let onExited: () -> Void
+
+    func makeNSView(context: Context) -> TrackingView {
+        TrackingView(
+            onEntered: onEntered,
+            onExited: onExited
+        )
+    }
+
+    func updateNSView(_ nsView: TrackingView, context: Context) {
+        nsView.onEntered = onEntered
+        nsView.onExited = onExited
+    }
+
+    final class TrackingView: NSView {
+        var onEntered: () -> Void
+        var onExited: () -> Void
+        private var trackingArea: NSTrackingArea?
+
+        init(
+            onEntered: @escaping () -> Void,
+            onExited: @escaping () -> Void
+        ) {
+            self.onEntered = onEntered
+            self.onExited = onExited
+            super.init(frame: .zero)
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) {
+            nil
+        }
+
+        override func updateTrackingAreas() {
+            if let trackingArea {
+                removeTrackingArea(trackingArea)
+            }
+            let trackingArea = NSTrackingArea(
+                rect: .zero,
+                options: [
+                    .activeAlways,
+                    .mouseEnteredAndExited,
+                    .inVisibleRect
+                ],
+                owner: self
+            )
+            addTrackingArea(trackingArea)
+            self.trackingArea = trackingArea
+            super.updateTrackingAreas()
+        }
+
+        override func mouseEntered(with event: NSEvent) {
+            onEntered()
+        }
+
+        override func mouseExited(with event: NSEvent) {
+            onExited()
+        }
+    }
+}
+
 private struct SideNotchRailView: View {
     let providers: [ProviderUsage]
     let selectedProvider: ProviderID?
@@ -171,33 +281,13 @@ private struct SideNotchRailView: View {
                             )
                         }
                     }
-                    .padding(.vertical, 12)
+                    .padding(.vertical, 7)
                 }
                 .scrollIndicators(.hidden)
             }
 
-            HStack(spacing: 2) {
-                InteractiveIconButton(
-                    symbol: "arrow.clockwise",
-                    accessibilityLabel: localization.text(.refresh),
-                    isActive: isRefreshing,
-                    isDisabled: isRefreshing,
-                    dimsWhenDisabled: false,
-                    action: onRefresh
-                )
-                .rotationEffect(
-                    .degrees(
-                        isRefreshing && !reduceMotion ? 360 : 0
-                    )
-                )
-                .animation(
-                    isRefreshing && !reduceMotion
-                        ? .linear(duration: 0.7).repeatForever(
-                            autoreverses: false
-                        )
-                        : nil,
-                    value: isRefreshing
-                )
+            VStack(spacing: 2) {
+                refreshButton
 
                 Menu {
                     Button(
@@ -212,7 +302,7 @@ private struct SideNotchRailView: View {
                 } label: {
                     Image(systemName: "ellipsis")
                         .font(.system(size: 13, weight: .semibold))
-                        .frame(width: 32, height: 32)
+                        .frame(width: 28, height: 28)
                         .contentShape(Rectangle())
                 }
                 .menuStyle(.borderlessButton)
@@ -229,8 +319,8 @@ private struct SideNotchRailView: View {
         .background(
             .regularMaterial,
             in: UnevenRoundedRectangle(
-                topLeadingRadius: 24,
-                bottomLeadingRadius: 24,
+                topLeadingRadius: SideNotchPanelLayout.railCornerRadius,
+                bottomLeadingRadius: SideNotchPanelLayout.railCornerRadius,
                 bottomTrailingRadius: 0,
                 topTrailingRadius: 0,
                 style: .continuous
@@ -238,8 +328,8 @@ private struct SideNotchRailView: View {
         )
         .overlay {
             UnevenRoundedRectangle(
-                topLeadingRadius: 24,
-                bottomLeadingRadius: 24,
+                topLeadingRadius: SideNotchPanelLayout.railCornerRadius,
+                bottomLeadingRadius: SideNotchPanelLayout.railCornerRadius,
                 bottomTrailingRadius: 0,
                 topTrailingRadius: 0,
                 style: .continuous
@@ -249,6 +339,64 @@ private struct SideNotchRailView: View {
                 lineWidth: 0.5
             )
         }
+    }
+
+    @ViewBuilder
+    private var refreshButton: some View {
+        if SideNotchRefreshAnimationPolicy.shouldSpin(
+            isRefreshing: isRefreshing,
+            reduceMotion: reduceMotion
+        ) {
+            SideNotchSpinningRefreshButton(
+                accessibilityLabel: localization.text(.refresh)
+            )
+        } else {
+            InteractiveIconButton(
+                symbol: "arrow.clockwise",
+                accessibilityLabel: localization.text(.refresh),
+                isActive: isRefreshing,
+                isDisabled: isRefreshing,
+                dimsWhenDisabled: false,
+                hitTargetSize: 28,
+                action: onRefresh
+            )
+        }
+    }
+}
+
+enum SideNotchRefreshAnimationPolicy {
+    static func shouldSpin(
+        isRefreshing: Bool,
+        reduceMotion: Bool
+    ) -> Bool {
+        isRefreshing && !reduceMotion
+    }
+}
+
+private struct SideNotchSpinningRefreshButton: View {
+    let accessibilityLabel: String
+    @State private var rotation = 0.0
+
+    var body: some View {
+        InteractiveIconButton(
+            symbol: "arrow.clockwise",
+            accessibilityLabel: accessibilityLabel,
+            isActive: true,
+            isDisabled: true,
+            dimsWhenDisabled: false,
+            hitTargetSize: 28,
+            action: {}
+        )
+        .rotationEffect(.degrees(rotation))
+        .onAppear {
+            rotation = 360
+        }
+        .animation(
+            .linear(duration: 0.7).repeatForever(
+                autoreverses: false
+            ),
+            value: rotation
+        )
     }
 }
 
@@ -269,7 +417,9 @@ private struct SideNotchProviderButton: View {
                 ZStack {
                     Circle()
                         .stroke(
-                            Color.primary.opacity(0.12),
+                            Color.primary.opacity(
+                                UsageMeterVisualTokens.trackOpacity
+                            ),
                             lineWidth: 4
                         )
                     Circle()
@@ -289,7 +439,10 @@ private struct SideNotchProviderButton: View {
                         .rotationEffect(.degrees(-90))
 
                     ProviderIcon(provider: usage.provider)
-                        .frame(width: 26, height: 26)
+                        .frame(
+                            width: SideNotchPanelLayout.providerIconSize,
+                            height: SideNotchPanelLayout.providerIconSize
+                        )
 
                     if usage.availability == .failed {
                         Image(systemName: "exclamationmark.circle.fill")
@@ -299,10 +452,13 @@ private struct SideNotchProviderButton: View {
                             .offset(x: 14, y: -14)
                     }
                 }
-                .frame(width: 42, height: 42)
+                .frame(
+                    width: SideNotchPanelLayout.ringDiameter,
+                    height: SideNotchPanelLayout.ringDiameter
+                )
 
                 Text("\(summaryMeter.percentRemaining)%")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: 11, weight: .semibold))
                     .monospacedDigit()
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -330,7 +486,7 @@ private struct SideNotchProviderButton: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .padding(.horizontal, 8)
+        .padding(.horizontal, 6)
         .onHover { hovering in
             withAnimation(
                 reduceMotion ? nil : .easeOut(duration: 0.12)

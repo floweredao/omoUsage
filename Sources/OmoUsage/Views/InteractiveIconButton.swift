@@ -35,6 +35,7 @@ struct InteractiveIconButton: View {
     var isActive = false
     var isDisabled = false
     var dimsWhenDisabled = true
+    var hitTargetSize: CGFloat = 32
     let action: () -> Void
 
     @Environment(\.accessibilityReduceMotion)
@@ -51,7 +52,7 @@ struct InteractiveIconButton: View {
             Image(systemName: symbol)
                 .font(.system(size: 13, weight: .semibold))
                 .frame(width: 22, height: 22)
-                .frame(width: 32, height: 32)
+                .frame(width: hitTargetSize, height: hitTargetSize)
         }
         .buttonStyle(
             InteractiveIconButtonStyle(
