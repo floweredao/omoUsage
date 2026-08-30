@@ -1,6 +1,5 @@
 import Foundation
 import Security
-import Darwin
 
 struct SecurityKeychainReader: KeychainReading {
     let executable: URL
@@ -15,9 +14,6 @@ struct SecurityKeychainReader: KeychainReading {
     }
 
     func value(service: String, account: String) throws -> String? {
-        let process = Process()
-        let output = Pipe()
-        process.executableURL = executable
         var arguments = [
             "find-generic-password",
             "-s",
@@ -27,35 +23,23 @@ struct SecurityKeychainReader: KeychainReading {
             arguments.append(contentsOf: ["-a", account])
         }
         arguments.append("-w")
-        process.arguments = arguments
-        process.standardOutput = output
-        process.standardError = Pipe()
-        let finished = DispatchSemaphore(value: 0)
-        process.terminationHandler = { _ in
-            finished.signal()
-        }
-        try process.run()
-        guard
-            finished.wait(
-                timeout: .now() + max(0.01, timeout)
-            ) == .success
-        else {
-            process.terminate()
-            if finished.wait(timeout: .now() + 0.25) == .timedOut {
-                kill(process.processIdentifier, SIGKILL)
-                finished.wait()
-            }
+        let result: BoundedProcessResult
+        do {
+            result = try BoundedProcessRunner().run(
+                executable: executable,
+                arguments: arguments,
+                timeout: timeout
+            )
+        } catch BoundedProcessError.timedOut {
             throw KeychainReadError(status: errSecInteractionNotAllowed)
         }
-        if process.terminationStatus == 44 {
+        if result.status == 44 {
             return nil
         }
-        guard process.terminationStatus == 0 else {
-            throw KeychainReadError(
-                status: OSStatus(process.terminationStatus)
-            )
+        guard result.status == 0 else {
+            throw KeychainReadError(status: OSStatus(result.status))
         }
-        let data = output.fileHandleForReading.readDataToEndOfFile()
+        let data = result.standardOutput
         guard let value = String(data: data, encoding: .utf8) else {
             throw KeychainReadError(status: errSecDecode)
         }
