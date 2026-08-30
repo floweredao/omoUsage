@@ -130,6 +130,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
     private var settingsWindow: NSWindow?
     private weak var stabilizedPopoverWindow: NSWindow?
+    private var hasFinishedLaunching = false
+    private var hasPendingSecondaryActivation = false
     private var popoverHeight = DashboardLayout.panelHeight(for: [])
     private lazy var sideNotchController = SideNotchPanelController(
         viewModel: viewModel,
@@ -333,15 +335,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             )
         }
 
+        hasFinishedLaunching = true
         if
-            ProcessInfo.processInfo.environment[
-                "OMO_USAGE_OPEN_ON_LAUNCH"
-            ] == "1"
+            hasPendingSecondaryActivation
+                || ProcessInfo.processInfo.environment[
+                    "OMO_USAGE_OPEN_ON_LAUNCH"
+                ] == "1"
         {
+            hasPendingSecondaryActivation = false
             DispatchQueue.main.async { [weak self] in
                 self?.showSelectedPresentation()
             }
         }
+        NSLog("OmoUsage interactive UI ready")
+    }
+
+    func activateFromSecondaryLaunch() {
+        guard hasFinishedLaunching else {
+            hasPendingSecondaryActivation = true
+            return
+        }
+        showSelectedPresentation()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -566,10 +580,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private func showSelectedPresentation() {
         switch presentationStyle {
         case .popover:
-            showPopover()
+            if !statusPopover.isShown {
+                showPopover()
+            }
         case .sideNotch:
             showSideNotch()
+            sideNotchController.toggleRevealed(
+                preferredScreen: statusItem.button?.window?.screen
+            )
         }
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     private func showSideNotch() {

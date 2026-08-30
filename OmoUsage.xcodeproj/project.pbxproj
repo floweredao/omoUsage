@@ -74,6 +74,7 @@
 		C8791D837E30716C7F09C57C /* CodexUsageProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4ECD87E197A72829FA4FEF8F /* CodexUsageProvider.swift */; };
 		C8BF9FD98E8453C90694F505 /* ProviderTextLocalization.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CEFE498203410659A84EB09 /* ProviderTextLocalization.swift */; };
 		D0C4057361D5DE869F36320A /* CursorUsageProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25DDBD14AFA75AB0522C6FDD /* CursorUsageProvider.swift */; };
+		D1D669FE091363FA8F5C9F6D /* SingleInstanceController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3D3D4A69F4FA62AD31142D2 /* SingleInstanceController.swift */; };
 		D2AEF7EE1438AD4BD92ED58C /* ProviderDisconnectionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61F5278036864C9CBF1983DB /* ProviderDisconnectionStore.swift */; };
 		D6712313D01B279FD91F9573 /* SecurityKeychainReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EABF919950219809021F3EC /* SecurityKeychainReader.swift */; };
 		D6D3219CE75A0F7941AB807C /* ClaudeDesktopSessionReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 035DD26480869B2DDFE54E8C /* ClaudeDesktopSessionReader.swift */; };
@@ -151,6 +152,7 @@
 		AE0964670AAFD31CF7602CFF /* Version.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Version.xcconfig; sourceTree = "<group>"; };
 		B1923C928915C5FF1B9F1086 /* ProviderID.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderID.swift; sourceTree = "<group>"; };
 		BDF3AE66A5D3C88D9C1FE42E /* AGENTS.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = AGENTS.md; sourceTree = "<group>"; };
+		C3D3D4A69F4FA62AD31142D2 /* SingleInstanceController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SingleInstanceController.swift; sourceTree = "<group>"; };
 		D10C4986CF84E3A839055E01 /* ZAIUsageProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZAIUsageProvider.swift; sourceTree = "<group>"; };
 		D14D433914F0A08A93F1ECD9 /* SecurityKeychainWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecurityKeychainWriter.swift; sourceTree = "<group>"; };
 		D1BCF394421F7C8988DC6567 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
@@ -296,6 +298,7 @@
 				703B4FB64DE1CE619CB4CBF3 /* OmoUsageApp.swift */,
 				D743407BB6070410C37C24ED /* PopoverDismissalController.swift */,
 				84D95E7F3D9E2DDFEE8CE404 /* SideNotchPanelController.swift */,
+				C3D3D4A69F4FA62AD31142D2 /* SingleInstanceController.swift */,
 				B5E899256F8FA08A323A9450 /* Credentials */,
 				EA4A11A0B084FCA9322107AD /* Dashboard */,
 				175BD635613164979CE6D4C2 /* Localization */,
@@ -569,6 +572,7 @@
 				F053355E2A64A69C851FF8C3 /* SettingsView.swift in Sources */,
 				0DB3F13EF62480568A7A6303 /* SideNotchPanelController.swift in Sources */,
 				56A2379729756259D8158297 /* SideNotchPanelView.swift in Sources */,
+				D1D669FE091363FA8F5C9F6D /* SingleInstanceController.swift in Sources */,
 				90DCF0C3402F0974561CA955 /* UsageDashboardViewModel.swift in Sources */,
 				1F3BE6FCFA852970241D6E25 /* UsageMeterView.swift in Sources */,
 				519728574A52166DC016C745 /* UsageModels.swift in Sources */,
