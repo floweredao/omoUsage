@@ -39,6 +39,97 @@ struct OpenCodeReliabilityTests {
     }
 
     @Test
+    func localUsagePrefersActiveDatabaseOverAlternateCopies() async throws {
+        try await HephaestusOpenCodeReliabilityFixture.withDirectory {
+            home in
+            let directory = home.appending(
+                path: ".local/share/opencode",
+                directoryHint: .isDirectory
+            )
+            try HephaestusOpenCodeReliabilityFixture
+                .createLocalDatabaseFixtures(in: directory)
+            let provider = OpenCodeUsageProvider(
+                discovery: HephaestusOpenCodeReliabilityFixture.discovery(
+                    home: home
+                )
+            )
+            let now = Date(timeIntervalSince1970: 1_786_809_600)
+
+            let activeUsage = try await provider.fetch(now: now)
+
+            #expect(
+                activeUsage.groups[0].creditText == "최근 30일 $1.00"
+            )
+            try FileManager.default.removeItem(
+                at: directory.appending(path: "opencode.db")
+            )
+
+            let fallbackUsage = try await provider.fetch(now: now)
+
+            #expect(
+                fallbackUsage.groups[0].creditText == "최근 30일 $2.00"
+            )
+        }
+    }
+
+    @Test
+    func malformedLocalDatabaseTotalIsTypedFailure() async throws {
+        try await HephaestusOpenCodeReliabilityFixture.withDirectory {
+            home in
+            let directory = home.appending(
+                path: ".local/share/opencode",
+                directoryHint: .isDirectory
+            )
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true
+            )
+            try Data("not a database".utf8).write(
+                to: directory.appending(path: "opencode.db")
+            )
+
+            await #expect(
+                throws: CredentialDiscoveryError.malformed(.opencode)
+            ) {
+                try await OpenCodeUsageProvider(
+                    discovery: HephaestusOpenCodeReliabilityFixture.discovery(
+                        home: home
+                    )
+                ).fetch(now: Date(timeIntervalSince1970: 1_786_809_600))
+            }
+        }
+    }
+
+    @Test
+    func nonFiniteLocalDatabaseTotalIsTypedFailure() async throws {
+        try await HephaestusOpenCodeReliabilityFixture.withDirectory {
+            home in
+            let directory = home.appending(
+                path: ".local/share/opencode",
+                directoryHint: .isDirectory
+            )
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true
+            )
+            try HephaestusOpenCodeReliabilityFixture.createLocalDatabase(
+                directory.appending(path: "opencode.db"),
+                cost: "1e999"
+            )
+
+            await #expect(
+                throws: CredentialDiscoveryError.malformed(.opencode)
+            ) {
+                try await OpenCodeUsageProvider(
+                    discovery: HephaestusOpenCodeReliabilityFixture.discovery(
+                        home: home
+                    )
+                ).fetch(now: Date(timeIntervalSince1970: 1_786_809_600))
+            }
+        }
+    }
+
+    @Test
     func setupTargetsOpenCodeGoAuthentication() throws {
         let descriptor = try #require(
             ProviderSetup.descriptor(for: .opencode)
@@ -63,6 +154,35 @@ private enum HephaestusOpenCodeReliabilityFixture {
         )
     }
 
+    static func createLocalDatabaseFixtures(in directory: URL) throws {
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        let active = directory.appending(path: "opencode.db")
+        try createLocalDatabase(active, cost: "1")
+        try createLocalDatabase(
+            directory.appending(path: "opencode-backup.db"),
+            cost: "2"
+        )
+        try createLocalDatabase(
+            directory.appending(path: "opencode-old.db"),
+            cost: "3"
+        )
+        try FileManager.default.copyItem(
+            at: active,
+            to: directory.appending(path: "opencode-copy.db")
+        )
+        try FileManager.default.createSymbolicLink(
+            atPath: directory.appending(path: "opencode-symlink.db").path,
+            withDestinationPath: active.path
+        )
+        try FileManager.default.linkItem(
+            at: active,
+            to: directory.appending(path: "opencode-hard-link.db")
+        )
+    }
+
     static func writeGoCredential(home: URL) throws {
         let auth = home.appending(
             path: ".local/share/opencode/auth.json"
@@ -77,6 +197,27 @@ private enum HephaestusOpenCodeReliabilityFixture {
             ]
         )
         try data.write(to: auth)
+    }
+
+    static func createLocalDatabase(
+        _ url: URL,
+        cost: String
+    ) throws {
+        let process = Process()
+        process.executableURL = URL(filePath: "/usr/bin/sqlite3")
+        process.arguments = [
+            url.path,
+            """
+            CREATE TABLE message(time_created INTEGER, data TEXT);
+            INSERT INTO message VALUES(
+              1786809600000,
+              '{"role":"assistant","providerID":"opencode-go","cost":\(cost)}'
+            );
+            """
+        ]
+        try process.run()
+        process.waitUntilExit()
+        #expect(process.terminationStatus == 0)
     }
 
     static func withDirectory(

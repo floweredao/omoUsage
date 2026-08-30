@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 extension CredentialDiscovery {
     func cursor(now: Date) throws -> DiscoveredCredential {
@@ -298,24 +299,12 @@ extension CredentialDiscovery {
                 candidateError = .malformed(.opencode)
             }
         }
-        let databases: [URL]
-        if FileManager.default.fileExists(atPath: directory.path) {
-            do {
-                databases = try FileManager.default.contentsOfDirectory(
-                    at: directory,
-                    includingPropertiesForKeys: nil
-                )
-            } catch {
-                throw CredentialDiscoveryError.malformed(.opencode)
+        do {
+            if try openCodeDatabase() != nil {
+                return credential(.opencode, token: "local", source: .file)
             }
-        } else {
-            databases = []
-        }
-        if databases.contains(where: {
-            $0.lastPathComponent.hasPrefix("opencode")
-                && $0.pathExtension == "db"
-        }) {
-            return credential(.opencode, token: "local", source: .file)
+        } catch {
+            throw CredentialDiscoveryError.malformed(.opencode)
         }
         if let candidateError {
             throw candidateError
@@ -333,6 +322,31 @@ extension CredentialDiscovery {
         accountID: AccountID = .legacy
     ) throws -> DiscoveredCredential {
         try apiKeyCredential(.zai, accountID: accountID)
+    }
+
+    func openCodeDatabase() throws -> URL? {
+        let directory = openCodeDataDirectory
+        guard FileManager.default.fileExists(atPath: directory.path) else {
+            return nil
+        }
+        let candidates = try FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil
+        ).compactMap(OpenCodeDatabaseCandidate.init(url:))
+            .sorted {
+                ($0.name == "opencode.db") != ($1.name == "opencode.db")
+                    ? $0.name == "opencode.db"
+                    : $0.canonicalPath < $1.canonicalPath
+            }
+        var paths = Set<String>()
+        var identities = Set<OpenCodeDatabaseIdentity>()
+        let unique = candidates.filter {
+            paths.insert($0.canonicalPath).inserted
+                && identities.insert($0.identity).inserted
+        }
+        return unique.first(where: {
+            $0.name == "opencode.db"
+        })?.url ?? unique.first?.url
     }
 
     var openCodeDataDirectory: URL {
@@ -396,6 +410,48 @@ extension CredentialDiscovery {
             expiresAt: nil,
             source: source
         )
+    }
+}
+
+private struct OpenCodeDatabaseCandidate {
+    let name: String
+    let url: URL
+    let canonicalPath: String
+    let identity: OpenCodeDatabaseIdentity
+
+    init?(url: URL) {
+        guard
+            url.lastPathComponent.hasPrefix("opencode"),
+            url.pathExtension == "db"
+        else {
+            return nil
+        }
+        let canonicalURL = url.resolvingSymlinksInPath()
+            .standardizedFileURL
+        guard let identity = OpenCodeDatabaseIdentity(url: canonicalURL) else {
+            return nil
+        }
+        self.name = url.lastPathComponent
+        self.url = canonicalURL
+        self.canonicalPath = canonicalURL.path
+        self.identity = identity
+    }
+}
+
+private struct OpenCodeDatabaseIdentity: Hashable {
+    let device: UInt64
+    let inode: UInt64
+
+    init?(url: URL) {
+        var information = stat()
+        guard
+            stat(url.path, &information) == 0,
+            information.st_mode & S_IFMT == S_IFREG
+        else {
+            return nil
+        }
+        device = UInt64(information.st_dev)
+        inode = UInt64(information.st_ino)
     }
 }
 
