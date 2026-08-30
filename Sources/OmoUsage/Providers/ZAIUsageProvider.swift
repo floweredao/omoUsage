@@ -94,25 +94,23 @@ struct ZAIUsageProvider: UsageProvider {
                 updatedAt: now
             )
         }
-        var tokenMeters: [UsageMeter] = []
-        var searchMeter: UsageMeter?
+        var metersByID: [String: UsageMeter] = [:]
         for limit in limits {
             let type = ProviderPayload.text(
                 limit,
                 paths: [["type"], ["limitType"]]
             )?.uppercased() ?? ""
-            let used = ProviderPayload.number(
+            let explicitUsed = ProviderPayload.number(
                 limit,
-                paths: [["used"], ["currentValue"], ["usage"]]
+                paths: [["used"], ["currentValue"]]
             )
-            let cap = ProviderPayload.number(
+            let usage = ProviderPayload.number(
                 limit,
-                paths: [
-                    ["limit"],
-                    ["total"],
-                    ["maxValue"],
-                    ["usage"]
-                ]
+                paths: [["usage"]]
+            )
+            let explicitCap = ProviderPayload.number(
+                limit,
+                paths: [["limit"], ["total"], ["maxValue"]]
             )
             let usedPercent = ProviderPayload.number(
                 limit,
@@ -123,10 +121,15 @@ struct ZAIUsageProvider: UsageProvider {
                 remaining = ProviderPayload.remainingPercent(
                     usedPercent: usedPercent
                 )
-            } else if let used, let cap {
+            } else if let explicitUsed, let cap = explicitCap ?? usage {
                 remaining = ProviderPayload.remainingPercent(
-                    used: used,
+                    used: explicitUsed,
                     limit: cap
+                )
+            } else if let usage, let explicitCap {
+                remaining = ProviderPayload.remainingPercent(
+                    used: usage,
+                    limit: explicitCap
                 )
             } else {
                 remaining = nil
@@ -140,8 +143,9 @@ struct ZAIUsageProvider: UsageProvider {
                     ["reset_at"]
                 ]
             )
+            let meter: UsageMeter
             if type.contains("TIME") || type.contains("SEARCH") {
-                searchMeter = UsageMeter(
+                meter = UsageMeter(
                     id: "zai-search",
                     title: "웹 검색",
                     period: .extra,
@@ -178,22 +182,24 @@ struct ZAIUsageProvider: UsageProvider {
                     ].joined(separator: "-")
                     title = "토큰 한도"
                 }
-                tokenMeters.append(
-                    UsageMeter(
-                        id: meterID,
-                        title: title,
-                        period: period,
-                        percentRemaining: remaining,
-                        resetsAt: reset,
-                        resetText: ProviderPayload.resetText(
-                            reset,
-                            now: now
-                        )
-                    )
+                meter = UsageMeter(
+                    id: meterID,
+                    title: title,
+                    period: period,
+                    percentRemaining: remaining,
+                    resetsAt: reset,
+                    resetText: ProviderPayload.resetText(reset, now: now)
                 )
             }
+            if let current = metersByID[meter.id] {
+                if shouldReplace(current, with: meter) {
+                    metersByID[meter.id] = meter
+                }
+            } else {
+                metersByID[meter.id] = meter
+            }
         }
-        if let searchMeter { tokenMeters.append(searchMeter) }
+        var tokenMeters = Array(metersByID.values)
         tokenMeters.sort {
             let rank: [UsagePeriod: Int] = [
                 .session: 0,
@@ -220,6 +226,23 @@ struct ZAIUsageProvider: UsageProvider {
             availability: .available,
             updatedAt: now
         )
+    }
+
+    private func shouldReplace(
+        _ current: UsageMeter,
+        with candidate: UsageMeter
+    ) -> Bool {
+        if candidate.percentRemaining != current.percentRemaining {
+            return candidate.percentRemaining < current.percentRemaining
+        }
+        switch (current.resetsAt, candidate.resetsAt) {
+        case let (.some(currentReset), .some(candidateReset)):
+            return candidateReset < currentReset
+        case (.none, .some):
+            return true
+        default:
+            return false
+        }
     }
 
     private func subscriptionPlanName(
