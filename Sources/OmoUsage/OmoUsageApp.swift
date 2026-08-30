@@ -5,9 +5,12 @@ enum OmoUsageApp {
     @MainActor
     static func main() {
         let application = NSApplication.shared
+        if !application.setActivationPolicy(.accessory) {
+            NSLog("OmoUsage failed to set accessory activation policy at startup")
+        }
+
         let delegate = AppDelegate()
         application.delegate = delegate
-        application.setActivationPolicy(.accessory)
         application.run()
         withExtendedLifetime(delegate) {}
     }

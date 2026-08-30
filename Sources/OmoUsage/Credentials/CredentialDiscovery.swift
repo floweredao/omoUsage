@@ -318,10 +318,12 @@ struct CredentialDiscovery: Sendable {
         }
     }
 
-    static func live() -> CredentialDiscovery {
-        let environment = ProcessInfo.processInfo.environment
-        let home = Foundation.FileManager.default
-            .homeDirectoryForCurrentUser
+    static func live(
+        home: URL = Foundation.FileManager.default
+            .homeDirectoryForCurrentUser,
+        environment: [String: String] =
+            ProcessInfo.processInfo.environment
+    ) -> CredentialDiscovery {
         let codexHome: URL
         if let path = environment["CODEX_HOME"]?.nonEmpty {
             codexHome = URL(fileURLWithPath: path, isDirectory: true)

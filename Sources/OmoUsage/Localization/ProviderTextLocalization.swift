@@ -25,6 +25,13 @@ extension LocalizationResolving {
         _ error: ProviderSetupError
     ) -> String {
         switch error {
+        case .companionRequired(_, let companions):
+            let separator = language == .english ? " or " : " 또는 "
+            let targets = companions.joined(separator: separator)
+            if language == .english {
+                return "Install \(targets) to continue."
+            }
+            return "\(targets) 설치가 필요합니다."
         case .unavailable(let provider):
             return format(.unableToFindConnection, provider.displayName)
         case .unableToLaunch(let target):
@@ -72,6 +79,8 @@ extension DashboardSnapshot {
             providers: providers.map { provider in
                 ProviderUsage(
                     provider: provider.provider,
+                    accountID: provider.accountID,
+                    accountLabel: provider.accountLabel,
                     planName: localize(provider.planName),
                     groups: provider.groups.map { group in
                         UsageGroup(
@@ -219,7 +228,7 @@ enum ProviderTextLocalization {
         "Copilot CLI 또는 GitHub CLI에서 로그인": "Sign in with Copilot CLI or GitHub CLI",
         "devin auth login 실행": "Run devin auth login",
         "grok login 실행": "Run grok login",
-        "OpenCode Go 연결 또는 로컬 사용": "Connect OpenCode Go or use local usage",
+        "OpenCode Go API 키 입력": "Enter an OpenCode Go API key",
         "OpenRouter API 키 입력": "Enter an OpenRouter API key",
         "Z.ai API 키 입력": "Enter a Z.ai API key",
         "Claude Code OAuth 로그인을 완료하세요.": "Complete Claude Code OAuth sign-in.",
@@ -233,14 +242,14 @@ enum ProviderTextLocalization {
         "OmoUsage는 Antigravity가 Keychain에 저장한 인증값을 읽습니다.": "OmoUsage reads the credential Antigravity saved in Keychain.",
         "Copilot CLI가 있으면 브라우저 OAuth 로그인을 엽니다.": "If Copilot CLI is installed, it opens browser OAuth sign-in.",
         "없으면 설치된 GitHub CLI 인증을 엽니다.": "Otherwise, the installed GitHub CLI authentication flow opens.",
+        "일반 GitHub OAuth 로그인만으로는 Copilot quota 접근이 확인되지 않으며 OmoUsage가 endpoint에서 확인합니다.": "Generic GitHub OAuth alone does not prove Copilot quota access; OmoUsage verifies it at the endpoint.",
         "또는 사용하는 편집기에서 GitHub Copilot에 로그인하세요.": "You can also sign in to GitHub Copilot from your editor.",
         "연결 시작을 눌러 Devin CLI 인증을 진행하세요.": "Choose Connect to authenticate with Devin CLI.",
         "OmoUsage는 Devin이 저장한 로컬 인증값을 자동으로 찾습니다.": "OmoUsage automatically finds Devin's saved credential.",
         "연결 시작을 눌러 Grok CLI 인증을 진행하세요.": "Choose Connect to authenticate with Grok CLI.",
         "OmoUsage는 Grok의 로컬 auth.json을 자동으로 찾습니다.": "OmoUsage automatically finds Grok's local auth.json.",
-        "연결 시작을 누르면 OpenCode의 공식 인증 흐름을 엽니다.": "Choose Connect to open OpenCode's official authentication flow.",
-        "OmoUsage는 OpenCode의 auth.json과 로컬 사용 기록을 자동으로 찾습니다.": "OmoUsage automatically finds OpenCode auth.json and local usage.",
-        "OpenCode가 없으면 CLI 설치가 필요하다고 안내합니다.": "If OpenCode is unavailable, OmoUsage explains that the CLI must be installed.",
+        "OpenCode Go에서 API 키를 생성하세요.": "Create an API key in OpenCode Go.",
+        "OmoUsage는 저장된 키를 공식 auth.json과 로컬 사용 기록보다 먼저 사용합니다.": "OmoUsage uses the saved key before official auth.json and local usage.",
         "OpenRouter의 Keys 페이지에서 API 키를 생성하세요.": "Create an API key on OpenRouter's Keys page.",
         "생성한 키를 API 키 입력란에 붙여 넣고 저장을 누르세요.": "Paste the key into the API Key field and choose Save.",
         "개인 플랜은 Z.ai API 키 관리 페이지에서 키를 생성하세요.": "For an individual plan, create a key on the Z.ai API key management page.",

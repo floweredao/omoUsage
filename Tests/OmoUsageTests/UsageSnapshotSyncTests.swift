@@ -48,10 +48,10 @@ struct UsageSnapshotSyncTests {
     @Test
     func rejectsUnsupportedSnapshotVersions() throws {
         let data = Data(
-            #"{"version":2,"providers":[],"refreshedAt":0}"#.utf8
+            #"{"version":3,"providers":[],"refreshedAt":0}"#.utf8
         )
 
-        #expect(throws: UsageSnapshotCodecError.unsupportedVersion(2)) {
+        #expect(throws: UsageSnapshotCodecError.unsupportedVersion(3)) {
             try UsageSnapshotCodec.decode(data)
         }
     }
@@ -174,6 +174,79 @@ struct UsageSnapshotSyncTests {
 
         #expect(viewModel.snapshot == expected)
         #expect(viewModel.loadState == .empty)
+    }
+
+    @Test
+    @MainActor
+    func mobileViewModelPreservesDistinctSanitizedAccountsFromV2() throws {
+        let data = Data(
+            """
+            {
+              "version": 2,
+              "providers": [
+                {
+                  "provider": "openrouter",
+                  "accountID": "00000000-0000-0000-0000-00000000000a",
+                  "accountLabel": "Team A",
+                  "planName": "",
+                  "groups": [],
+                  "availability": "available",
+                  "updatedAt": null
+                },
+                {
+                  "provider": "openrouter",
+                  "accountID": "00000000-0000-0000-0000-00000000000b",
+                  "accountLabel": "owner@example.com",
+                  "planName": "",
+                  "groups": [],
+                  "availability": "available",
+                  "updatedAt": null
+                }
+              ],
+              "refreshedAt": 1786867200000
+            }
+            """.utf8
+        )
+        let viewModel = MobileUsageViewModel(
+            loadSnapshot: { try UsageSnapshotCodec.decode(data) }
+        )
+
+        viewModel.reload()
+
+        let providers = try #require(viewModel.snapshot?.providers)
+        #expect(viewModel.loadState == .content)
+        #expect(providers.filter { $0.provider == .openrouter }.count == 2)
+        #expect(Set(providers.map(\.id)).count == 2)
+        #expect(
+            providers.map(\.accountLabel)
+                == ["Team A", AccountLabel.defaultValue]
+        )
+    }
+
+    @Test
+    func mobileFixtureRendersTwoAccountsForTheSameProvider() throws {
+        let now = Date(timeIntervalSince1970: 1_785_675_000)
+
+        let fixture = DashboardSnapshot.mobileFixture(now: now)
+
+        #expect(fixture.refreshedAt == now)
+        #expect(fixture.providers.map(\.provider) == [
+            .openrouter,
+            .openrouter
+        ])
+        #expect(fixture.providers.map(\.accountLabel) == [
+            "QA Team",
+            "QA Personal"
+        ])
+        #expect(
+            Set(fixture.providers.map(\.accountProviderID)).count == 2
+        )
+        #expect(
+            fixture.providers.allSatisfy {
+                $0.availability == .available
+                    && !$0.groups.isEmpty
+            }
+        )
     }
 
     @Test

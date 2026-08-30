@@ -251,7 +251,27 @@ extension CredentialDiscovery {
         throw CredentialDiscoveryError.malformed(.grok)
     }
 
-    func opencode() throws -> DiscoveredCredential {
+    func opencode(
+        accountID: AccountID = .legacy
+    ) throws -> DiscoveredCredential {
+        if
+            let store = ProviderAPIKeyStore.live(
+                for: .opencode,
+                accountID: accountID,
+                home: home,
+                environment: environment
+            ),
+            let loaded = store.loadCredential()
+        {
+            return credential(
+                .opencode,
+                token: loaded.value,
+                source: loaded.source
+            )
+        }
+        guard accountID == .legacy else {
+            throw CredentialDiscoveryError.notFound(.opencode)
+        }
         let directory = openCodeDataDirectory
         let auth = directory.appending(path: "auth.json")
         var candidateError: CredentialDiscoveryError?
@@ -303,12 +323,16 @@ extension CredentialDiscovery {
         throw CredentialDiscoveryError.notFound(.opencode)
     }
 
-    func openrouter() throws -> DiscoveredCredential {
-        try apiKeyCredential(.openrouter)
+    func openrouter(
+        accountID: AccountID = .legacy
+    ) throws -> DiscoveredCredential {
+        try apiKeyCredential(.openrouter, accountID: accountID)
     }
 
-    func zai() throws -> DiscoveredCredential {
-        try apiKeyCredential(.zai)
+    func zai(
+        accountID: AccountID = .legacy
+    ) throws -> DiscoveredCredential {
+        try apiKeyCredential(.zai, accountID: accountID)
     }
 
     var openCodeDataDirectory: URL {
@@ -337,11 +361,13 @@ extension CredentialDiscovery {
     }
 
     private func apiKeyCredential(
-        _ provider: ProviderID
+        _ provider: ProviderID,
+        accountID: AccountID
     ) throws -> DiscoveredCredential {
         guard
             let store = ProviderAPIKeyStore.live(
                 for: provider,
+                accountID: accountID,
                 home: home,
                 environment: environment
             ),

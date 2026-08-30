@@ -2,11 +2,25 @@ import Foundation
 
 struct OpenRouterUsageProvider: UsageProvider {
     let id = ProviderID.openrouter
+    let accountID: AccountID
+    let accountLabel: String
     let discovery: CredentialDiscovery
     let http: ProviderHTTP
 
+    init(
+        discovery: CredentialDiscovery,
+        http: ProviderHTTP,
+        accountID: AccountID = .legacy,
+        accountLabel: String = AccountLabel.defaultValue
+    ) {
+        self.accountID = accountID
+        self.accountLabel = accountLabel
+        self.discovery = discovery
+        self.http = http
+    }
+
     func fetch(now: Date) async throws -> ProviderUsage {
-        let credential = try discovery.openrouter()
+        let credential = try discovery.openrouter(accountID: accountID)
         async let credits = attempt(
             "https://openrouter.ai/api/v1/credits",
             token: credential.accessToken

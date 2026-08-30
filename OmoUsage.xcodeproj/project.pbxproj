@@ -45,6 +45,9 @@
 		73FF7EC7862D9A97B9355CB9 /* ProviderIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99E35EB45A3EB81DB7A55A08 /* ProviderIcon.swift */; };
 		76586160A7D4F59218F9BE1F /* ProviderSectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC0B81DC5CFBF8B0D0E43BBD /* ProviderSectionView.swift */; };
 		77085914D073A6F1CD4CA7C7 /* ProviderAPIKeyStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 904BE1BBDC988ADD8BE50A13 /* ProviderAPIKeyStore.swift */; };
+		BB1200000000000000000001 /* ProviderAccountRegistryController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1200000000000000000001 /* ProviderAccountRegistryController.swift */; };
+		BB1200000000000000000002 /* ProviderAccountStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1200000000000000000002 /* ProviderAccountStore.swift */; };
+		BB1200000000000000000003 /* ProviderOrderingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1200000000000000000003 /* ProviderOrderingView.swift */; };
 		8170BB41E2A183846F897346 /* AdditionalCredentialDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18E04655A177A8AA235FBDB9 /* AdditionalCredentialDiscovery.swift */; };
 		837919BC114FC6497176EBA0 /* ProviderDisplayOrderStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F03319A261576E4FBE15484 /* ProviderDisplayOrderStore.swift */; };
 		89B49B73241BE1906C0342C4 /* AntigravityUsageParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA6198AA976BD0BCAE26F5A9 /* AntigravityUsageParser.swift */; };
@@ -130,6 +133,9 @@
 		7A8C29D796E6A4DB0E008032 /* ClaudeUsageParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeUsageParser.swift; sourceTree = "<group>"; };
 		81985102BEB8166F95456060 /* ClaudeCookieDatabase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeCookieDatabase.swift; sourceTree = "<group>"; };
 		904BE1BBDC988ADD8BE50A13 /* ProviderAPIKeyStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderAPIKeyStore.swift; sourceTree = "<group>"; };
+		AA1200000000000000000001 /* ProviderAccountRegistryController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderAccountRegistryController.swift; sourceTree = "<group>"; };
+		AA1200000000000000000002 /* ProviderAccountStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderAccountStore.swift; sourceTree = "<group>"; };
+		AA1200000000000000000003 /* ProviderOrderingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderOrderingView.swift; sourceTree = "<group>"; };
 		9A1E4C8B77D641F3A2C5E901 /* WebDashboardServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebDashboardServer.swift; sourceTree = "<group>"; };
 		90AB4BC350C05CBD76F7B6CD /* ProviderFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderFactory.swift; sourceTree = "<group>"; };
 		99E35EB45A3EB81DB7A55A08 /* ProviderIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderIcon.swift; sourceTree = "<group>"; };
@@ -249,6 +255,7 @@
 				4DE3495FD4EF7CEF400CF611 /* InteractiveIconButton.swift */,
 				E8F61035215741B843CC41D6 /* PopoverFooterView.swift */,
 				99E35EB45A3EB81DB7A55A08 /* ProviderIcon.swift */,
+				AA1200000000000000000003 /* ProviderOrderingView.swift */,
 				DC0B81DC5CFBF8B0D0E43BBD /* ProviderSectionView.swift */,
 				F31A95484F3E7C27B3246C59 /* RefreshTimestampPresenter.swift */,
 				F2F93832A03EEFC4678E3EFD /* SettingsView.swift */,
@@ -348,6 +355,8 @@
 				DA2DFDCC52C819D174BBECE1 /* CodexPlanMultiplierStore.swift */,
 				AA1100000000000000000001 /* DashboardPresentationStyleStore.swift */,
 				904BE1BBDC988ADD8BE50A13 /* ProviderAPIKeyStore.swift */,
+				AA1200000000000000000001 /* ProviderAccountRegistryController.swift */,
+				AA1200000000000000000002 /* ProviderAccountStore.swift */,
 				61F5278036864C9CBF1983DB /* ProviderDisconnectionStore.swift */,
 				0F03319A261576E4FBE15484 /* ProviderDisplayOrderStore.swift */,
 				DFF2372A302C924B066BD9D3 /* ProviderSetup.swift */,
@@ -514,6 +523,8 @@
 				FC3EA16049207CF4DD0DFF96 /* PopoverDismissalController.swift in Sources */,
 				E3B4AC9EC778BE509B98E2DE /* PopoverFooterView.swift in Sources */,
 				77085914D073A6F1CD4CA7C7 /* ProviderAPIKeyStore.swift in Sources */,
+				BB1200000000000000000001 /* ProviderAccountRegistryController.swift in Sources */,
+				BB1200000000000000000002 /* ProviderAccountStore.swift in Sources */,
 				D2AEF7EE1438AD4BD92ED58C /* ProviderDisconnectionStore.swift in Sources */,
 				8B29F479D59DB03872982777 /* ProviderDisplayOrderStore.swift in Sources */,
 				DC4FC34D73444DD0D4A3E003 /* ProviderFactory.swift in Sources */,
@@ -522,6 +533,7 @@
 				73FF7EC7862D9A97B9355CB9 /* ProviderIcon.swift in Sources */,
 				5677DED53647DB7768CEBEB6 /* ProviderPayload.swift in Sources */,
 				76586160A7D4F59218F9BE1F /* ProviderSectionView.swift in Sources */,
+				BB1200000000000000000003 /* ProviderOrderingView.swift in Sources */,
 				72335C02558EBD7437D9EAC7 /* ProviderSetup.swift in Sources */,
 				C8BF9FD98E8453C90694F505 /* ProviderTextLocalization.swift in Sources */,
 				A9E7EA73978A8697225E2A27 /* ProviderVisualStyle.swift in Sources */,

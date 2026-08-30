@@ -99,6 +99,12 @@ struct ProviderAPIKeyStore: Sendable {
             directoryHint: .isDirectory
         )
         switch provider {
+        case .opencode:
+            return ProviderAPIKeyStore(
+                configURL: base.appending(path: "opencode.json"),
+                environment: environment,
+                environmentNames: ["OPENCODE_API_KEY"]
+            )
         case .openrouter:
             return ProviderAPIKeyStore(
                 configURL: base.appending(path: "openrouter.json"),
@@ -117,6 +123,35 @@ struct ProviderAPIKeyStore: Sendable {
         default:
             return nil
         }
+    }
+
+    static func live(
+        for provider: ProviderID,
+        accountID: AccountID,
+        home: URL = FileManager.default.homeDirectoryForCurrentUser,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> ProviderAPIKeyStore? {
+        guard let legacy = live(
+            for: provider,
+            home: home,
+            environment: environment
+        ) else {
+            return nil
+        }
+        guard accountID != .legacy else { return legacy }
+        let accountDirectory = legacy.configURL
+            .deletingLastPathComponent()
+            .appending(
+                path: "accounts/\(accountID.rawValue)",
+                directoryHint: .isDirectory
+            )
+        return ProviderAPIKeyStore(
+            configURL: accountDirectory.appending(
+                path: legacy.configURL.lastPathComponent
+            ),
+            environment: environment,
+            environmentNames: []
+        )
     }
 }
 

@@ -9,22 +9,73 @@ actor ClaudeRefreshCooldown {
     static let shared = ClaudeRefreshCooldown()
 
     private let interval: TimeInterval
-    private var blockedUntil: Date?
+    private var blockedUntilByAccountProvider: [AccountProviderID: Date] = [:]
 
     init(interval: TimeInterval = 600) {
         self.interval = interval
     }
 
-    func allowsAttempt(at now: Date) -> Bool {
-        guard let blockedUntil else { return true }
+    func allowsAttempt(
+        for accountProviderID: AccountProviderID = AccountProviderID(
+            accountID: .legacy,
+            providerID: .claude
+        ),
+        at now: Date
+    ) -> Bool {
+        guard
+            let blockedUntil = blockedUntilByAccountProvider[accountProviderID]
+        else {
+            return true
+        }
         return now >= blockedUntil
     }
 
-    func recordFailure(at now: Date) {
-        blockedUntil = now.addingTimeInterval(interval)
+    func allowsAttempt(for accountID: AccountID, at now: Date) -> Bool {
+        allowsAttempt(
+            for: AccountProviderID(
+                accountID: accountID,
+                providerID: .claude
+            ),
+            at: now
+        )
     }
 
-    func recordSuccess() {
-        blockedUntil = nil
+    func recordFailure(
+        for accountProviderID: AccountProviderID = AccountProviderID(
+            accountID: .legacy,
+            providerID: .claude
+        ),
+        at now: Date
+    ) {
+        blockedUntilByAccountProvider[accountProviderID] =
+            now.addingTimeInterval(interval)
+    }
+
+    func recordFailure(for accountID: AccountID, at now: Date) {
+        recordFailure(
+            for: AccountProviderID(
+                accountID: accountID,
+                providerID: .claude
+            ),
+            at: now
+        )
+    }
+
+    func recordSuccess(
+        for accountProviderID: AccountProviderID = AccountProviderID(
+            accountID: .legacy,
+            providerID: .claude
+        )
+    ) {
+        blockedUntilByAccountProvider[accountProviderID] = nil
+    }
+
+    func recordSuccess(for accountID: AccountID) {
+        recordSuccess(
+            for: AccountProviderID(
+                accountID: accountID,
+                providerID: .claude
+            )
+        )
     }
 }

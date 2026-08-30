@@ -255,6 +255,67 @@ struct AdditionalCredentialDiscoveryTests {
     }
 
     @Test
+    func discoversDistinctOpenRouterAccountFiles() throws {
+        try withFixtureDirectory { home in
+            let firstID = AccountID()
+            let secondID = AccountID()
+            let firstStore = try #require(ProviderAPIKeyStore.live(
+                for: .openrouter,
+                accountID: firstID,
+                home: home,
+                environment: [:]
+            ))
+            let secondStore = try #require(ProviderAPIKeyStore.live(
+                for: .openrouter,
+                accountID: secondID,
+                home: home,
+                environment: [:]
+            ))
+            try firstStore.save("first-openrouter-key")
+            try secondStore.save("second-openrouter-key")
+            let discovery = fixtureDiscovery(
+                home: home,
+                keychain: AdditionalKeychain()
+            )
+
+            #expect(
+                try discovery.openrouter(accountID: firstID).accessToken
+                    == "first-openrouter-key"
+            )
+            #expect(
+                try discovery.openrouter(accountID: secondID).accessToken
+                    == "second-openrouter-key"
+            )
+        }
+    }
+
+    @Test
+    func nonLegacyOpenCodeDoesNotUseCompanionAuthOrDatabase() throws {
+        try withFixtureDirectory { home in
+            let dataDirectory = home.appending(
+                path: ".local/share/opencode",
+                directoryHint: .isDirectory
+            )
+            try writeJSON(
+                ["opencode-go": ["key": "legacy-companion-key"]],
+                to: dataDirectory.appending(path: "auth.json")
+            )
+            FileManager.default.createFile(
+                atPath: dataDirectory.appending(path: "opencode.db").path,
+                contents: Data()
+            )
+            let discovery = fixtureDiscovery(
+                home: home,
+                keychain: AdditionalKeychain()
+            )
+
+            #expect(throws: CredentialDiscoveryError.notFound(.opencode)) {
+                try discovery.opencode(accountID: AccountID())
+            }
+        }
+    }
+
+    @Test
     func copilotKeychainFailureDoesNotSelectBroaderCredential() throws {
         try withFixtureDirectory { home in
             try writeText(
