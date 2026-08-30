@@ -95,21 +95,30 @@ struct OpenCodeUsageProvider: UsageProvider {
     }
 
     private func localUsage(now: Date) throws -> ProviderUsage {
-        let directory = discovery.openCodeDataDirectory
-        let databases = try FileManager.default.contentsOfDirectory(
-            at: directory,
-            includingPropertiesForKeys: nil
-        ).filter {
-            $0.lastPathComponent.hasPrefix("opencode")
-                && $0.pathExtension == "db"
+        let database: URL
+        do {
+            guard let selected = try discovery.openCodeDatabase() else {
+                throw CredentialDiscoveryError.malformed(.opencode)
+            }
+            database = selected
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as CredentialDiscoveryError {
+            throw error
+        } catch {
+            throw CredentialDiscoveryError.malformed(.opencode)
         }
-        var hostedMonth = 0.0
-        for database in databases {
-            hostedMonth += try sum(
+        let hostedMonth: Double
+        do {
+            hostedMonth = try sum(
                 database,
                 providers: ["opencode-go", "opencode"],
                 since: now.addingTimeInterval(-30 * 86_400)
             )
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            throw CredentialDiscoveryError.malformed(.opencode)
         }
         return ProviderUsage(
             provider: id,
@@ -142,11 +151,17 @@ struct OpenCodeUsageProvider: UsageProvider {
           AND json_extract(data, '$.role') = 'assistant'
           AND json_extract(data, '$.providerID') IN (\(ids));
         """
-        let value = try LocalDataAccess.sqliteValue(
-            database: database,
-            sql: sql
-        )
-        return Double(value ?? "0") ?? 0
+        guard
+            let value = try LocalDataAccess.sqliteValue(
+                database: database,
+                sql: sql
+            ),
+            let total = Double(value),
+            total.isFinite
+        else {
+            throw CredentialDiscoveryError.malformed(.opencode)
+        }
+        return total
     }
 
 }

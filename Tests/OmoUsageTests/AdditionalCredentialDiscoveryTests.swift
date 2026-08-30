@@ -372,6 +372,35 @@ struct AdditionalCredentialDiscoveryTests {
     }
 
     @Test
+    func selectsCanonicalOpenCodeDatabaseBeforeFallbackCandidates() throws {
+        try withFixtureDirectory { home in
+            let directory = home.appending(
+                path: ".local/share/opencode",
+                directoryHint: .isDirectory
+            )
+            try createOpenCodeDatabaseFixtures(in: directory)
+            let discovery = fixtureDiscovery(
+                home: home,
+                keychain: AdditionalKeychain()
+            )
+
+            #expect(
+                try discovery.openCodeDatabase()?.lastPathComponent
+                    == "opencode.db"
+            )
+            #expect(try discovery.opencode().accessToken == "local")
+            try FileManager.default.removeItem(
+                at: directory.appending(path: "opencode.db")
+            )
+            #expect(
+                try discovery.openCodeDatabase()?.lastPathComponent
+                    == "opencode-backup.db"
+            )
+            #expect(try discovery.opencode().accessToken == "local")
+        }
+    }
+
+    @Test
     func ignoresNonstandardOpenCodeDataDirectoryOverride() throws {
         try withFixtureDirectory { home in
             let xdgData = home.appending(path: "xdg-data")
@@ -472,6 +501,47 @@ struct AdditionalCredentialDiscoveryTests {
             withIntermediateDirectories: true
         )
         try Data(text.utf8).write(to: url)
+    }
+
+    private func createOpenCodeDatabaseFixtures(
+        in directory: URL
+    ) throws {
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        let active = directory.appending(path: "opencode.db")
+        try createOpenCodeDatabase(active)
+        try createOpenCodeDatabase(
+            directory.appending(path: "opencode-backup.db")
+        )
+        try createOpenCodeDatabase(
+            directory.appending(path: "opencode-old.db")
+        )
+        try FileManager.default.copyItem(
+            at: active,
+            to: directory.appending(path: "opencode-copy.db")
+        )
+        try FileManager.default.createSymbolicLink(
+            atPath: directory.appending(path: "opencode-symlink.db").path,
+            withDestinationPath: active.path
+        )
+        try FileManager.default.linkItem(
+            at: active,
+            to: directory.appending(path: "opencode-hard-link.db")
+        )
+    }
+
+    private func createOpenCodeDatabase(_ url: URL) throws {
+        let process = Process()
+        process.executableURL = URL(filePath: "/usr/bin/sqlite3")
+        process.arguments = [
+            url.path,
+            "CREATE TABLE message(time_created INTEGER, data TEXT);"
+        ]
+        try process.run()
+        process.waitUntilExit()
+        #expect(process.terminationStatus == 0)
     }
 
     private func createCursorDatabase(_ home: URL) throws {
