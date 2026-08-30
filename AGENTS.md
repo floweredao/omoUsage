@@ -1,7 +1,7 @@
 # PROJECT KNOWLEDGE BASE
 
-**Generated:** 2026-08-23T03:26:22Z
-**Commit:** 5fd43e3
+**Generated:** 2026-08-30T12:00:51Z
+**Commit:** 1371442
 **Branch:** main
 
 ## OVERVIEW
@@ -40,6 +40,7 @@ OmoUsage is a native Swift 6 menu-bar app that aggregates remaining quota from t
 | Change credential lookup | `Credentials/` | Preserve source precedence, typed failures, and redaction |
 | Change provider requests/parsing | `Providers/` | Shared boundaries are `ProviderHTTP`, `UsageJSON`, and `ProviderPayload` |
 | Change refresh/failure behavior | `Dashboard/UsageDashboardViewModel.swift` | Concurrent fetch, cancellation, last-good retention |
+| Change provider accounts | `Settings/ProviderAccountStore.swift`, `ProviderAccountRegistryController.swift` | Registry changes rebuild account-scoped providers and repair persisted order |
 | Change provider setup/login | `Settings/ProviderSetup.swift` | Only official apps/CLIs; OpenRouter and Z.ai accept API keys |
 | Change desktop UI | `Views/`, `AppDelegate.swift`, `DESIGN.md` | Native 320 pt popover and system appearance |
 | Change web dashboard | `WebDashboard/`, `Resources/WebDashboard/index.html` | Loopback-only sanitized surface; mutations require a launch nonce |
@@ -49,20 +50,20 @@ OmoUsage is a native Swift 6 menu-bar app that aggregates remaining quota from t
 
 ## CODE MAP
 
-LSP document symbols supplied declaration shape; ast-grep supplied conformer and constructor counts. `Refs` is the number of Swift files containing the symbol because Swift LSP reference requests timed out.
+LSP document symbols supplied declaration shape and semantic spot checks. `Refs` is the number of Swift files containing the symbol; ast-grep was unavailable during this refresh.
 
 | Symbol | Type | Location | Refs | Role |
 |--------|------|----------|------|------|
 | `OmoUsageApp.main` | entry point | `Sources/OmoUsage/OmoUsageApp.swift:5` | 1 | Starts the accessory `NSApplication` |
-| `AppDelegate` | class | `Sources/OmoUsage/AppDelegate.swift:93` | 2 | macOS composition root and popover lifecycle |
-| `ProviderFactory.current` | factory | `Sources/OmoUsage/Providers/ProviderFactory.swift:4` | 3 | Registers ten live providers or fixture providers |
-| `CredentialDiscovery` | struct | `Sources/OmoUsage/Credentials/CredentialDiscovery.swift:77` | 30 | Central local credential boundary |
-| `UsageProvider` | protocol | `Sources/OmoUsage/Dashboard/UsageProvider.swift:3` | 17 | `Sendable` async provider contract; 11 structural conformers |
-| `UsageDashboardViewModel` | class | `Sources/OmoUsage/Dashboard/UsageDashboardViewModel.swift:4` | 6 | Main-actor refresh, ordering, and snapshot coordinator |
-| `ProviderID` | enum | `Sources/OmoUsage/Models/ProviderID.swift:1` | 33 | Canonical provider identity and order |
-| `UsageSnapshotCodec` | enum | `Sources/OmoUsage/Sync/UsageSnapshotSync.swift:16` | 2 | Validates and versions mobile-safe snapshots |
-| `WebDashboardRouter` | struct | `Sources/OmoUsage/WebDashboard/WebDashboardServer.swift:274` | 17 | Allowlists local HTTP routes and authorized dashboard commands |
-| `OmoUsageMobileApp` | entry point | `Sources/OmoUsage/Mobile/OmoUsageMobileApp.swift:6` | 1 | Loads snapshots; never calls providers |
+| `AppDelegate` | class | `Sources/OmoUsage/AppDelegate.swift:107` | 2 | macOS composition root and popover lifecycle |
+| `ProviderFactory.current` | factory | `Sources/OmoUsage/Providers/ProviderFactory.swift:3` | 4 | Registers account-scoped live providers or fixture providers |
+| `CredentialDiscovery` | struct | `Sources/OmoUsage/Credentials/CredentialDiscovery.swift:77` | 33 | Central local credential boundary |
+| `UsageProvider` | protocol | `Sources/OmoUsage/Dashboard/UsageProvider.swift:3` | 21 | `Sendable` async provider contract for live and fixture adapters |
+| `UsageDashboardViewModel` | class | `Sources/OmoUsage/Dashboard/UsageDashboardViewModel.swift:56` | 13 | Main-actor refresh, ordering, connection-state, and snapshot coordinator |
+| `ProviderID` | enum | `Sources/OmoUsage/Models/ProviderID.swift:42` | 49 | Canonical provider identity and order |
+| `UsageSnapshotCodec` | enum | `Sources/OmoUsage/Sync/UsageSnapshotSync.swift:16` | 5 | Validates and versions mobile-safe snapshots |
+| `WebDashboardRouter` | struct | `Sources/OmoUsage/WebDashboard/WebDashboardServer.swift:290` | 3 | Allowlists local HTTP routes and authorized dashboard commands |
+| `OmoUsageMobileApp` | entry point | `Sources/OmoUsage/Mobile/OmoUsageMobileApp.swift:5` | 1 | Loads snapshots; never calls providers |
 
 ## CONVENTIONS
 

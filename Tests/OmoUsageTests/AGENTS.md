@@ -2,7 +2,7 @@
 
 ## OVERVIEW
 
-One SwiftPM test target, 38 files, all Swift Testing (`import Testing`, `@testable import OmoUsage`). No XCTest, no network, no real Keychain. Every provider gets a `*ReliabilityTests.swift` file that pins its real-world failure modes; shared behavior lives in the dashboard, credential, parsing, and web-dashboard suites.
+One SwiftPM test target, 50 Swift files, all Swift Testing (`import Testing`, `@testable import OmoUsage`). No XCTest, no network, no real Keychain. Every provider gets a `*ReliabilityTests.swift` file that pins its real-world failure modes; shared behavior lives in the dashboard, account-state, credential, parsing, and web-dashboard suites.
 
 ## WHERE TO LOOK
 
@@ -10,6 +10,7 @@ One SwiftPM test target, 38 files, all Swift Testing (`import Testing`, `@testab
 |------|------|
 | Refresh ordering, cancellation, connection states | `UsageDashboardViewModelTests.swift` |
 | Last-good retention under transient failure | `LastGoodUsageReliabilityTests.swift` |
+| Account migration, multi-account refresh/order | `AccountStateMigrationAndSnapshotTests.swift`, `MultiAccountRefreshTests.swift` |
 | Credential precedence, malformed/expired sources | `CredentialDiscoveryTests.swift`, `AdditionalCredentialDiscoveryTests.swift` |
 | One provider's HTTP request/parse/failure path | `<Provider>ReliabilityTests.swift` |
 | Claude OAuth refresh and desktop-session fallback | `ClaudeTokenRefreshTests.swift`, `ClaudeDesktopRefreshTests.swift`, `ClaudeLiveFailureTests.swift` |
