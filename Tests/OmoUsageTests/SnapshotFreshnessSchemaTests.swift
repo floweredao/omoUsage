@@ -107,6 +107,9 @@ struct SnapshotFreshnessSchemaTests {
         #expect(object["lastRefreshAttemptAt"] != nil)
         #expect(object["oldestDisplayedSuccessAt"] != nil)
         #expect(object["refreshedAt"] == nil)
+        #expect(provider["accountOrdinal"] as? Int == 1)
+        #expect(provider["accountID"] == nil)
+        #expect(provider["accountLabel"] == nil)
         #expect(provider["lastSuccessfulAt"] != nil)
         #expect(provider["updatedAt"] == nil)
     }
@@ -205,8 +208,7 @@ struct SnapshotFreshnessSchemaTests {
               "version": 3,
               "providers": [{
                 "provider": "codex",
-                "accountID": "00000000-0000-0000-0000-000000000001",
-                "accountLabel": "Default Account",
+                "accountOrdinal": 1,
                 "planName": "",
                 "groups": [],
                 "availability": "available",
