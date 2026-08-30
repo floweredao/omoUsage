@@ -261,7 +261,9 @@ struct SettingsView: View {
                                     reconnectProvider(provider)
                                 },
                                 onRetry: {
-                                    Task { await viewModel.refresh() }
+                                    Task {
+                                        await viewModel.retryProvider(provider)
+                                    }
                                 },
                                 codexPlanMultiplier:
                                     provider == .codex

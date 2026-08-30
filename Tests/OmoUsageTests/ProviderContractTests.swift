@@ -97,8 +97,9 @@ struct ProviderContractTests {
 
         #expect(viewModel.accountConnectionStates[target] == .schemaChanged)
         #expect(viewModel.accountConnectionStates[sibling] == .available)
-        #expect(viewModel.disconnectedAccountProviders == [target])
-        #expect(persistedDisabled.last == [target])
+        #expect(viewModel.schemaChangedAccountProviders == [target])
+        #expect(viewModel.disconnectedAccountProviders.isEmpty)
+        #expect(persistedDisabled.isEmpty)
         #expect(viewModel.snapshot.providers.map(\.accountProviderID) == [sibling])
         #expect(await targetProvider.fetchCount == 1)
         #expect(await siblingProvider.fetchCount == 1)
@@ -110,9 +111,41 @@ struct ProviderContractTests {
 
         await viewModel.refresh()
 
+        #expect(viewModel.accountConnectionStates[target] == .schemaChanged)
+        #expect(viewModel.accountConnectionStates[sibling] == .available)
+        #expect(viewModel.schemaChangedAccountProviders == [target])
+        #expect(viewModel.disconnectedAccountProviders.isEmpty)
+        #expect(persistedDisabled.isEmpty)
         #expect(await targetProvider.fetchCount == 1)
         #expect(await siblingProvider.fetchCount == 2)
         #expect(ContractFixtureRouter.requestCount == 3)
+
+        ContractFixtureRouter.setMutationEnabled(false)
+        viewModel.reconnectAccountProvider(target)
+        #expect(viewModel.schemaChangedAccountProviders.isEmpty)
+        #expect(persistedDisabled.isEmpty)
+        await viewModel.refresh()
+        #expect(viewModel.accountConnectionStates[target] == .available)
+        #expect(await targetProvider.fetchCount == 2)
+        #expect(await siblingProvider.fetchCount == 3)
+
+        ContractFixtureRouter.setMutationEnabled(true)
+        await viewModel.refresh()
+        #expect(viewModel.accountConnectionStates[target] == .schemaChanged)
+        #expect(viewModel.schemaChangedAccountProviders == [target])
+        #expect(await targetProvider.fetchCount == 3)
+        #expect(await siblingProvider.fetchCount == 4)
+
+        ContractFixtureRouter.setMutationEnabled(false)
+        await viewModel.retryAccountProvider(target)
+        #expect(viewModel.accountConnectionStates[target] == .available)
+        #expect(viewModel.schemaChangedAccountProviders.isEmpty)
+        #expect(viewModel.disconnectedAccountProviders.isEmpty)
+        #expect(persistedDisabled.isEmpty)
+        #expect(await targetProvider.fetchCount == 4)
+        #expect(await siblingProvider.fetchCount == 5)
+        #expect(ContractFixtureRouter.requestCount == 9)
+
         let event = try #require(diagnostics.events.last)
         #expect(event.provider == .openrouter)
         #expect(event.status == .schemaChanged)
@@ -130,6 +163,59 @@ struct ProviderContractTests {
         #expect(!fields.keys.contains("headers"))
         #expect(!fields.keys.contains("body"))
         #expect(!fields.keys.contains("error"))
+    }
+
+    @Test
+    @MainActor
+    func providerUpdatePrunesRuntimeSchemaDisable() async {
+        let removed = AccountProviderID(
+            accountID: AccountID(
+                rawValue: "00000000-0000-0000-0000-000000000022"
+            )!,
+            providerID: .openrouter
+        )
+        let retained = AccountProviderID(
+            accountID: AccountID(
+                rawValue: "00000000-0000-0000-0000-000000000023"
+            )!,
+            providerID: .zai
+        )
+        let provider = ContractFixtureProvider(
+            identity: removed,
+            result: .failure(
+                ProviderContractError.schemaChanged(
+                    provider: .openrouter,
+                    purpose: .openRouterCredits,
+                    contractRevision: 1
+                )
+            )
+        )
+        let retainedProvider = ContractFixtureProvider(
+            identity: retained,
+            result: .failure(
+                ProviderTransportError.transientTransport(
+                    .zai,
+                    .networkConnectionLost
+                )
+            )
+        )
+        let viewModel = UsageDashboardViewModel(
+            providers: [provider, retainedProvider],
+            diagnosticStore: DiagnosticStore(capacity: 2),
+            now: { now }
+        )
+
+        await viewModel.refresh()
+        #expect(viewModel.schemaChangedAccountProviders == [removed])
+
+        viewModel.updateProviders(
+            [retainedProvider],
+            accountProviderOrder: [retained],
+            disconnected: []
+        )
+
+        #expect(viewModel.schemaChangedAccountProviders.isEmpty)
+        #expect(viewModel.accountConnectionStates[removed] == nil)
     }
 
     @Test
@@ -271,6 +357,7 @@ private enum ContractFixtureRouter {
     private static let lock = NSLock()
     nonisolated(unsafe) private static var mutatedToken = ""
     nonisolated(unsafe) private static var healthyToken = ""
+    nonisolated(unsafe) private static var mutationEnabled = false
     nonisolated(unsafe) private static var recordedPurposeIDs: [String] = []
 
     static var requestCount: Int {
@@ -285,6 +372,7 @@ private enum ContractFixtureRouter {
         lock.withLock {
             self.mutatedToken = mutatedToken
             self.healthyToken = healthyToken
+            mutationEnabled = true
             recordedPurposeIDs = []
         }
     }
@@ -298,7 +386,9 @@ private enum ContractFixtureRouter {
                 forHTTPHeaderField: "Authorization"
             )
             if authorization == "Bearer \(mutatedToken)" {
-                return #"{"shape":"mutated"}"#
+                return mutationEnabled
+                    ? #"{"shape":"mutated"}"#
+                    : #"{"remaining":75}"#
             }
             if authorization == "Bearer \(healthyToken)" {
                 return #"{"remaining":75}"#
@@ -307,10 +397,17 @@ private enum ContractFixtureRouter {
         }
     }
 
+    static func setMutationEnabled(_ enabled: Bool) {
+        lock.withLock {
+            mutationEnabled = enabled
+        }
+    }
+
     static func reset() {
         lock.withLock {
             mutatedToken = ""
             healthyToken = ""
+            mutationEnabled = false
             recordedPurposeIDs = []
         }
     }

@@ -92,6 +92,7 @@ final class UsageDashboardViewModel {
     private(set) var providerOrder: [ProviderID]
     private(set) var accountProviderOrder: [AccountProviderID]
     private(set) var disconnectedAccountProviders: Set<AccountProviderID>
+    private(set) var schemaChangedAccountProviders: Set<AccountProviderID> = []
     private(set) var accountConnectionStates: [
         AccountProviderID: ProviderAvailability
     ] = [:]
@@ -239,6 +240,7 @@ final class UsageDashboardViewModel {
         disconnectedAccountProviders = requestedDisconnected.intersection(
             configuredSet
         )
+        schemaChangedAccountProviders.formIntersection(configuredSet)
         accountConnectionStates = accountConnectionStates.filter {
             configuredSet.contains($0.key)
         }
@@ -403,20 +405,48 @@ final class UsageDashboardViewModel {
     }
 
     func reconnectProvider(_ provider: ProviderID) {
-        let identities = disconnectedAccountProviders.filter {
-            $0.providerID == provider
-        }
+        let identities = disconnectedAccountProviders.union(
+            schemaChangedAccountProviders
+        ).filter { $0.providerID == provider }
         var changed = false
+        var persistedDisconnectionChanged = false
         for identity in identities {
-            changed = reconnectAccountProvider(
+            let clearedSchema = schemaChangedAccountProviders
+                .remove(identity) != nil
+            let reconnected = reconnectAccountProvider(
                 identity,
                 publishesState: false
-            ) || changed
+            )
+            if clearedSchema && !reconnected {
+                accountConnectionStates[identity] = .unavailable
+            }
+            changed = clearedSchema || reconnected || changed
+            persistedDisconnectionChanged = reconnected
+                || persistedDisconnectionChanged
         }
         guard changed else { return }
-        persistDisconnectedAccountProviders(disconnectedAccountProviders)
-        persistDisconnectedProviders(disconnectedProviders)
+        updateLegacyConnectionStates(includeUnavailableProviders: false)
+        if isRefreshing { refreshAfterCurrent = true }
+        if persistedDisconnectionChanged {
+            persistDisconnectedAccountProviders(
+                disconnectedAccountProviders
+            )
+            persistDisconnectedProviders(disconnectedProviders)
+        }
         publishCurrentControlState()
+    }
+
+    func retryProvider(_ provider: ProviderID) async {
+        let identities = schemaChangedAccountProviders.filter {
+            $0.providerID == provider
+        }
+        for identity in identities {
+            schemaChangedAccountProviders.remove(identity)
+            accountConnectionStates[identity] = .unavailable
+        }
+        updateLegacyConnectionStates(includeUnavailableProviders: false)
+        if isRefreshing { refreshAfterCurrent = true }
+        await refresh()
     }
 
     func isDisconnected(_ accountProvider: AccountProviderID) -> Bool {
@@ -435,14 +465,36 @@ final class UsageDashboardViewModel {
     }
 
     func reconnectAccountProvider(_ accountProvider: AccountProviderID) {
-        guard reconnectAccountProvider(
+        let clearedSchema = schemaChangedAccountProviders
+            .remove(accountProvider) != nil
+        let reconnected = reconnectAccountProvider(
             accountProvider,
-            publishesState: true
-        ) else {
-            return
+            publishesState: false
+        )
+        guard clearedSchema || reconnected else { return }
+        if clearedSchema && !reconnected {
+            accountConnectionStates[accountProvider] = .unavailable
         }
-        persistDisconnectedAccountProviders(disconnectedAccountProviders)
-        persistDisconnectedProviders(disconnectedProviders)
+        updateLegacyConnectionStates(includeUnavailableProviders: false)
+        if isRefreshing { refreshAfterCurrent = true }
+        if reconnected {
+            persistDisconnectedAccountProviders(
+                disconnectedAccountProviders
+            )
+            persistDisconnectedProviders(disconnectedProviders)
+        }
+        publishCurrentControlState()
+    }
+
+    func retryAccountProvider(
+        _ accountProvider: AccountProviderID
+    ) async {
+        if schemaChangedAccountProviders.remove(accountProvider) != nil {
+            accountConnectionStates[accountProvider] = .unavailable
+            updateLegacyConnectionStates(includeUnavailableProviders: false)
+        }
+        if isRefreshing { refreshAfterCurrent = true }
+        await refresh()
     }
 
     func refresh() async {
@@ -467,6 +519,8 @@ final class UsageDashboardViewModel {
             ) { group in
                 for provider in refreshProviders
                 where !disconnectedAccountProviders.contains(
+                    provider.accountProviderID
+                ) && !schemaChangedAccountProviders.contains(
                     provider.accountProviderID
                 ) {
                     group.addTask {
@@ -506,16 +560,16 @@ final class UsageDashboardViewModel {
                         identity,
                         disconnectedAccountProviders.contains(identity)
                             ? .authenticationRequired
-                            : byAccountProvider[identity]?.availability
-                                ?? .unavailable
+                            : schemaChangedAccountProviders.contains(identity)
+                                ? .schemaChanged
+                                : byAccountProvider[identity]?.availability
+                                    ?? .unavailable
                     )
                 }
             )
-            var disabledForSchemaChange = false
             for result in results {
                 guard let revision = result.contractRevision else { continue }
-                disabledForSchemaChange = disconnectedAccountProviders
-                    .insert(result.id).inserted || disabledForSchemaChange
+                schemaChangedAccountProviders.insert(result.id)
                 diagnosticStore.record(
                     DiagnosticEvent(
                         provider: result.id.providerID,
@@ -526,12 +580,6 @@ final class UsageDashboardViewModel {
                     )
                 )
             }
-            if disabledForSchemaChange {
-                persistDisconnectedAccountProviders(
-                    disconnectedAccountProviders
-                )
-                persistDisconnectedProviders(disconnectedProviders)
-            }
             updateLegacyConnectionStates(includeUnavailableProviders: true)
             let previous = Dictionary(
                 uniqueKeysWithValues: snapshot.providers.map {
@@ -541,7 +589,10 @@ final class UsageDashboardViewModel {
             let usages: [ProviderUsage] = refreshProviders.compactMap {
                 provider -> ProviderUsage? in
                 let identity = provider.accountProviderID
-                guard !disconnectedAccountProviders.contains(identity) else {
+                guard
+                    !disconnectedAccountProviders.contains(identity),
+                    !schemaChangedAccountProviders.contains(identity)
+                else {
                     return nil
                 }
                 guard let result = byAccountProvider[identity] else {
@@ -660,6 +711,7 @@ final class UsageDashboardViewModel {
         _ accountProvider: AccountProviderID,
         publishesState: Bool
     ) -> Bool {
+        schemaChangedAccountProviders.remove(accountProvider)
         guard disconnectedAccountProviders.insert(accountProvider).inserted
         else {
             return false
