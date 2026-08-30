@@ -57,6 +57,21 @@ enum ProviderAvailability: String, Equatable, Codable, Sendable {
     }
 }
 
+/// Whether displayed usage came from the most recent refresh attempt.
+enum UsageFreshness: String, Codable, Sendable {
+    case current
+    case stale
+}
+
+/// Why the most recent refresh attempt failed while its values were kept.
+enum ProviderRefreshFailure: String, Codable, Sendable, CaseIterable {
+    case network
+    case service
+    case schema
+    case credential
+    case unknown
+}
+
 enum AccountLabel {
     static let defaultValue = "Default Account"
     static let maximumLength = 128
@@ -102,8 +117,16 @@ struct ProviderUsage: Identifiable, Equatable, Codable, Sendable {
     let groups: [UsageGroup]
     let availability: ProviderAvailability
     let lastSuccessfulAt: Date?
+    let lastRefreshAttemptAt: Date?
+    let refreshFailure: ProviderRefreshFailure?
 
     var updatedAt: Date? { lastSuccessfulAt }
+
+    /// Displayed values are stale once an attempt failed after the last
+    /// success and the previous values were kept on screen.
+    var freshness: UsageFreshness {
+        refreshFailure == nil ? .current : .stale
+    }
 
     init(
         provider: ProviderID,
@@ -112,7 +135,9 @@ struct ProviderUsage: Identifiable, Equatable, Codable, Sendable {
         planName: String,
         groups: [UsageGroup],
         availability: ProviderAvailability,
-        lastSuccessfulAt: Date?
+        lastSuccessfulAt: Date?,
+        lastRefreshAttemptAt: Date? = nil,
+        refreshFailure: ProviderRefreshFailure? = nil
     ) {
         self.provider = provider
         self.accountID = accountID
@@ -121,6 +146,8 @@ struct ProviderUsage: Identifiable, Equatable, Codable, Sendable {
         self.groups = groups
         self.availability = availability
         self.lastSuccessfulAt = lastSuccessfulAt
+        self.lastRefreshAttemptAt = lastRefreshAttemptAt
+        self.refreshFailure = refreshFailure
     }
 
     init(
@@ -154,7 +181,28 @@ struct ProviderUsage: Identifiable, Equatable, Codable, Sendable {
             planName: planName,
             groups: groups,
             availability: availability,
-            updatedAt: updatedAt
+            lastSuccessfulAt: lastSuccessfulAt,
+            lastRefreshAttemptAt: lastRefreshAttemptAt,
+            refreshFailure: refreshFailure
+        )
+    }
+
+    /// Records the outcome of a refresh attempt without ever moving
+    /// `lastSuccessfulAt` forward on failure.
+    func recordingRefreshAttempt(
+        at attemptedAt: Date,
+        failure: ProviderRefreshFailure? = nil
+    ) -> ProviderUsage {
+        ProviderUsage(
+            provider: provider,
+            accountID: accountID,
+            accountLabel: accountLabel,
+            planName: planName,
+            groups: groups,
+            availability: availability,
+            lastSuccessfulAt: lastSuccessfulAt,
+            lastRefreshAttemptAt: attemptedAt,
+            refreshFailure: failure
         )
     }
 
@@ -166,6 +214,8 @@ struct ProviderUsage: Identifiable, Equatable, Codable, Sendable {
         case groups
         case availability
         case lastSuccessfulAt
+        case lastRefreshAttemptAt
+        case refreshFailure
     }
 
     private enum LegacyCodingKeys: String, CodingKey {
@@ -200,6 +250,42 @@ struct ProviderUsage: Identifiable, Equatable, Codable, Sendable {
         ) ?? legacyContainer.decodeIfPresent(
             Date.self,
             forKey: .updatedAt
+        )
+        lastRefreshAttemptAt = try container.decodeIfPresent(
+            Date.self,
+            forKey: .lastRefreshAttemptAt
+        )
+        refreshFailure = try container.decodeIfPresent(
+            ProviderRefreshFailure.self,
+            forKey: .refreshFailure
+        )
+    }
+}
+
+/// Freshness rows shared by the popover, Side Notch, web, and mobile cards so
+/// every surface reports the same success and attempt times.
+struct ProviderFreshnessDisplay: Equatable, Sendable {
+    let showsStaleBadge: Bool
+    let successAt: Date?
+    let attemptAt: Date?
+
+    var rowCount: Int {
+        (successAt == nil ? 0 : 1) + (attemptAt == nil ? 0 : 1)
+    }
+
+    /// - Parameter includesSuccessRow: whether the surface already shows the
+    ///   last successful refresh time while the provider is current.
+    static func make(
+        for usage: ProviderUsage,
+        includesSuccessRow: Bool
+    ) -> ProviderFreshnessDisplay {
+        let isStale = usage.freshness == .stale
+        return ProviderFreshnessDisplay(
+            showsStaleBadge: isStale,
+            successAt: includesSuccessRow || isStale
+                ? usage.lastSuccessfulAt
+                : nil,
+            attemptAt: isStale ? usage.lastRefreshAttemptAt : nil
         )
     }
 }

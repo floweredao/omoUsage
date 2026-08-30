@@ -139,6 +139,13 @@ launches, and other privileged controls remain native-only.
 - Providers without prior usage are omitted when unavailable or unauthenticated.
   Providers with last-good usage remain visible during transient failures and
   malformed or expired credential recovery.
+- Retained last-good usage keeps every meter and states its staleness instead of
+  reading as current. The provider card gains an amber symbol-and-text badge
+  above its meters, keeps the unchanged last successful refresh time, and adds
+  the newer failed attempt time on its own line. The success time never advances
+  on a failed attempt, while the footer's aggregate attempt time does. Popover,
+  Side Notch detail, web, and mobile cards follow the same rule, and the Side
+  Notch rail marks the stale provider with the same symbol.
 - Settings owns one retained window that closes and reopens without duplication.
   It is deliberately not miniaturizable because a minimized Settings thumbnail
   creates Dock presence for an otherwise Dockless `LSUIElement` application.
@@ -398,6 +405,8 @@ launches, and other privileged controls remain native-only.
   and orderable with an explicit hidden-from-dashboard status text; disconnect
   stays in the authentication section only.
 - Connection state is communicated by text plus color.
+- Staleness is communicated by symbol plus text, never by color alone, and the
+  Side Notch rail speaks it as part of the provider's accessibility value.
 - Every ordering row is one accessibility element labelled by provider and
   sanitized account alias, with position as its value and Move Up/Move Down
   custom actions. Connected/hidden state is spoken and ordering never performs

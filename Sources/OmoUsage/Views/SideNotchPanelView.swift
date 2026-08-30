@@ -522,10 +522,16 @@ private struct SideNotchProviderButton: View {
                             .offset(x: 14, y: 14)
                     }
 
-                    if usage.availability == .failed {
-                        Image(systemName: "exclamationmark.circle.fill")
+                    if SideNotchFreshnessPolicy.showsFailureMarker(
+                        for: usage
+                    ) {
+                        Image(
+                            systemName: StaleUsageVisualTokens.symbolName
+                        )
                             .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(
+                                StaleUsageVisualTokens.accent.color
+                            )
                             .background(.regularMaterial, in: Circle())
                             .offset(x: 14, y: -14)
                     }
@@ -643,11 +649,21 @@ private struct SideNotchProviderButton: View {
     }
 
     private var accessibilityValue: String {
-        "\(usage.provider.displayName), "
+        let value = "\(usage.provider.displayName), "
             + localization.format(
                 .remaining,
                 summaryMeter.percentRemaining
             )
+        guard usage.freshness == .stale else { return value }
+        return "\(value), \(localization.staleBadgeText())"
+    }
+}
+
+/// The rail shows only a compact ring, so retained-but-stale usage needs the
+/// same failure marker a hard failure gets.
+enum SideNotchFreshnessPolicy {
+    static func showsFailureMarker(for usage: ProviderUsage) -> Bool {
+        usage.freshness == .stale || usage.availability == .failed
     }
 }
 

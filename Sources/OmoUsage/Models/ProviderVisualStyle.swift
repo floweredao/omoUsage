@@ -1,5 +1,35 @@
 import SwiftUI
 
+struct VisualRGB: Equatable, Sendable {
+    let red: UInt8
+    let green: UInt8
+    let blue: UInt8
+
+    var color: Color {
+        Color(
+            red: Double(red) / 255,
+            green: Double(green) / 255,
+            blue: Double(blue) / 255
+        )
+    }
+}
+
+/// Stale usage is announced with a symbol and a text label so the state never
+/// depends on color alone. The accent reuses the dashboard's amber token.
+enum StaleUsageVisualTokens {
+    static let symbolName = "exclamationmark.triangle.fill"
+    static let usesTextLabel = true
+    static let accent = VisualRGB(red: 0xB7, green: 0x79, blue: 0x3F)
+    static let badgeRowHeight: CGFloat = 19
+    static let badgeSymbolPointSize: CGFloat = 9.5
+    static let badgeFontSize: CGFloat = 11
+    static let badgeSpacing: CGFloat = 4
+    static let badgeHorizontalPadding: CGFloat = 7
+    static let badgeVerticalPadding: CGFloat = 3
+    static let badgeBackgroundOpacity = 0.12
+    static let badgeBorderOpacity = 0.34
+}
+
 struct ProviderVisualStyle {
     let background: AnyShapeStyle
     let foreground: Color

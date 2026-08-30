@@ -128,7 +128,12 @@ enum UsageSnapshotCodec {
                 isSafeFreshnessDate(
                     provider.lastSuccessfulAt,
                     generatedAt: snapshot.generatedAt
-                )
+                ),
+                isSafeFreshnessDate(
+                    provider.lastRefreshAttemptAt,
+                    generatedAt: snapshot.generatedAt
+                ),
+                recordsAttemptAfterSuccess(provider)
             else {
                 throw UsageSnapshotCodecError.invalidPayload
             }
@@ -157,6 +162,19 @@ enum UsageSnapshotCodec {
                 }
             }
         }
+    }
+
+    /// A refresh attempt can never be older than the success it reports.
+    private static func recordsAttemptAfterSuccess(
+        _ provider: ProviderUsage
+    ) -> Bool {
+        guard
+            let successAt = provider.lastSuccessfulAt,
+            let attemptAt = provider.lastRefreshAttemptAt
+        else {
+            return true
+        }
+        return successAt <= attemptAt
     }
 
     private static func isSafeFreshnessDate(

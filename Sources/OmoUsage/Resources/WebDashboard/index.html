@@ -361,6 +361,33 @@
       color: var(--extra-text);
     }
 
+    .stale-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-1);
+      justify-self: start;
+      margin: 0;
+      padding: 5px 9px;
+      border: 1px solid color-mix(in srgb, var(--extra) 34%, var(--border));
+      border-radius: 999px;
+      color: var(--extra-text);
+      background: color-mix(in srgb, var(--extra) 12%, var(--surface-strong));
+      font-size: 11px;
+      font-weight: 650;
+    }
+
+    .stale-badge::before {
+      display: grid;
+      width: 13px;
+      height: 13px;
+      border: 1px solid currentColor;
+      border-radius: 999px;
+      content: "!";
+      font-size: 9px;
+      line-height: 1;
+      place-items: center;
+    }
+
     .group {
       display: grid;
       gap: 12px;
@@ -935,6 +962,7 @@
         remaining: "remaining",
         resets: "Resets {date}",
         providerUpdated: "Provider updated {date}",
+        providerLastAttempt: "Last refreshed {date}",
         available: "Available",
         authenticationRequired: "Authentication required",
         unavailable: "Unavailable",
@@ -994,6 +1022,7 @@
         remaining: "남음",
         resets: "{date}에 초기화",
         providerUpdated: "제공자 업데이트 {date}",
+        providerLastAttempt: "마지막 갱신 {date}",
         available: "사용 가능",
         authenticationRequired: "인증 필요",
         unavailable: "사용할 수 없음",
@@ -1191,27 +1220,51 @@
         element("span", "plan", provider.planName)
       );
       article.append(heading);
-      const availability = element(
-        "p",
-        "availability",
-        localized(
-          availabilityLabels[provider.availability] || "unavailable"
-        )
-      );
-      availability.dataset.availability = provider.availability
-        || "unavailable";
-      article.append(availability);
+      const isStale = Boolean(provider.refreshFailure);
+      article.dataset.freshness = isStale ? "stale" : "current";
+      // A stale card states one status: the failed refresh replaces the
+      // "Available" line it would otherwise contradict.
+      if (!isStale || provider.availability !== "available") {
+        const availability = element(
+          "p",
+          "availability",
+          localized(
+            availabilityLabels[provider.availability] || "unavailable"
+          )
+        );
+        availability.dataset.availability = provider.availability
+          || "unavailable";
+        article.append(availability);
+      }
+      if (isStale) {
+        article.dataset.refreshFailure = provider.refreshFailure;
+        article.append(
+          element("p", "stale-badge", localized("refreshFailed"))
+        );
+      }
       for (const group of provider.groups || []) {
         article.append(groupNode(group));
       }
-      if (provider.updatedAt) {
+      if (provider.lastSuccessfulAt) {
         article.append(
           element(
             "p",
             "metadata",
             localized(
               "providerUpdated",
-              { date: formatDate(provider.updatedAt) }
+              { date: formatDate(provider.lastSuccessfulAt) }
+            )
+          )
+        );
+      }
+      if (isStale && provider.lastRefreshAttemptAt) {
+        article.append(
+          element(
+            "p",
+            "metadata",
+            localized(
+              "providerLastAttempt",
+              { date: formatDate(provider.lastRefreshAttemptAt) }
             )
           )
         );
@@ -1285,7 +1338,11 @@
         statusText.textContent = localized("privateCurrent");
         refreshedAt.textContent = localized(
           "refreshed",
-          { date: formatDate(snapshot.refreshedAt) }
+          {
+            date: formatDate(
+              snapshot.lastRefreshAttemptAt ?? snapshot.generatedAt
+            )
+          }
         );
       } catch (error) {
         statusDot.dataset.state = "unavailable";

@@ -1,19 +1,5 @@
 import SwiftUI
 
-struct VisualRGB: Equatable, Sendable {
-    let red: UInt8
-    let green: UInt8
-    let blue: UInt8
-
-    var color: Color {
-        Color(
-            red: Double(red) / 255,
-            green: Double(green) / 255,
-            blue: Double(blue) / 255
-        )
-    }
-}
-
 enum UsageMeterVisualTokens {
     static let displaysMenuBarBadge = false
     static let standardFill = VisualRGB(

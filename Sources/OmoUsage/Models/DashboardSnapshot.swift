@@ -97,22 +97,31 @@ struct DashboardSnapshot: Equatable, Codable, Sendable {
                 )
             )
         )
+        let staleSuccessAt = now.addingTimeInterval(-3_600)
         return DashboardSnapshot(
             providers: [
                 mobileFixtureUsage(
                     accountID: teamAccount,
                     accountLabel: "QA Team",
                     percentRemaining: 72,
+                    successAt: now,
+                    attemptAt: now,
+                    refreshFailure: nil,
                     now: now
                 ),
                 mobileFixtureUsage(
                     accountID: personalAccount,
                     accountLabel: "QA Personal",
                     percentRemaining: 48,
+                    successAt: staleSuccessAt,
+                    attemptAt: now,
+                    refreshFailure: .network,
                     now: now
                 )
             ],
-            refreshedAt: now
+            generatedAt: now,
+            lastRefreshAttemptAt: now,
+            oldestDisplayedSuccessAt: staleSuccessAt
         )
     }
 
@@ -120,6 +129,9 @@ struct DashboardSnapshot: Equatable, Codable, Sendable {
         accountID: AccountID,
         accountLabel: String,
         percentRemaining: Int,
+        successAt: Date,
+        attemptAt: Date,
+        refreshFailure: ProviderRefreshFailure?,
         now: Date
     ) -> ProviderUsage {
         ProviderUsage(
@@ -144,7 +156,9 @@ struct DashboardSnapshot: Equatable, Codable, Sendable {
                 )
             ],
             availability: .available,
-            updatedAt: now
+            lastSuccessfulAt: successAt,
+            lastRefreshAttemptAt: attemptAt,
+            refreshFailure: refreshFailure
         )
     }
 }

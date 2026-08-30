@@ -79,6 +79,43 @@ struct DashboardVisualContractTests {
     }
 
     @Test
+    func staleUsageKeepsItsMetersAndGainsANonColorOnlyBadge() {
+        let stale = ProviderUsage(
+            provider: .codex,
+            planName: "Pro",
+            groups: [
+                UsageGroup(
+                    id: "codex",
+                    title: nil,
+                    meters: [
+                        UsageMeter(
+                            id: "codex.week",
+                            title: "주간",
+                            period: .week,
+                            percentRemaining: 73
+                        )
+                    ],
+                    creditText: nil
+                )
+            ],
+            availability: .available,
+            lastSuccessfulAt: Date(timeIntervalSince1970: 1_785_675_000),
+            lastRefreshAttemptAt: Date(
+                timeIntervalSince1970: 1_785_675_600
+            ),
+            refreshFailure: .network
+        )
+        let display = DashboardLayout.freshnessDisplay(for: stale)
+
+        #expect(stale.availability == .available)
+        #expect(!stale.groups.isEmpty)
+        #expect(display.showsStaleBadge)
+        #expect(display.successAt != display.attemptAt)
+        #expect(StaleUsageVisualTokens.usesTextLabel)
+        #expect(!StaleUsageVisualTokens.symbolName.isEmpty)
+    }
+
+    @Test
     func iconButtonsHaveOnePassiveRestAppearance() {
         let rest = InteractiveControlVisualState(
             isHovered: false,

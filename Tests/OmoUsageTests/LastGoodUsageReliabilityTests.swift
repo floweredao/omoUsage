@@ -70,19 +70,26 @@ struct LastGoodUsageReliabilityTests {
             now: { now }
         )
 
+        let refreshed = usage.recordingRefreshAttempt(at: now)
         await refresh(viewModel, using: provider, call: 1)
-        #expect(viewModel.snapshot.providers == [usage])
+        #expect(viewModel.snapshot.providers == [refreshed])
         #expect(viewModel.connectionStates[.codex] == .available)
 
         let refresh = Task { @MainActor in
             await viewModel.refresh()
         }
         await provider.waitUntilFetchStarts(call: 2)
-        #expect(viewModel.snapshot.providers == [usage])
+        #expect(viewModel.snapshot.providers == [refreshed])
         await provider.release(call: 2)
         await refresh.value
 
-        #expect(viewModel.snapshot.providers == [usage])
+        let retained = viewModel.snapshot.providers.first
+        #expect(viewModel.snapshot.providers.count == 1)
+        #expect(retained?.groups == usage.groups)
+        #expect(retained?.planName == usage.planName)
+        #expect(retained?.availability == usage.availability)
+        #expect(retained?.lastSuccessfulAt == usage.lastSuccessfulAt)
+        #expect(retained?.freshness == .stale)
         #expect(viewModel.connectionStates[.codex] == availability)
     }
 
@@ -102,7 +109,10 @@ struct LastGoodUsageReliabilityTests {
         )
 
         await refresh(viewModel, using: provider, call: 1)
-        #expect(viewModel.snapshot.providers == [usage])
+        #expect(
+            viewModel.snapshot.providers
+                == [usage.recordingRefreshAttempt(at: now)]
+        )
 
         await refresh(viewModel, using: provider, call: 2)
 

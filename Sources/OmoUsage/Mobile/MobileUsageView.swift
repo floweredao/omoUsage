@@ -144,6 +144,10 @@ private struct MobileProviderCard: View {
 
     var body: some View {
         let iconStyle = ProviderVisualStyle.style(for: usage.provider)
+        let freshness = ProviderFreshnessDisplay.make(
+            for: usage,
+            includesSuccessRow: false
+        )
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
                 Text(usage.provider.monogram)
@@ -185,6 +189,10 @@ private struct MobileProviderCard: View {
                 }
 
                 Spacer(minLength: 0)
+
+                if freshness.showsStaleBadge {
+                    MobileStaleUsageBadge()
+                }
             }
 
             ForEach(usage.groups) { group in
@@ -206,6 +214,29 @@ private struct MobileProviderCard: View {
                     }
                 }
             }
+
+            if freshness.rowCount > 0 {
+                VStack(alignment: .leading, spacing: 2) {
+                    if let successAt = freshness.successAt {
+                        Text(
+                            localization.format(
+                                .asOf,
+                                MobileClockText.string(from: successAt)
+                            )
+                        )
+                    }
+                    if let attemptAt = freshness.attemptAt {
+                        Text(
+                            localization.format(
+                                .lastRefreshAttempt,
+                                MobileClockText.string(from: attemptAt)
+                            )
+                        )
+                    }
+                }
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            }
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -214,6 +245,48 @@ private struct MobileProviderCard: View {
             in: RoundedRectangle(cornerRadius: 16, style: .continuous)
         )
         .accessibilityElement(children: .contain)
+    }
+}
+
+private struct MobileStaleUsageBadge: View {
+    @Environment(\.appLocalization)
+    private var localization
+
+    var body: some View {
+        HStack(spacing: StaleUsageVisualTokens.badgeSpacing) {
+            Image(systemName: StaleUsageVisualTokens.symbolName)
+                .imageScale(.small)
+            Text(localization.staleBadgeText())
+        }
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(StaleUsageVisualTokens.accent.color)
+        .padding(
+            .horizontal,
+            StaleUsageVisualTokens.badgeHorizontalPadding
+        )
+        .padding(.vertical, StaleUsageVisualTokens.badgeVerticalPadding)
+        .background(
+            StaleUsageVisualTokens.accent.color.opacity(
+                StaleUsageVisualTokens.badgeBackgroundOpacity
+            ),
+            in: Capsule()
+        )
+        .overlay {
+            Capsule()
+                .stroke(
+                    StaleUsageVisualTokens.accent.color.opacity(
+                        StaleUsageVisualTokens.badgeBorderOpacity
+                    ),
+                    lineWidth: 0.5
+                )
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+enum MobileClockText {
+    static func string(from date: Date) -> String {
+        date.formatted(.dateTime.hour().minute())
     }
 }
 
