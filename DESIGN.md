@@ -287,9 +287,16 @@ launches, and other privileged controls remain native-only.
 - Press: stronger tint and symbol opacity feedback without scaling.
 - Entering the 6 pt edge handle for 0.18 seconds reveals the rail and cancels
   a pending hide. Brief crossings cancel the reveal task before it fires.
+  The stationary pointer that triggered the reveal is not treated as a
+  provider-row hover; the visible handle stays 6 pt wide, its transparent
+  tracking strip is 8 pt wide, and a preview begins only after the pointer
+  moves inward past that tracking strip.
   Leaving the revealed rail schedules one cancellable hide using the selected
   0.4, 0.8, 1.2, or 2.0 second delay. Background refresh and controller-driven
   frame changes never reveal the rail.
+- Only hidden-edge entry records a vertical reveal anchor. Re-entering an
+  already visible panel does not move that anchor, and menu-bar activation
+  clears any old edge anchor so the compact rail opens at the screen center.
 - Side-notch provider detail has two selection kinds. Pointing at a rail row
   opens a transient hover preview immediately; clicking it, or pressing Return
   or Space on it, pins that row. Hover is a preview, never a commitment.

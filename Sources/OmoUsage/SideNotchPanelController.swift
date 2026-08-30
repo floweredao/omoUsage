@@ -5,6 +5,7 @@ import SwiftUI
 
 enum SideNotchPanelLayout {
     static let hiddenWidth: CGFloat = 6
+    static let hiddenTrackingWidth: CGFloat = 8
     static let collapsedWidth: CGFloat = 56
     static let detailWidth: CGFloat = 280
     static let detailSpacing: CGFloat = 8
@@ -37,6 +38,26 @@ enum SideNotchPanelLayout {
         detailHeight(for: usage) + detailCardMargin * 2
     }
 
+    static func presentationFrame(
+        in visibleFrame: NSRect,
+        providers: [ProviderUsage],
+        mode: SideNotchPanelMode,
+        anchorY: CGFloat? = nil
+    ) -> NSRect {
+        let presentedContentMinimumHeight =
+            mode.isPresented
+            ? providers.map(requiredPanelHeight).max() ?? 0
+            : 0
+        return frame(
+            in: visibleFrame,
+            providerCount: providers.count,
+            mode: mode,
+            anchorY: anchorY,
+            presentedContentMinimumHeight:
+                presentedContentMinimumHeight
+        )
+    }
+
     static func hideAnimationTarget(
         in visibleFrame: NSRect,
         from currentFrame: NSRect
@@ -58,9 +79,9 @@ enum SideNotchPanelLayout {
     ) -> NSRect {
         if mode == .hidden {
             return NSRect(
-                x: visibleFrame.maxX - hiddenWidth,
+                x: visibleFrame.maxX - hiddenTrackingWidth,
                 y: visibleFrame.minY,
-                width: hiddenWidth,
+                width: hiddenTrackingWidth,
                 height: visibleFrame.height
             )
         }
@@ -115,6 +136,28 @@ enum SideNotchPanelLayout {
             providerCount: providerCount,
             mode: isExpanded ? .detail(.codex) : .revealed
         )
+    }
+}
+
+enum SideNotchRevealAnchorIntent: Equatable {
+    case pointerEntered(
+        mode: SideNotchPanelMode,
+        screenY: CGFloat
+    )
+    case programmatic
+}
+
+enum SideNotchRevealAnchorPolicy {
+    static func anchorY(
+        current: CGFloat?,
+        for intent: SideNotchRevealAnchorIntent
+    ) -> CGFloat? {
+        switch intent {
+        case let .pointerEntered(mode, screenY):
+            mode == .hidden ? screenY : current
+        case .programmatic:
+            nil
+        }
     }
 }
 
@@ -642,6 +685,10 @@ final class SideNotchPanelController: NSObject {
         cancelReveal()
         cancelAutoHide()
         pointerInside = false
+        pointerAnchorY = SideNotchRevealAnchorPolicy.anchorY(
+            current: pointerAnchorY,
+            for: .programmatic
+        )
         providerCount = viewModel.snapshot.providers.count
         state.transition(to: .hidden)
         reposition(on: preferredScreen, animated: false)
@@ -681,6 +728,12 @@ final class SideNotchPanelController: NSObject {
         }
         cancelReveal()
         cancelAutoHide()
+        if state.mode == .hidden {
+            pointerAnchorY = SideNotchRevealAnchorPolicy.anchorY(
+                current: pointerAnchorY,
+                for: .programmatic
+            )
+        }
         let nextMode: SideNotchPanelMode =
             state.mode == .hidden ? .revealed : .hidden
         transition(to: nextMode, animated: true)
@@ -692,7 +745,13 @@ final class SideNotchPanelController: NSObject {
     func pointerEntered(at screenY: CGFloat? = nil) {
         pointerInside = true
         if let screenY {
-            pointerAnchorY = screenY
+            pointerAnchorY = SideNotchRevealAnchorPolicy.anchorY(
+                current: pointerAnchorY,
+                for: .pointerEntered(
+                    mode: state.mode,
+                    screenY: screenY
+                )
+            )
         }
         cancelAutoHide()
         if state.mode == .hidden {
@@ -1033,6 +1092,7 @@ final class SideNotchPanelController: NSObject {
     ) {
         guard let screen = targetScreen(preferredScreen) else { return }
         let frame = frame(for: state.mode, on: screen)
+        guard panel.frame != frame else { return }
         guard animated else {
             panel.setFrame(frame, display: true)
             return
@@ -1044,19 +1104,11 @@ final class SideNotchPanelController: NSObject {
         for mode: SideNotchPanelMode,
         on screen: NSScreen
     ) -> NSRect {
-        SideNotchPanelLayout.frame(
+        SideNotchPanelLayout.presentationFrame(
             in: screen.visibleFrame,
-            providerCount: providerCount,
+            providers: viewModel.snapshot.providers,
             mode: mode,
-            anchorY: pointerAnchorY,
-            presentedContentMinimumHeight:
-                mode.selectedProvider != nil
-                    ? viewModel.snapshot.providers.map {
-                        SideNotchPanelLayout.requiredPanelHeight(
-                            for: $0
-                        )
-                    }.max() ?? 0
-                    : 0
+            anchorY: pointerAnchorY
         )
     }
 

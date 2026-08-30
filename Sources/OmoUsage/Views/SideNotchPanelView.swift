@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct SideNotchPanelView: View {
@@ -464,6 +465,7 @@ private struct SideNotchProviderButton: View {
     private var reduceMotion
     @FocusState private var isKeyboardFocused: Bool
     @State private var isHovered = false
+    @State private var hasRequestedHoverPreview = false
 
     var body: some View {
         let accountLabel = AccountLabel.sanitized(usage.accountLabel)
@@ -559,12 +561,14 @@ private struct SideNotchProviderButton: View {
                     )
                 }
             }
+            .padding(.horizontal, 6)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contentShape(Rectangle())
         .focusable()
         .focused($isKeyboardFocused)
-        .padding(.horizontal, 6)
         .onChange(of: isKeyboardFocused) { _, focused in
             guard focused else { return }
             onKeyboardFocus()
@@ -573,17 +577,42 @@ private struct SideNotchProviderButton: View {
             action()
             return .handled
         }
-        .onHover { hovering in
-            withAnimation(
-                reduceMotion ? nil : .easeOut(duration: 0.12)
-            ) {
-                isHovered = hovering
+        .onContinuousHover { phase in
+            switch phase {
+            case .active:
+                withAnimation(
+                    reduceMotion ? nil : .easeOut(duration: 0.12)
+                ) {
+                    isHovered = true
+                }
+                guard
+                    !hasRequestedHoverPreview,
+                    let screen = NSScreen.screens.first(
+                        where: {
+                            NSMouseInRect(
+                                NSEvent.mouseLocation,
+                                $0.frame,
+                                false
+                            )
+                        }
+                    ),
+                    SideNotchProviderInteractionPolicy.shouldPreview(
+                        pointerScreenX: NSEvent.mouseLocation.x,
+                        visibleFrame: screen.visibleFrame
+                    )
+                else {
+                    return
+                }
+                hasRequestedHoverPreview = true
+                onHoverTarget()
+            case .ended:
+                hasRequestedHoverPreview = false
+                withAnimation(
+                    reduceMotion ? nil : .easeOut(duration: 0.12)
+                ) {
+                    isHovered = false
+                }
             }
-            // Entering a row previews it. Leaving is deliberately not handled
-            // here: the panel-level tracker owns collapse, so crossing the gap
-            // into the detail card keeps the preview open.
-            guard hovering else { return }
-            onHoverTarget()
         }
         .help(
             SideNotchAccountIdentity.accessibleName(
@@ -619,6 +648,21 @@ private struct SideNotchProviderButton: View {
                 .remaining,
                 summaryMeter.percentRemaining
             )
+    }
+}
+
+enum SideNotchProviderInteractionPolicy {
+    static func hitFrame(for rowSize: CGSize) -> CGRect {
+        CGRect(origin: .zero, size: rowSize)
+    }
+
+    static func shouldPreview(
+        pointerScreenX: CGFloat,
+        visibleFrame: NSRect
+    ) -> Bool {
+        pointerScreenX <= visibleFrame.maxX
+            && visibleFrame.maxX - pointerScreenX
+                > SideNotchPanelLayout.hiddenTrackingWidth
     }
 }
 

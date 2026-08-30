@@ -101,6 +101,101 @@ struct SideNotchPanelLayoutTests {
     }
 
     @Test
+    func presentedRailReservesTallestDetailHeightBeforeSelection() {
+        let usage = ProviderUsage(
+            provider: .claude,
+            planName: "Max 5x",
+            groups: [
+                UsageGroup(
+                    id: "claude.main",
+                    title: nil,
+                    meters: [
+                        UsageMeter(
+                            id: "claude.session",
+                            title: "Session",
+                            period: .session,
+                            percentRemaining: 65
+                        ),
+                        UsageMeter(
+                            id: "claude.week",
+                            title: "Weekly",
+                            period: .week,
+                            percentRemaining: 45
+                        ),
+                        UsageMeter(
+                            id: "claude.fable",
+                            title: "Fable weekly",
+                            period: .week,
+                            percentRemaining: 28
+                        )
+                    ],
+                    creditText: nil
+                )
+            ],
+            availability: .available,
+            updatedAt: nil
+        )
+        let visibleFrame = NSRect(
+            x: 0,
+            y: 25,
+            width: 1_920,
+            height: 1_055
+        )
+
+        let revealed = SideNotchPanelLayout.presentationFrame(
+            in: visibleFrame,
+            providers: [usage],
+            mode: .revealed,
+            anchorY: 780
+        )
+        let detail = SideNotchPanelLayout.presentationFrame(
+            in: visibleFrame,
+            providers: [usage],
+            mode: .detail(.claude),
+            anchorY: 780
+        )
+
+        #expect(
+            revealed.height
+                == SideNotchPanelLayout.requiredPanelHeight(
+                    for: usage
+                )
+        )
+        #expect(detail.height == revealed.height)
+        #expect(detail.minY == revealed.minY)
+        #expect(detail.maxY == revealed.maxY)
+        #expect(detail.maxX == revealed.maxX)
+    }
+
+    @Test
+    func revealAnchorChangesOnlyForHiddenEdgeEntry() {
+        #expect(
+            SideNotchRevealAnchorPolicy.anchorY(
+                current: nil,
+                for: .pointerEntered(
+                    mode: .hidden,
+                    screenY: 780
+                )
+            ) == 780
+        )
+        #expect(
+            SideNotchRevealAnchorPolicy.anchorY(
+                current: 780,
+                for: .pointerEntered(
+                    mode: .revealed,
+                    screenY: 1_000
+                )
+            ) == 780
+        )
+        #expect(
+            SideNotchRevealAnchorPolicy.anchorY(
+                current: 780,
+                for: .programmatic
+            ) == nil
+        )
+    }
+
+    @Test
     func revealedRailUsesPointerAnchorInsteadOfScreenCenter() {
         let visibleFrame = NSRect(
             x: 0,
@@ -126,6 +221,13 @@ struct SideNotchPanelLayoutTests {
         #expect(rail.midY == pointerY)
         #expect(hiddenTrigger.minY == visibleFrame.minY)
         #expect(hiddenTrigger.height == visibleFrame.height)
+        #expect(
+            hiddenTrigger.width
+                == SideNotchPanelLayout.hiddenTrackingWidth
+        )
+        #expect(hiddenTrigger.maxX == visibleFrame.maxX)
+        #expect(SideNotchPanelLayout.hiddenWidth == 6)
+        #expect(SideNotchPanelLayout.hiddenTrackingWidth == 8)
     }
 
     @Test
