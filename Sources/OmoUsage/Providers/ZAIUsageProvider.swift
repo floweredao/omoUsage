@@ -153,11 +153,11 @@ struct ZAIUsageProvider: UsageProvider {
                 let unit = ProviderPayload.number(
                     limit,
                     paths: [["unit"]]
-                ).map(Int.init)
+                ).flatMap(ProviderPayload.nonnegativeInteger)
                 let number = ProviderPayload.number(
                     limit,
                     paths: [["number"]]
-                ).map(Int.init)
+                ).flatMap(ProviderPayload.nonnegativeInteger)
                 let period: UsagePeriod
                 let meterID: String
                 let title: String

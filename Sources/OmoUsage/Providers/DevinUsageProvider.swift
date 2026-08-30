@@ -79,7 +79,10 @@ struct DevinUsageProvider: UsageProvider {
             definition -> UsageMeter? in
             let (title, usagePeriod, valuePaths, resetPaths) = definition
             guard
-                let used = ProviderPayload.number(root, paths: valuePaths)
+                let used = ProviderPayload.number(root, paths: valuePaths),
+                let remaining = ProviderPayload.remainingPercent(
+                    usedPercent: used
+                )
             else {
                 return nil
             }
@@ -88,9 +91,7 @@ struct DevinUsageProvider: UsageProvider {
                 id: "devin-\(title)",
                 title: title,
                 period: usagePeriod,
-                percentRemaining: ProviderPayload.remainingPercent(
-                    usedPercent: used
-                ),
+                percentRemaining: remaining,
                 resetsAt: reset,
                 resetText: ProviderPayload.resetText(reset, now: now)
             )
@@ -136,9 +137,10 @@ struct DevinUsageProvider: UsageProvider {
         var meters: [UsageMeter] = []
         if
             !hideDaily,
-            let remaining = UsageJSON.number(
+            let value = UsageJSON.number(
                 status["dailyQuotaRemainingPercent"]
-            )
+            ),
+            let remaining = ProviderPayload.percent(value)
         {
             let reset = UsageJSON.date(
                 status["dailyQuotaResetAtUnix"]
@@ -148,7 +150,7 @@ struct DevinUsageProvider: UsageProvider {
                     id: "devin-daily",
                     title: "일간",
                     period: .session,
-                    percentRemaining: Int(remaining.rounded()),
+                    percentRemaining: remaining,
                     resetsAt: reset,
                     resetText: ProviderPayload.resetText(
                         reset,
@@ -157,9 +159,12 @@ struct DevinUsageProvider: UsageProvider {
                 )
             )
         }
-        if let remaining = UsageJSON.number(
-            status["weeklyQuotaRemainingPercent"]
-        ) {
+        if
+            let value = UsageJSON.number(
+                status["weeklyQuotaRemainingPercent"]
+            ),
+            let remaining = ProviderPayload.percent(value)
+        {
             let reset = UsageJSON.date(
                 status["weeklyQuotaResetAtUnix"]
             )
@@ -168,7 +173,7 @@ struct DevinUsageProvider: UsageProvider {
                     id: "devin-weekly",
                     title: "주간",
                     period: .week,
-                    percentRemaining: Int(remaining.rounded()),
+                    percentRemaining: remaining,
                     resetsAt: reset,
                     resetText: ProviderPayload.resetText(
                         reset,

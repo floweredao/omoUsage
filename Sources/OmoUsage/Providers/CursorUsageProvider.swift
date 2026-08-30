@@ -76,16 +76,19 @@ struct CursorUsageProvider: UsageProvider {
         let meters = definitions.compactMap {
             definition -> UsageMeter? in
             let (title, period, paths) = definition
-            guard let used = ProviderPayload.number(root, paths: paths) else {
+            guard
+                let used = ProviderPayload.number(root, paths: paths),
+                let remaining = ProviderPayload.remainingPercent(
+                    usedPercent: used
+                )
+            else {
                 return nil
             }
             return UsageMeter(
                 id: "cursor-\(title)",
                 title: title,
                 period: period,
-                percentRemaining: ProviderPayload.remainingPercent(
-                    usedPercent: used
-                ),
+                percentRemaining: remaining,
                 resetsAt: reset,
                 resetText: ProviderPayload.resetText(reset, now: now)
             )

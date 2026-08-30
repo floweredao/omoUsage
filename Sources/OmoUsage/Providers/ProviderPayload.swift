@@ -64,35 +64,64 @@ enum ProviderPayload {
         guard let value = value(object, paths: paths) else { return nil }
         if var seconds = UsageJSON.number(value) {
             if seconds > 10_000_000_000 { seconds /= 1_000 }
-            return Date(timeIntervalSince1970: seconds)
+            return UsageJSON.date(timeIntervalSince1970: seconds)
         }
         return UsageJSON.date(value)
     }
 
+    static func percent(_ value: Double) -> Int? {
+        guard value.isFinite, (0...100).contains(value) else { return nil }
+        return Int(exactly: value.rounded())
+    }
+
+    static func nonnegativeInteger(_ value: Double) -> Int? {
+        guard value.isFinite, value >= 0 else { return nil }
+        return Int(exactly: value.rounded(.down))
+    }
+
     static func remainingPercent(
         usedPercent: Double
-    ) -> Int {
-        Int((100 - usedPercent).rounded())
+    ) -> Int? {
+        guard usedPercent.isFinite else { return nil }
+        return percent(100 - usedPercent)
     }
 
     static func remainingPercent(
         used: Double,
         limit: Double
     ) -> Int? {
-        guard limit > 0 else { return nil }
-        return Int((100 - used / limit * 100).rounded())
+        guard
+            used.isFinite,
+            limit.isFinite,
+            limit > 0,
+            (0...limit).contains(used)
+        else {
+            return nil
+        }
+        return Int(exactly: (100 - used / limit * 100).rounded())
     }
 
     static func resetText(_ date: Date?, now: Date) -> String? {
         guard let date else { return nil }
-        let seconds = max(0, date.timeIntervalSince(now))
+        let interval = date.timeIntervalSince(now)
+        guard interval.isFinite else { return nil }
+        let seconds = max(0, interval)
+        let divisor: Double
+        let suffix: String
         if seconds < 3_600 {
-            return "\(max(1, Int(seconds / 60)))분 후 리셋"
+            divisor = 60
+            suffix = "분 후 리셋"
+        } else if seconds < 86_400 {
+            divisor = 3_600
+            suffix = "시간 후 리셋"
+        } else {
+            divisor = 86_400
+            suffix = "일 후 리셋"
         }
-        if seconds < 86_400 {
-            return "\(max(1, Int(seconds / 3_600)))시간 후 리셋"
+        guard let amount = Int(exactly: (seconds / divisor).rounded(.down)) else {
+            return nil
         }
-        return "\(max(1, Int(seconds / 86_400)))일 후 리셋"
+        return "\(max(1, amount))\(suffix)"
     }
 
     static func money(_ value: Double) -> String {

@@ -60,7 +60,10 @@ struct OpenCodeUsageProvider: UsageProvider {
             let (key, title, period) = definition
             guard
                 let window = UsageJSON.object(usage[key]),
-                let used = UsageJSON.number(window["percent"])
+                let used = UsageJSON.number(window["percent"]),
+                let remaining = ProviderPayload.remainingPercent(
+                    usedPercent: used
+                )
             else {
                 return nil
             }
@@ -68,9 +71,7 @@ struct OpenCodeUsageProvider: UsageProvider {
                 id: "opencode-\(key)",
                 title: title,
                 period: period,
-                percentRemaining: ProviderPayload.remainingPercent(
-                    usedPercent: used
-                ),
+                percentRemaining: remaining,
                 resetsAt: UsageJSON.date(window["resetsAt"])
             )
         }
