@@ -102,10 +102,12 @@ extension DashboardSnapshot {
                         )
                     },
                     availability: provider.availability,
-                    updatedAt: provider.updatedAt
+                    lastSuccessfulAt: provider.lastSuccessfulAt
                 )
             },
-            refreshedAt: refreshedAt
+            generatedAt: generatedAt,
+            lastRefreshAttemptAt: lastRefreshAttemptAt,
+            oldestDisplayedSuccessAt: oldestDisplayedSuccessAt
         )
     }
 }

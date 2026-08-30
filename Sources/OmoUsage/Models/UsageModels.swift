@@ -101,7 +101,27 @@ struct ProviderUsage: Identifiable, Equatable, Codable, Sendable {
     let planName: String
     let groups: [UsageGroup]
     let availability: ProviderAvailability
-    let updatedAt: Date?
+    let lastSuccessfulAt: Date?
+
+    var updatedAt: Date? { lastSuccessfulAt }
+
+    init(
+        provider: ProviderID,
+        accountID: AccountID = .legacy,
+        accountLabel: String = AccountLabel.defaultValue,
+        planName: String,
+        groups: [UsageGroup],
+        availability: ProviderAvailability,
+        lastSuccessfulAt: Date?
+    ) {
+        self.provider = provider
+        self.accountID = accountID
+        self.accountLabel = AccountLabel.sanitized(accountLabel)
+        self.planName = planName
+        self.groups = groups
+        self.availability = availability
+        self.lastSuccessfulAt = lastSuccessfulAt
+    }
 
     init(
         provider: ProviderID,
@@ -112,13 +132,15 @@ struct ProviderUsage: Identifiable, Equatable, Codable, Sendable {
         availability: ProviderAvailability,
         updatedAt: Date?
     ) {
-        self.provider = provider
-        self.accountID = accountID
-        self.accountLabel = AccountLabel.sanitized(accountLabel)
-        self.planName = planName
-        self.groups = groups
-        self.availability = availability
-        self.updatedAt = updatedAt
+        self.init(
+            provider: provider,
+            accountID: accountID,
+            accountLabel: accountLabel,
+            planName: planName,
+            groups: groups,
+            availability: availability,
+            lastSuccessfulAt: updatedAt
+        )
     }
 
     func assigningAccount(
@@ -143,6 +165,10 @@ struct ProviderUsage: Identifiable, Equatable, Codable, Sendable {
         case planName
         case groups
         case availability
+        case lastSuccessfulAt
+    }
+
+    private enum LegacyCodingKeys: String, CodingKey {
         case updatedAt
     }
 
@@ -165,7 +191,13 @@ struct ProviderUsage: Identifiable, Equatable, Codable, Sendable {
             ProviderAvailability.self,
             forKey: .availability
         )
-        updatedAt = try container.decodeIfPresent(
+        let legacyContainer = try decoder.container(
+            keyedBy: LegacyCodingKeys.self
+        )
+        lastSuccessfulAt = try container.decodeIfPresent(
+            Date.self,
+            forKey: .lastSuccessfulAt
+        ) ?? legacyContainer.decodeIfPresent(
             Date.self,
             forKey: .updatedAt
         )

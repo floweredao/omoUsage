@@ -48,10 +48,10 @@ struct UsageSnapshotSyncTests {
     @Test
     func rejectsUnsupportedSnapshotVersions() throws {
         let data = Data(
-            #"{"version":3,"providers":[],"refreshedAt":0}"#.utf8
+            #"{"version":4,"providers":[],"generatedAt":0}"#.utf8
         )
 
-        #expect(throws: UsageSnapshotCodecError.unsupportedVersion(3)) {
+        #expect(throws: UsageSnapshotCodecError.unsupportedVersion(4)) {
             try UsageSnapshotCodec.decode(data)
         }
     }

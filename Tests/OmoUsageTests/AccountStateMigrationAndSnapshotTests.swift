@@ -23,7 +23,7 @@ struct AccountStateMigrationAndSnapshotTests {
             object["providers"] as? [[String: Any]]
         )
 
-        #expect(object["version"] as? Int == 2)
+        #expect(object["version"] as? Int == 3)
         #expect(
             providers.first?["accountID"] as? String == legacyAccountID
         )

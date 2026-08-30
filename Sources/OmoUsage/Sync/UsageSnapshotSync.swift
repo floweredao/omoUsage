@@ -10,11 +10,14 @@ enum UsageSnapshotCodecError: Error, Equatable {
 private struct UsageSnapshotPayload: Codable {
     let version: Int
     let providers: [ProviderUsage]
-    let refreshedAt: Date
+    let generatedAt: Date?
+    let lastRefreshAttemptAt: Date?
+    let oldestDisplayedSuccessAt: Date?
+    let refreshedAt: Date?
 }
 
 enum UsageSnapshotCodec {
-    static let currentVersion = 2
+    static let currentVersion = 3
     static let maximumPayloadBytes = 256 * 1_024
     private static let minimumTimestamp = 946_684_800.0
     private static let maximumTimestamp = 4_102_444_800.0
@@ -23,9 +26,12 @@ enum UsageSnapshotCodec {
         let payload = UsageSnapshotPayload(
             version: currentVersion,
             providers: snapshot.providers,
-            refreshedAt: snapshot.refreshedAt
+            generatedAt: snapshot.generatedAt,
+            lastRefreshAttemptAt: snapshot.lastRefreshAttemptAt,
+            oldestDisplayedSuccessAt: snapshot.oldestDisplayedSuccessAt,
+            refreshedAt: nil
         )
-        try validate(payload)
+        try validate(snapshot)
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .millisecondsSince1970
         let data = try encoder.encode(payload)
@@ -45,23 +51,62 @@ enum UsageSnapshotCodec {
             UsageSnapshotPayload.self,
             from: data
         )
-        guard payload.version == 1 || payload.version == currentVersion else {
+        guard (1...currentVersion).contains(payload.version) else {
             throw UsageSnapshotCodecError.unsupportedVersion(
                 payload.version
             )
         }
-        try validate(payload)
-        return DashboardSnapshot(
-            providers: payload.providers,
-            refreshedAt: payload.refreshedAt
-        )
+        let snapshot: DashboardSnapshot
+        switch payload.version {
+        case 1, 2:
+            guard let refreshedAt = payload.refreshedAt else {
+                throw UsageSnapshotCodecError.invalidPayload
+            }
+            snapshot = DashboardSnapshot(
+                providers: payload.providers,
+                generatedAt: refreshedAt,
+                lastRefreshAttemptAt: refreshedAt,
+                oldestDisplayedSuccessAt: payload.providers
+                    .compactMap(\.lastSuccessfulAt)
+                    .min()
+            )
+        case currentVersion:
+            guard let generatedAt = payload.generatedAt else {
+                throw UsageSnapshotCodecError.invalidPayload
+            }
+            snapshot = DashboardSnapshot(
+                providers: payload.providers,
+                generatedAt: generatedAt,
+                lastRefreshAttemptAt: payload.lastRefreshAttemptAt,
+                oldestDisplayedSuccessAt:
+                    payload.oldestDisplayedSuccessAt
+            )
+        default:
+            throw UsageSnapshotCodecError.unsupportedVersion(
+                payload.version
+            )
+        }
+        try validate(snapshot)
+        return snapshot
     }
 
     private static func validate(
-        _ payload: UsageSnapshotPayload
+        _ snapshot: DashboardSnapshot
     ) throws {
-        let providers = payload.providers
-        guard isSafeDate(payload.refreshedAt) else {
+        let providers = snapshot.providers
+        guard
+            isSafeDate(snapshot.generatedAt),
+            isSafeFreshnessDate(
+                snapshot.lastRefreshAttemptAt,
+                generatedAt: snapshot.generatedAt
+            ),
+            isSafeFreshnessDate(
+                snapshot.oldestDisplayedSuccessAt,
+                generatedAt: snapshot.generatedAt
+            ),
+            snapshot.oldestDisplayedSuccessAt
+                == providers.compactMap(\.lastSuccessfulAt).min()
+        else {
             throw UsageSnapshotCodecError.invalidPayload
         }
         guard providers.count <= 64 else {
@@ -80,7 +125,10 @@ enum UsageSnapshotCodec {
                 provider.accountLabel
                     == AccountLabel.sanitized(provider.accountLabel),
                 provider.planName.count <= 256,
-                isSafeDate(provider.updatedAt)
+                isSafeFreshnessDate(
+                    provider.lastSuccessfulAt,
+                    generatedAt: snapshot.generatedAt
+                )
             else {
                 throw UsageSnapshotCodecError.invalidPayload
             }
@@ -109,6 +157,14 @@ enum UsageSnapshotCodec {
                 }
             }
         }
+    }
+
+    private static func isSafeFreshnessDate(
+        _ date: Date?,
+        generatedAt: Date
+    ) -> Bool {
+        guard let date else { return true }
+        return isSafeDate(date) && date <= generatedAt
     }
 
     private static func isSafeDate(_ date: Date?) -> Bool {

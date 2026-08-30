@@ -2,7 +2,34 @@ import Foundation
 
 struct DashboardSnapshot: Equatable, Codable, Sendable {
     let providers: [ProviderUsage]
-    let refreshedAt: Date
+    let generatedAt: Date
+    let lastRefreshAttemptAt: Date?
+    let oldestDisplayedSuccessAt: Date?
+
+    var refreshedAt: Date { lastRefreshAttemptAt ?? generatedAt }
+
+    init(
+        providers: [ProviderUsage],
+        generatedAt: Date,
+        lastRefreshAttemptAt: Date? = nil,
+        oldestDisplayedSuccessAt: Date? = nil
+    ) {
+        self.providers = providers
+        self.generatedAt = generatedAt
+        self.lastRefreshAttemptAt = lastRefreshAttemptAt
+        self.oldestDisplayedSuccessAt = oldestDisplayedSuccessAt
+    }
+
+    init(providers: [ProviderUsage], refreshedAt: Date) {
+        self.init(
+            providers: providers,
+            generatedAt: refreshedAt,
+            lastRefreshAttemptAt: refreshedAt,
+            oldestDisplayedSuccessAt: providers
+                .compactMap(\.lastSuccessfulAt)
+                .min()
+        )
+    }
 
     static func ordered(
         providers: [ProviderUsage],
