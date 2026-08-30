@@ -24,6 +24,7 @@ final class SingleInstanceController: NSObject {
     private let notificationCenter: DistributedNotificationCenter
     private let processIdentifier: Int32
     private var lockDescriptor: Int32 = -1
+    private(set) var activationHandoffWasAcknowledged = false
     private var role: SingleInstanceRole?
     private var activationHandler: (() -> Void)?
     private var hasPendingActivation = false
@@ -99,12 +100,8 @@ final class SingleInstanceController: NSObject {
             if lockError == EACCES || lockError == EAGAIN {
                 role = .contender
                 stopObservingActivation()
-                notificationCenter.postNotificationName(
-                    notificationName,
-                    object: nil,
-                    userInfo: nil,
-                    deliverImmediately: true
-                )
+                activationHandoffWasAcknowledged =
+                    sendActivationHandoff()
                 return .contender
             }
             stopObservingActivation()
@@ -157,7 +154,7 @@ final class SingleInstanceController: NSObject {
     private func startObservingActivation() {
         notificationCenter.addObserver(
             self,
-            selector: #selector(receiveActivation),
+            selector: #selector(receiveActivation(_:)),
             name: notificationName,
             object: nil,
             suspensionBehavior: .deliverImmediately
@@ -176,13 +173,87 @@ final class SingleInstanceController: NSObject {
     }
 
     @objc
-    private func receiveActivation() {
+    private func receiveActivation(_ notification: Notification) {
         guard role == .owner else { return }
+        acknowledgeActivation(notification)
         if let activationHandler {
             activationHandler()
         } else {
             hasPendingActivation = true
         }
+    }
+
+    private func sendActivationHandoff() -> Bool {
+        let fifoURL = lockURL.deletingLastPathComponent().appending(
+            path: "activation-\(UUID().uuidString).fifo"
+        )
+        guard Darwin.mkfifo(fifoURL.path, S_IRUSR | S_IWUSR) == 0 else {
+            return false
+        }
+        defer { try? FileManager.default.removeItem(at: fifoURL) }
+
+        let descriptor = Darwin.open(
+            fifoURL.path,
+            O_RDONLY | O_NONBLOCK | O_CLOEXEC
+        )
+        guard descriptor >= 0 else { return false }
+        defer { Darwin.close(descriptor) }
+
+        notificationCenter.postNotificationName(
+            notificationName,
+            object: nil,
+            userInfo: ["acknowledgementFIFO": fifoURL.path],
+            deliverImmediately: true
+        )
+
+        var event = pollfd(
+            fd: descriptor,
+            events: Int16(POLLIN),
+            revents: 0
+        )
+        guard Darwin.poll(&event, 1, 5_000) > 0,
+              event.revents & Int16(POLLIN) != 0
+        else {
+            return false
+        }
+        var acknowledgement: UInt8 = 0
+        return Darwin.read(descriptor, &acknowledgement, 1) == 1
+            && acknowledgement == 1
+    }
+
+    private func acknowledgeActivation(_ notification: Notification) {
+        guard
+            let path = notification.userInfo?[
+                "acknowledgementFIFO"
+            ] as? String
+        else {
+            return
+        }
+        let fifoURL = URL(fileURLWithPath: path).standardizedFileURL
+        let expectedDirectory = lockURL
+            .deletingLastPathComponent()
+            .standardizedFileURL
+        guard
+            fifoURL.deletingLastPathComponent() == expectedDirectory,
+            fifoURL.lastPathComponent.hasPrefix("activation-"),
+            fifoURL.pathExtension == "fifo"
+        else {
+            return
+        }
+        var metadata = stat()
+        guard Darwin.lstat(fifoURL.path, &metadata) == 0,
+              metadata.st_mode & S_IFMT == S_IFIFO
+        else {
+            return
+        }
+        let descriptor = Darwin.open(
+            fifoURL.path,
+            O_WRONLY | O_NONBLOCK | O_CLOEXEC
+        )
+        guard descriptor >= 0 else { return }
+        defer { Darwin.close(descriptor) }
+        var acknowledgement: UInt8 = 1
+        _ = Darwin.write(descriptor, &acknowledgement, 1)
     }
 
     private func setAdvisoryLock(
