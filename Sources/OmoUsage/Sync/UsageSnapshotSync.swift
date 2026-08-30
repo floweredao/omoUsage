@@ -202,7 +202,6 @@ final class MobileUsageViewModel {
                 ? .content
                 : .empty
         } catch {
-            snapshot = nil
             loadState = .failed
         }
     }

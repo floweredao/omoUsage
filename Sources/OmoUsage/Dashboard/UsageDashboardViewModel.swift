@@ -19,10 +19,14 @@ struct UsageDashboardControlState: Equatable, Sendable {
     ) {
         self.providerOrder = providerOrder
         self.disconnectedProviders = disconnectedProviders
-        self.accountProviderOrder = accountProviderOrder
+        let requestedAccountProviderOrder = accountProviderOrder
             ?? providerOrder.map {
                 AccountProviderID(accountID: .legacy, providerID: $0)
             }
+        self.accountProviderOrder = AccountProviderDisplayOrder.repaired(
+            requestedAccountProviderOrder,
+            configured: requestedAccountProviderOrder
+        )
         self.accountProviderLabels = Dictionary(
             uniqueKeysWithValues: self.accountProviderOrder.map { identity in
                 (
@@ -132,12 +136,13 @@ final class UsageDashboardViewModel {
         ) -> Void = { _ in },
         now: @escaping @Sendable () -> Date = Date.init
     ) {
-        self.providers = providers
-        let configured = providers.isEmpty
+        let uniqueProviders = Self.uniqueProviders(providers)
+        self.providers = uniqueProviders
+        let configured = uniqueProviders.isEmpty
             ? ProviderID.allCases.map {
                 AccountProviderID(accountID: .legacy, providerID: $0)
             }
-            : providers.map(\.accountProviderID)
+            : uniqueProviders.map(\.accountProviderID)
         let defaultAccountOrder = AccountProviderDisplayOrder.defaultOrder(
             configured: configured
         )
@@ -162,7 +167,7 @@ final class UsageDashboardViewModel {
         } else {
             self.disconnectedAccountProviders = Set(
                 disconnectedProviders.flatMap { providerID in
-                    let identities = providers
+                    let identities = uniqueProviders
                         .filter { $0.id == providerID }
                         .map(\.accountProviderID)
                     return identities.isEmpty
@@ -195,7 +200,8 @@ final class UsageDashboardViewModel {
         accountProviderOrder requestedOrder: [AccountProviderID],
         disconnected requestedDisconnected: Set<AccountProviderID>
     ) {
-        let configured = updatedProviders.map(\.accountProviderID)
+        let uniqueProviders = Self.uniqueProviders(updatedProviders)
+        let configured = uniqueProviders.map(\.accountProviderID)
         let configuredSet = Set(configured)
         let updatedDefaultOrder = AccountProviderDisplayOrder.defaultOrder(
             configured: configured
@@ -210,7 +216,7 @@ final class UsageDashboardViewModel {
             }
         )
 
-        providers = updatedProviders
+        providers = uniqueProviders
         defaultAccountProviderOrder = updatedDefaultOrder
         accountProviderOrder = repairedOrder
         providerOrder = ProviderDisplayOrder.repaired(
@@ -644,6 +650,15 @@ final class UsageDashboardViewModel {
                 isRefreshing: isRefreshing
             )
         )
+    }
+
+    private static func uniqueProviders(
+        _ providers: [any UsageProvider]
+    ) -> [any UsageProvider] {
+        var seen: Set<AccountProviderID> = []
+        return providers.filter {
+            seen.insert($0.accountProviderID).inserted
+        }
     }
 
     nonisolated

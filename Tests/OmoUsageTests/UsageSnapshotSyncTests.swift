@@ -263,10 +263,46 @@ struct UsageSnapshotSyncTests {
         #expect(viewModel.snapshot == nil)
         #expect(viewModel.loadState == .failed)
     }
+
+    @Test
+    @MainActor
+    func mobileViewModelRetainsLastGoodSnapshotAfterSyncFailure() {
+        let expected = DashboardSnapshot.mobileFixture(now: refreshedAt)
+        let loader = StubMobileSnapshotLoader(
+            responses: [
+                .success(expected),
+                .failure(StubSnapshotError.unavailable)
+            ]
+        )
+        let viewModel = MobileUsageViewModel(
+            loadSnapshot: loader.load
+        )
+
+        viewModel.reload()
+        viewModel.reload()
+
+        #expect(viewModel.snapshot == expected)
+        #expect(viewModel.loadState == .failed)
+    }
 }
 
 private enum StubSnapshotError: Error {
     case unavailable
+}
+
+@MainActor
+private final class StubMobileSnapshotLoader: @unchecked Sendable {
+    private var responses: [
+        Result<DashboardSnapshot?, any Error>
+    ]
+
+    init(responses: [Result<DashboardSnapshot?, any Error>]) {
+        self.responses = responses
+    }
+
+    func load() throws -> DashboardSnapshot? {
+        try responses.removeFirst().get()
+    }
 }
 
 private final class StubUbiquitousKeyValueStore:
