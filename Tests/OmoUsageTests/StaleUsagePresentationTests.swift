@@ -12,8 +12,13 @@ struct StaleUsagePresentationTests {
     @Test(
         arguments: [
             (TransientProviderFailure.network, ProviderRefreshFailure.network),
+            (.transientTransport, .network),
+            (.operationTimedOut, .network),
             (.serviceUnavailable, .service),
             (.invalidResponse, .schema),
+            (.invalidContentType, .schema),
+            (.responseTooLarge, .schema),
+            (.invalidJSON, .schema),
             (.parserRejectedPayload, .schema),
             (.credentialMalformed, .credential),
             (.credentialExpired, .credential)
@@ -395,8 +400,13 @@ struct StaleUsagePresentationTests {
 
 enum TransientProviderFailure: Sendable {
     case network
+    case transientTransport
+    case operationTimedOut
     case serviceUnavailable
     case invalidResponse
+    case invalidContentType
+    case responseTooLarge
+    case invalidJSON
     case parserRejectedPayload
     case credentialMalformed
     case credentialExpired
@@ -407,10 +417,23 @@ enum TransientProviderFailure: Sendable {
         switch self {
         case .network:
             URLError(.notConnectedToInternet)
+        case .transientTransport:
+            ProviderTransportError.transientTransport(
+                provider,
+                .networkConnectionLost
+            )
+        case .operationTimedOut:
+            ProviderTransportError.operationTimedOut(provider)
         case .serviceUnavailable:
             ProviderTransportError.requestFailed(provider, 503)
         case .invalidResponse:
             ProviderTransportError.invalidResponse(provider)
+        case .invalidContentType:
+            ProviderTransportError.invalidContentType(provider, "text/html")
+        case .responseTooLarge:
+            ProviderTransportError.responseTooLarge(provider, limit: 1_048_576)
+        case .invalidJSON:
+            ProviderTransportError.invalidJSON(provider)
         case .parserRejectedPayload:
             UsageParsingError.invalidPayload
         case .credentialMalformed:

@@ -697,10 +697,15 @@ final class UsageDashboardViewModel {
         }
         if let error = error as? ProviderTransportError {
             switch error {
-            case .invalidResponse:
-                return .schema
-            case .requestFailed, .authenticationRequired:
+            case .authenticationRequired:
+                return .credential
+            case .requestFailed:
                 return .service
+            case .transientTransport, .operationTimedOut:
+                return .network
+            case .invalidResponse, .invalidContentType, .responseTooLarge,
+                 .invalidJSON:
+                return .schema
             }
         }
         if error is UsageParsingError {
