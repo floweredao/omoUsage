@@ -173,6 +173,15 @@ struct ProviderAccountStore {
                         )
                     )
                 }
+                if case .unsupportedVersion = primaryFailure {
+                    return ProviderAccountLoadResult(
+                        registry: nil,
+                        state: .blocked(
+                            failure: primaryFailure,
+                            quarantineURLs: [primaryQuarantine]
+                        )
+                    )
+                }
                 guard backupExists else {
                     return ProviderAccountLoadResult(
                         registry: nil,

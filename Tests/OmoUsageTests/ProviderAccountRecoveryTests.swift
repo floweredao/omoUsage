@@ -85,6 +85,29 @@ struct ProviderAccountRecoveryTests {
     }
 
     @Test
+    func unsupportedFuturePrimaryWithValidBackupStillBlocks() throws {
+        let fixture = try RecoveryFixture()
+        defer { fixture.remove() }
+        let futureBytes = Data(#"{"version":999}"#.utf8)
+        let backup = fixture.registry(label: "Backup")
+        try fixture.createRegistryDirectory()
+        try futureBytes.write(to: fixture.registryURL)
+        let backupBytes = try fixture.write(
+            backup,
+            to: fixture.store.backupURL
+        )
+
+        let result = fixture.store.loadOrRecover()
+
+        #expect(result.registry == nil)
+        #expect(result.state.failure == .unsupportedVersion(999))
+        let quarantineURL = try #require(result.state.quarantineURLs.first)
+        #expect(try Data(contentsOf: quarantineURL) == futureBytes)
+        #expect(try Data(contentsOf: fixture.store.backupURL) == backupBytes)
+        #expect(fixture.legacyProbeCount == 0)
+    }
+
+    @Test
     func versionOneRegistryMigratesExplicitlyAndPersistsCurrentVersion() throws {
         let fixture = try RecoveryFixture()
         defer { fixture.remove() }
