@@ -44,17 +44,8 @@ struct OpenCodeReliabilityTests {
             ProviderSetup.descriptor(for: .opencode)
         )
 
-        #expect(
-            descriptor.action == .terminal(
-                TerminalLaunchSpecification(
-                    executable: "opencode",
-                    arguments: [
-                        "auth", "login", "--provider", "opencode-go"
-                    ]
-                ),
-                fallbackURL: nil
-            )
-        )
+        #expect(descriptor.action == .apiKey)
+        #expect(descriptor.acceptsAPIKey)
     }
 }
 

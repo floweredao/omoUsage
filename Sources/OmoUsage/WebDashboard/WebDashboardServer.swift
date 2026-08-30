@@ -27,6 +27,9 @@ struct WebDashboardHTTPResponse: Sendable {
 struct WebDashboardSettingsState: Equatable, Codable, Sendable {
     let providerOrder: [String]
     let disconnectedProviders: [String]
+    let accountProviderOrder: [AccountProviderID]
+    let accountProviderLabels: [String]
+    let disconnectedAccountProviders: Set<AccountProviderID>
     let webLanguage: String
     let isRefreshing: Bool
     let refreshRevision: UInt64
@@ -63,6 +66,11 @@ enum WebDashboardCommand: Equatable, Sendable {
     case setProviderOrder([ProviderID])
     case setProviderVisibility(
         provider: ProviderID,
+        isVisible: Bool
+    )
+    case setAccountProviderOrder([AccountProviderID])
+    case setAccountVisibility(
+        accountProvider: AccountProviderID,
         isVisible: Bool
     )
     case setWebLanguage(AppLanguage)
@@ -104,6 +112,14 @@ final class WebDashboardSettingsStore: @unchecked Sendable {
                 disconnectedProviders: ProviderID.allCases
                     .filter(controlState.disconnectedProviders.contains)
                     .map(\.rawValue),
+                accountProviderOrder: controlState.accountProviderOrder,
+                accountProviderLabels:
+                    controlState.accountProviderOrder.map {
+                        controlState.accountProviderLabels[$0]
+                            ?? AccountLabel.defaultValue
+                    },
+                disconnectedAccountProviders:
+                    controlState.disconnectedAccountProviders,
                 webLanguage: webLanguage.rawValue,
                 isRefreshing: controlState.isRefreshing,
                 refreshRevision: refreshRevision
@@ -485,11 +501,46 @@ struct WebDashboardRouter: Sendable {
             return .setProviderOrder(order)
         }
 
+        if Set(dictionary.keys) == ["accountProviderOrder"] {
+            guard
+                let rawOrder = dictionary["accountProviderOrder"] as? [Any],
+                let roster = configuredAccountRoster(),
+                rawOrder.count == roster.count
+            else {
+                return nil
+            }
+            let order = rawOrder.compactMap(accountProviderID(from:))
+            guard
+                order.count == rawOrder.count,
+                Set(order).count == order.count,
+                Set(order) == roster
+            else {
+                return nil
+            }
+            return .setAccountProviderOrder(order)
+        }
+
+        if Set(dictionary.keys) == ["accountProvider", "visible"] {
+            guard
+                let accountProvider = accountProviderID(
+                    from: dictionary["accountProvider"]
+                ),
+                configuredAccountRoster()?.contains(accountProvider) == true,
+                let isVisible = jsonBoolean(from: dictionary["visible"])
+            else {
+                return nil
+            }
+            return .setAccountVisibility(
+                accountProvider: accountProvider,
+                isVisible: isVisible
+            )
+        }
+
         if Set(dictionary.keys) == ["provider", "visible"] {
             guard
                 let rawProvider = dictionary["provider"] as? String,
                 let provider = ProviderID(rawValue: rawProvider),
-                let isVisible = dictionary["visible"] as? Bool
+                let isVisible = jsonBoolean(from: dictionary["visible"])
             else {
                 return nil
             }
@@ -509,6 +560,46 @@ struct WebDashboardRouter: Sendable {
             return .setWebLanguage(language)
         }
         return nil
+    }
+
+    private func jsonBoolean(from value: Any?) -> Bool? {
+        guard
+            let number = value as? NSNumber,
+            CFGetTypeID(number) == CFBooleanGetTypeID()
+        else {
+            return nil
+        }
+        return number.boolValue
+    }
+
+    private func configuredAccountRoster() -> Set<AccountProviderID>? {
+        guard
+            let data = try? settingsData(),
+            let state = try? JSONDecoder().decode(
+                WebDashboardSettingsState.self,
+                from: data
+            )
+        else {
+            return nil
+        }
+        return Set(state.accountProviderOrder)
+    }
+
+    private func accountProviderID(from value: Any?) -> AccountProviderID? {
+        guard
+            let dictionary = value as? [String: Any],
+            Set(dictionary.keys) == ["accountID", "providerID"],
+            let rawAccountID = dictionary["accountID"] as? String,
+            let accountID = AccountID(rawValue: rawAccountID),
+            let rawProviderID = dictionary["providerID"] as? String,
+            let providerID = ProviderID(rawValue: rawProviderID)
+        else {
+            return nil
+        }
+        return AccountProviderID(
+            accountID: accountID,
+            providerID: providerID
+        )
     }
 
     private func allowedMethods(for path: String) -> String? {
@@ -979,5 +1070,23 @@ final class NWWebDashboardListener:
     private func finish(_ connection: NWConnection) {
         connections.remove(connection)
         connection.finish()
+    }
+}
+
+enum WebDashboardPortPolicy {
+    static let productionPort: UInt16 = 7_827
+
+    static func resolve(
+        environment: [String: String]
+    ) -> UInt16 {
+        guard
+            environment["OMO_USAGE_FIXTURE_MODE"] == "1",
+            let rawValue = environment["OMO_USAGE_WEB_PORT"],
+            let port = UInt16(rawValue),
+            port > 0
+        else {
+            return productionPort
+        }
+        return port
     }
 }

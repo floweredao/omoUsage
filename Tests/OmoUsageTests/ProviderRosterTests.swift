@@ -36,7 +36,7 @@ struct ProviderRosterTests {
         #expect(
             ProviderID.allCases.filter {
                 ProviderSetup.descriptor(for: $0)?.acceptsAPIKey == true
-            } == [.openrouter, .zai]
+            } == [.opencode, .openrouter, .zai]
         )
     }
 

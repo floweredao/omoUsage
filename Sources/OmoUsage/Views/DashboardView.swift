@@ -11,6 +11,10 @@ struct DashboardView: View {
         let panelHeight = DashboardLayout.panelHeight(
             for: viewModel.snapshot.providers
         )
+        let providerCounts = Dictionary(
+            grouping: viewModel.snapshot.providers,
+            by: \.provider
+        ).mapValues(\.count)
         VStack(spacing: 0) {
             ScrollView {
                 VStack(spacing: 0) {
@@ -21,7 +25,17 @@ struct DashboardView: View {
                             Divider()
                                 .padding(.vertical, 10)
                         }
-                        ProviderSectionView(usage: usage)
+                        ProviderSectionView(
+                            usage: usage,
+                            showsAccountLabel:
+                                DashboardAccountIdentityRule.showsAlias(
+                                    for: usage,
+                                    sameProviderCount: providerCounts[
+                                        usage.provider,
+                                        default: 0
+                                    ]
+                                )
+                        )
                     }
                 }
                 .padding(.horizontal, 14)

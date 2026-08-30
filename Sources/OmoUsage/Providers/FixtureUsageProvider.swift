@@ -2,6 +2,18 @@ import Foundation
 
 struct FixtureUsageProvider: UsageProvider {
     let id: ProviderID
+    let accountID: AccountID
+    let accountLabel: String
+
+    init(
+        id: ProviderID,
+        accountID: AccountID = .legacy,
+        accountLabel: String = AccountLabel.defaultValue
+    ) {
+        self.id = id
+        self.accountID = accountID
+        self.accountLabel = accountLabel
+    }
 
     func fetch(now: Date) async throws -> ProviderUsage {
         switch id {

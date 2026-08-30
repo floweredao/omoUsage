@@ -14,7 +14,7 @@ private struct UsageSnapshotPayload: Codable {
 }
 
 enum UsageSnapshotCodec {
-    static let currentVersion = 1
+    static let currentVersion = 2
     static let maximumPayloadBytes = 256 * 1_024
     private static let minimumTimestamp = 946_684_800.0
     private static let maximumTimestamp = 4_102_444_800.0
@@ -45,7 +45,7 @@ enum UsageSnapshotCodec {
             UsageSnapshotPayload.self,
             from: data
         )
-        guard payload.version == currentVersion else {
+        guard payload.version == 1 || payload.version == currentVersion else {
             throw UsageSnapshotCodecError.unsupportedVersion(
                 payload.version
             )
@@ -67,12 +67,18 @@ enum UsageSnapshotCodec {
         guard providers.count <= 64 else {
             throw UsageSnapshotCodecError.invalidPayload
         }
-        guard Set(providers.map(\.provider)).count == providers.count else {
+        guard
+            Set(providers.map(\.accountProviderID)).count
+                == providers.count
+        else {
             throw UsageSnapshotCodecError.invalidPayload
         }
 
         for provider in providers {
             guard
+                provider.accountLabel.count <= AccountLabel.maximumLength,
+                provider.accountLabel
+                    == AccountLabel.sanitized(provider.accountLabel),
                 provider.planName.count <= 256,
                 isSafeDate(provider.updatedAt)
             else {

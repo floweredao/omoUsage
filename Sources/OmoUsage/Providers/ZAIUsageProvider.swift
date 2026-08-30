@@ -2,11 +2,25 @@ import Foundation
 
 struct ZAIUsageProvider: UsageProvider {
     let id = ProviderID.zai
+    let accountID: AccountID
+    let accountLabel: String
     let discovery: CredentialDiscovery
     let http: ProviderHTTP
 
+    init(
+        discovery: CredentialDiscovery,
+        http: ProviderHTTP,
+        accountID: AccountID = .legacy,
+        accountLabel: String = AccountLabel.defaultValue
+    ) {
+        self.accountID = accountID
+        self.accountLabel = accountLabel
+        self.discovery = discovery
+        self.http = http
+    }
+
     func fetch(now: Date) async throws -> ProviderUsage {
-        let credential = try discovery.zai()
+        let credential = try discovery.zai(accountID: accountID)
         async let quota = get(
             "https://api.z.ai/api/monitor/usage/quota/limit",
             token: credential.accessToken

@@ -25,6 +25,60 @@ struct DashboardVisualContractTests {
     }
 
     @Test
+    func providerUsageIdentityAndDashboardAliasAreAccountScoped() {
+        let account = AccountID(
+            rawValue: "00000000-0000-0000-0000-00000000000a"
+        )!
+        let usage = ProviderUsage(
+            provider: .openrouter,
+            accountID: account,
+            accountLabel: "Team",
+            planName: "",
+            groups: [],
+            availability: .available,
+            updatedAt: nil
+        )
+
+        #expect(
+            usage.id
+                == AccountProviderID(
+                    accountID: account,
+                    providerID: .openrouter
+                )
+        )
+        #expect(
+            DashboardAccountIdentityRule.showsAlias(
+                for: usage,
+                sameProviderCount: 1
+            )
+        )
+        #expect(
+            DashboardAccountIdentityRule.showsAlias(
+                for: ProviderUsage(
+                    provider: .openrouter,
+                    planName: "",
+                    groups: [],
+                    availability: .available,
+                    updatedAt: nil
+                ),
+                sameProviderCount: 2
+            )
+        )
+        #expect(
+            !DashboardAccountIdentityRule.showsAlias(
+                for: ProviderUsage(
+                    provider: .openrouter,
+                    planName: "",
+                    groups: [],
+                    availability: .available,
+                    updatedAt: nil
+                ),
+                sameProviderCount: 1
+            )
+        )
+    }
+
+    @Test
     func iconButtonsHaveOnePassiveRestAppearance() {
         let rest = InteractiveControlVisualState(
             isHovered: false,

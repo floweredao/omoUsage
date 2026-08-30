@@ -74,18 +74,23 @@ struct RefreshTimestampPresenterTests {
 struct UsageRefreshSchedulerTests {
     @Test
     @MainActor
-    func characterizesImmediateLaunchRefresh() async {
-        let (events, signal) = AsyncStream<Void>.makeStream()
-        var iterator = events.makeAsyncIterator()
-        let scheduler = UsageRefreshScheduler {
-            signal.yield()
-        }
+    func companionLaunchWaitsForActivationBeforeRefresh() async {
+        let coordinator = ProviderConnectionCoordinator()
+        coordinator.record(.success(.launched), for: .claude)
+        var refreshCount = 0
 
-        scheduler.start()
-
-        #expect(await iterator.next() != nil)
-        scheduler.stop()
-        signal.finish()
+        #expect(refreshCount == 0)
+        #expect(
+            coordinator.state(for: .claude) == .waitingForCredential
+        )
+        await coordinator.applicationDidBecomeActive(
+            refresh: { refreshCount += 1 },
+            availability: { (_: ProviderID) in .authenticationRequired }
+        )
+        #expect(refreshCount == 1)
+        #expect(
+            coordinator.state(for: .claude) == .waitingForCredential
+        )
     }
 
     @Test
