@@ -34,6 +34,10 @@ struct OpenCodeUsageProvider: UsageProvider {
         token: String,
         now: Date
     ) async throws -> ProviderUsage {
+        let endpoint = ProviderContractCatalog.endpoint(
+            .openCodeGoUsage,
+            for: id
+        )
         var request = URLRequest(
             url: URL(
                 string: "https://opencode.ai/zen/go/v1/usage"
@@ -45,11 +49,16 @@ struct OpenCodeUsageProvider: UsageProvider {
             forHTTPHeaderField: "Authorization"
         )
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        let data = try await http.data(
-            for: request,
-            provider: id,
-            operation: .safe
-        )
+        let data = try await http.data(for: request, endpoint: endpoint)
+        return try endpoint.schemaChecked {
+            try parseGoUsage(data, now: now)
+        }
+    }
+
+    private func parseGoUsage(
+        _ data: Data,
+        now: Date
+    ) throws -> ProviderUsage {
         let root = try ProviderPayload.object(data)
         guard let usage = UsageJSON.object(root["usage"]) else {
             throw ProviderTransportError.invalidResponse(id)

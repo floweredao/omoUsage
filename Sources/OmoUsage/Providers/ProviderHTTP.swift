@@ -51,6 +51,18 @@ struct ProviderHTTP: Sendable {
 
     func data(
         for request: URLRequest,
+        endpoint: ProviderEndpointDescriptor
+    ) async throws -> Data {
+        try endpoint.validate(request)
+        return try await data(
+            for: request,
+            provider: endpoint.provider,
+            operation: endpoint.safety == .safe ? .safe : .unsafe
+        )
+    }
+
+    func data(
+        for request: URLRequest,
         provider: ProviderID,
         operation: ProviderHTTPOperation? = nil
     ) async throws -> Data {

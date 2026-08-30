@@ -291,7 +291,7 @@ struct ProviderOrderingView: View {
         switch item.availability {
         case .available:
             return localization.text(.connected)
-        case .failed:
+        case .failed, .schemaChanged:
             return localization.text(.checkFailed)
         case .authenticationRequired, .unavailable:
             return localization.text(.notConnected)

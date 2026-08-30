@@ -56,7 +56,9 @@
 		799FBC3CF96FED237F7597C5 /* ProviderAccountStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12880EC739A2114067FFC005 /* ProviderAccountStore.swift */; };
 		7AA30383C1E92860956551AE /* AGENTS.md in Resources */ = {isa = PBXBuildFile; fileRef = 3C69FACC582DA88612C34BF0 /* AGENTS.md */; };
 		8170BB41E2A183846F897346 /* AdditionalCredentialDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18E04655A177A8AA235FBDB9 /* AdditionalCredentialDiscovery.swift */; };
+		82DE60A35965393294FBD448 /* ProviderContractCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0C4BE01E14207E07EE49590 /* ProviderContractCatalog.swift */; };
 		837919BC114FC6497176EBA0 /* ProviderDisplayOrderStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F03319A261576E4FBE15484 /* ProviderDisplayOrderStore.swift */; };
+		88C3C9770CA098CD21C01E36 /* ProviderContract.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1B9E88530B0E8A542576A73 /* ProviderContract.swift */; };
 		89B49B73241BE1906C0342C4 /* AntigravityUsageParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA6198AA976BD0BCAE26F5A9 /* AntigravityUsageParser.swift */; };
 		8A7A8F4EE1ABDAA16CA411FE /* CredentialDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78E247810A053AD78274650A /* CredentialDiscovery.swift */; };
 		8B29F479D59DB03872982777 /* ProviderDisplayOrderStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F03319A261576E4FBE15484 /* ProviderDisplayOrderStore.swift */; };
@@ -165,6 +167,7 @@
 		BBE0F4DB355CE64D19098317 /* Redactor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Redactor.swift; sourceTree = "<group>"; };
 		BDF3AE66A5D3C88D9C1FE42E /* AGENTS.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = AGENTS.md; sourceTree = "<group>"; };
 		C3D3D4A69F4FA62AD31142D2 /* SingleInstanceController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SingleInstanceController.swift; sourceTree = "<group>"; };
+		D0C4BE01E14207E07EE49590 /* ProviderContractCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderContractCatalog.swift; sourceTree = "<group>"; };
 		D10C4986CF84E3A839055E01 /* ZAIUsageProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZAIUsageProvider.swift; sourceTree = "<group>"; };
 		D14D433914F0A08A93F1ECD9 /* SecurityKeychainWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecurityKeychainWriter.swift; sourceTree = "<group>"; };
 		D1BCF394421F7C8988DC6567 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
@@ -175,6 +178,7 @@
 		DA6198AA976BD0BCAE26F5A9 /* AntigravityUsageParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AntigravityUsageParser.swift; sourceTree = "<group>"; };
 		DC0B81DC5CFBF8B0D0E43BBD /* ProviderSectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderSectionView.swift; sourceTree = "<group>"; };
 		DFF2372A302C924B066BD9D3 /* ProviderSetup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderSetup.swift; sourceTree = "<group>"; };
+		E1B9E88530B0E8A542576A73 /* ProviderContract.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderContract.swift; sourceTree = "<group>"; };
 		E2A9B80D74389B95B9D955E3 /* ProviderMutationCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderMutationCoordinator.swift; sourceTree = "<group>"; };
 		E3E10EB6976F4F322009A416 /* UsageRefreshScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageRefreshScheduler.swift; sourceTree = "<group>"; };
 		E5569E48222BF50022CEA5B0 /* CopilotUsageProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopilotUsageProvider.swift; sourceTree = "<group>"; };
@@ -224,6 +228,8 @@
 				75B31A35E61DC72262265D84 /* GrokUsageProvider.swift */,
 				D5CF7CBDBE3A6256C0F1694C /* OpenCodeUsageProvider.swift */,
 				332B6061B110A89D9233C052 /* OpenRouterUsageProvider.swift */,
+				E1B9E88530B0E8A542576A73 /* ProviderContract.swift */,
+				D0C4BE01E14207E07EE49590 /* ProviderContractCatalog.swift */,
 				90AB4BC350C05CBD76F7B6CD /* ProviderFactory.swift */,
 				5026452A4FFB4EC36C26BBF8 /* ProviderHTTP.swift */,
 				4ABCFDAB1771087494006F4A /* ProviderPayload.swift */,
@@ -586,6 +592,8 @@
 				77085914D073A6F1CD4CA7C7 /* ProviderAPIKeyStore.swift in Sources */,
 				17789656EEDA0981DCA93661 /* ProviderAccountRegistryController.swift in Sources */,
 				799FBC3CF96FED237F7597C5 /* ProviderAccountStore.swift in Sources */,
+				88C3C9770CA098CD21C01E36 /* ProviderContract.swift in Sources */,
+				82DE60A35965393294FBD448 /* ProviderContractCatalog.swift in Sources */,
 				D2AEF7EE1438AD4BD92ED58C /* ProviderDisconnectionStore.swift in Sources */,
 				8B29F479D59DB03872982777 /* ProviderDisplayOrderStore.swift in Sources */,
 				DC4FC34D73444DD0D4A3E003 /* ProviderFactory.swift in Sources */,

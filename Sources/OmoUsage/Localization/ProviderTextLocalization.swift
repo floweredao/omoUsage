@@ -21,7 +21,7 @@ extension LocalizationResolving {
             text(.authenticationRequired)
         case .unavailable:
             text(.unavailable)
-        case .failed:
+        case .failed, .schemaChanged:
             text(.refreshFailed)
         }
     }

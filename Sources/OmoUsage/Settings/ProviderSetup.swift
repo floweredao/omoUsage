@@ -155,7 +155,7 @@ final class ProviderConnectionCoordinator {
             case .available:
                 states[accountProvider] = .authenticated
                 awaitingActivation.remove(accountProvider)
-            case .failed:
+            case .failed, .schemaChanged:
                 states[accountProvider] = .failed
                 awaitingActivation.remove(accountProvider)
             case .authenticationRequired, .unavailable, nil:

@@ -80,6 +80,8 @@ final class UsageDashboardViewModel {
     @ObservationIgnored
     private let publishControlState:
         @MainActor (UsageDashboardControlState) -> Void
+    @ObservationIgnored
+    private let diagnosticStore: DiagnosticStore
 
     private(set) var snapshot: DashboardSnapshot
     private(set) var isRefreshing = false
@@ -138,6 +140,7 @@ final class UsageDashboardViewModel {
         publishControlState: @escaping @MainActor (
             UsageDashboardControlState
         ) -> Void = { _ in },
+        diagnosticStore: DiagnosticStore = .shared,
         providerDeadline: TimeInterval = 30,
         sleep: @escaping @Sendable (TimeInterval) async throws -> Void = {
             try await Task.sleep(for: .seconds($0))
@@ -192,6 +195,7 @@ final class UsageDashboardViewModel {
             persistDisconnectedAccountProviders
         self.publishSnapshot = publishSnapshot
         self.publishControlState = publishControlState
+        self.diagnosticStore = diagnosticStore
         self.providerDeadline = providerDeadline
         self.sleep = sleep
         self.now = now
@@ -507,6 +511,27 @@ final class UsageDashboardViewModel {
                     )
                 }
             )
+            var disabledForSchemaChange = false
+            for result in results {
+                guard let revision = result.contractRevision else { continue }
+                disabledForSchemaChange = disconnectedAccountProviders
+                    .insert(result.id).inserted || disabledForSchemaChange
+                diagnosticStore.record(
+                    DiagnosticEvent(
+                        provider: result.id.providerID,
+                        status: .schemaChanged,
+                        category: .providerRefresh,
+                        contractRevision: revision,
+                        occurredAt: fetchNow
+                    )
+                )
+            }
+            if disabledForSchemaChange {
+                persistDisconnectedAccountProviders(
+                    disconnectedAccountProviders
+                )
+                persistDisconnectedProviders(disconnectedProviders)
+            }
             updateLegacyConnectionStates(includeUnavailableProviders: true)
             let previous = Dictionary(
                 uniqueKeysWithValues: snapshot.providers.map {
@@ -580,13 +605,23 @@ final class UsageDashboardViewModel {
                             wasCancelled: true
                         )
                     } catch {
+                        let contractRevision: Int? = if case let
+                            ProviderContractError.schemaChanged(
+                                _, _, revision
+                            ) = error
+                        {
+                            revision
+                        } else {
+                            nil
+                        }
                         result = ProviderFetchResult(
                             id: provider.accountProviderID,
                             usage: nil,
                             availability: availability(for: error),
                             retainsPreviousUsage:
                                 retainsPreviousUsage(for: error),
-                            refreshFailure: refreshFailure(for: error)
+                            refreshFailure: refreshFailure(for: error),
+                            contractRevision: contractRevision
                         )
                     }
                     race.resolve(result)
@@ -682,6 +717,8 @@ final class UsageDashboardViewModel {
                 let availability: ProviderAvailability
                 if states.contains(.available) {
                     availability = .available
+                } else if states.contains(.schemaChanged) {
+                    availability = .schemaChanged
                 } else if states.contains(.failed) {
                     availability = .failed
                 } else if states.contains(.authenticationRequired) {
@@ -733,6 +770,9 @@ final class UsageDashboardViewModel {
     private static func availability(
         for error: any Error
     ) -> ProviderAvailability {
+        if case ProviderContractError.schemaChanged = error {
+            return .schemaChanged
+        }
         if let error = error as? CredentialDiscoveryError {
             switch error {
             case .notFound:
@@ -755,6 +795,9 @@ final class UsageDashboardViewModel {
     ) -> ProviderRefreshFailure {
         if error is CredentialDiscoveryError {
             return .credential
+        }
+        if case ProviderContractError.schemaChanged = error {
+            return .schema
         }
         if let error = error as? ProviderTransportError {
             switch error {
@@ -804,6 +847,7 @@ private struct ProviderFetchResult: Sendable {
     var wasCancelled = false
     var retainsPreviousUsage = false
     var refreshFailure: ProviderRefreshFailure?
+    var contractRevision: Int? = nil
 }
 
 private final class ProviderDeadlineRace: @unchecked Sendable {

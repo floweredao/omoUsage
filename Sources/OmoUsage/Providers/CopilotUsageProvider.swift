@@ -7,6 +7,7 @@ struct CopilotUsageProvider: UsageProvider {
 
     func fetch(now: Date) async throws -> ProviderUsage {
         let credential = try discovery.copilot()
+        let endpoint = ProviderContractCatalog.endpoint(.copilotUser, for: id)
         var request = URLRequest(
             url: URL(
                 string: "https://api.github.com/copilot_internal/user"
@@ -34,12 +35,10 @@ struct CopilotUsageProvider: UsageProvider {
             "GitHubCopilotChat/0.26.7",
             forHTTPHeaderField: "User-Agent"
         )
-        let data = try await http.data(
-            for: request,
-            provider: id,
-            operation: .safe
-        )
-        return try parse(data, now: now)
+        let data = try await http.data(for: request, endpoint: endpoint)
+        return try endpoint.schemaChecked {
+            try parse(data, now: now)
+        }
     }
 
     private func parse(_ data: Data, now: Date) throws -> ProviderUsage {

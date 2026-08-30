@@ -46,6 +46,7 @@ enum ProviderAvailability: String, Equatable, Codable, Sendable {
     case authenticationRequired
     case unavailable
     case failed
+    case schemaChanged
 
     var koreanLabel: String? {
         switch self {
@@ -53,6 +54,7 @@ enum ProviderAvailability: String, Equatable, Codable, Sendable {
         case .authenticationRequired: "인증 필요"
         case .unavailable: "사용할 수 없음"
         case .failed: "새로고침 실패"
+        case .schemaChanged: "스키마 변경됨"
         }
     }
 }

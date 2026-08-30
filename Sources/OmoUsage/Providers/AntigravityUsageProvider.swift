@@ -15,6 +15,10 @@ struct AntigravityUsageProvider: UsageProvider {
 
     func fetch(now: Date) async throws -> ProviderUsage {
         let credential = try discovery.antigravity(now: now)
+        let endpoint = ProviderContractCatalog.endpoint(
+            .antigravityAvailableModels,
+            for: id
+        )
         let bases = [
             "https://daily-cloudcode-pa.googleapis.com",
             "https://cloudcode-pa.googleapis.com"
@@ -42,10 +46,11 @@ struct AntigravityUsageProvider: UsageProvider {
             do {
                 let data = try await http.data(
                     for: request,
-                    provider: id,
-                    operation: .safe
+                    endpoint: endpoint
                 )
-                return try AntigravityUsageParser.parse(data, now: now)
+                return try endpoint.schemaChecked {
+                    try AntigravityUsageParser.parse(data, now: now)
+                }
             } catch ProviderTransportError.authenticationRequired {
                 throw ProviderTransportError.authenticationRequired(id)
             } catch {

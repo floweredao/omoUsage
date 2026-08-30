@@ -23,27 +23,34 @@ struct ZAIUsageProvider: UsageProvider {
         let credential = try discovery.zai(accountID: accountID)
         async let quota = get(
             "https://api.z.ai/api/monitor/usage/quota/limit",
+            purpose: .zaiQuota,
             token: credential.accessToken
         )
         async let subscription = try? get(
             "https://api.z.ai/api/biz/subscription/list",
+            purpose: .zaiSubscription,
             token: credential.accessToken
         )
         let (quotaData, subscriptionData) = try await (
             quota,
             subscription
         )
-        return try parse(
-            quotaData,
-            subscription: subscriptionData,
-            now: now
-        )
+        let endpoint = ProviderContractCatalog.endpoint(.zaiQuota, for: id)
+        return try endpoint.schemaChecked {
+            try parse(
+                quotaData,
+                subscription: subscriptionData,
+                now: now
+            )
+        }
     }
 
     private func get(
         _ url: String,
+        purpose: ProviderEndpointPurpose,
         token: String
     ) async throws -> Data {
+        let endpoint = ProviderContractCatalog.endpoint(purpose, for: id)
         var request = URLRequest(url: URL(string: url)!)
         request.timeoutInterval = 15
         request.setValue(
@@ -51,11 +58,7 @@ struct ZAIUsageProvider: UsageProvider {
             forHTTPHeaderField: "Authorization"
         )
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        return try await http.data(
-            for: request,
-            provider: id,
-            operation: .safe
-        )
+        return try await http.data(for: request, endpoint: endpoint)
     }
 
     private func parse(

@@ -91,6 +91,8 @@ struct ClaudeUsageProvider: UsageProvider {
                 didRefresh = true
             } catch is CancellationError {
                 throw CancellationError()
+            } catch let contractError as ProviderContractError {
+                throw contractError
             } catch {
                 return try await fetchDesktopUsage(
                     now: now,
@@ -103,6 +105,8 @@ struct ClaudeUsageProvider: UsageProvider {
             return try await fetchOAuthUsage(credential, now: now)
         } catch is CancellationError {
             throw CancellationError()
+        } catch let contractError as ProviderContractError {
+            throw contractError
         } catch {
             // A token the clock still considers valid can be rejected after
             // a revoke or a clock skew; rotate once before giving up.
@@ -124,6 +128,8 @@ struct ClaudeUsageProvider: UsageProvider {
                     return try await fetchOAuthUsage(rotated, now: now)
                 } catch is CancellationError {
                     throw CancellationError()
+                } catch let contractError as ProviderContractError {
+                    throw contractError
                 } catch let retryError {
                     return try await fetchDesktopUsage(
                         now: now,
@@ -144,6 +150,10 @@ struct ClaudeUsageProvider: UsageProvider {
         _ credential: DiscoveredCredential,
         now: Date
     ) async throws -> ProviderUsage {
+        let endpoint = ProviderContractCatalog.endpoint(
+            .claudeOAuthUsage,
+            for: id
+        )
         var request = URLRequest(
             url: URL(string: "https://api.anthropic.com/api/oauth/usage")!
         )
@@ -165,16 +175,14 @@ struct ClaudeUsageProvider: UsageProvider {
             "claude-code/2.1.69",
             forHTTPHeaderField: "User-Agent"
         )
-        let data = try await http.data(
-            for: request,
-            provider: id,
-            operation: .safe
-        )
-        return try ClaudeUsageParser.parse(
-            data,
-            planName: credential.planName ?? "",
-            now: now
-        )
+        let data = try await http.data(for: request, endpoint: endpoint)
+        return try endpoint.schemaChecked {
+            try ClaudeUsageParser.parse(
+                data,
+                planName: credential.planName ?? "",
+                now: now
+            )
+        }
     }
 
     /// Exchanges the stored refresh token for a fresh access token and writes
@@ -187,6 +195,10 @@ struct ClaudeUsageProvider: UsageProvider {
         guard let refreshToken = credential.refreshToken else {
             throw ProviderTransportError.authenticationRequired(id)
         }
+        let endpoint = ProviderContractCatalog.endpoint(
+            .claudeTokenRefresh,
+            for: id
+        )
         var request = URLRequest(url: tokenEndpoint)
         request.httpMethod = "POST"
         request.timeoutInterval = 15
@@ -212,11 +224,7 @@ struct ClaudeUsageProvider: UsageProvider {
         )
         let data: Data
         do {
-            data = try await http.data(
-                for: request,
-                provider: id,
-                operation: .unsafe
-            )
+            data = try await http.data(for: request, endpoint: endpoint)
         } catch {
             await refreshCooldown.recordFailure(
                 for: accountProviderID,
@@ -230,18 +238,21 @@ struct ClaudeUsageProvider: UsageProvider {
             throw error
         }
         await refreshCooldown.recordSuccess(for: accountProviderID)
-        let payload = try ProviderPayload.object(data)
-        guard
-            let accessToken = ProviderPayload.text(
-                payload,
-                paths: [["access_token"]]
-            ),
-            let expiresIn = ProviderPayload.number(
-                payload,
-                paths: [["expires_in"]]
-            )
-        else {
-            throw ProviderTransportError.invalidResponse(id)
+        let (payload, accessToken, expiresIn) = try endpoint.schemaChecked {
+            let payload = try ProviderPayload.object(data)
+            guard
+                let accessToken = ProviderPayload.text(
+                    payload,
+                    paths: [["access_token"]]
+                ),
+                let expiresIn = ProviderPayload.number(
+                    payload,
+                    paths: [["expires_in"]]
+                )
+            else {
+                throw ProviderTransportError.invalidResponse(id)
+            }
+            return (payload, accessToken, expiresIn)
         }
         let rotatedRefreshToken = ProviderPayload.text(
             payload,
@@ -306,6 +317,10 @@ struct ClaudeUsageProvider: UsageProvider {
         _ session: ClaudeDesktopSession,
         now: Date
     ) async throws -> ProviderUsage {
+        let endpoint = ProviderContractCatalog.endpoint(
+            .claudeDesktopUsage,
+            for: id
+        )
         let organizationID = session.organizationID
             .addingPercentEncoding(
                 withAllowedCharacters: .urlPathAllowed
@@ -341,16 +356,14 @@ struct ClaudeUsageProvider: UsageProvider {
                 + "Chrome/140.0 Safari/537.36",
             forHTTPHeaderField: "User-Agent"
         )
-        let data = try await http.data(
-            for: request,
-            provider: id,
-            operation: .safe
-        )
-        return try ClaudeUsageParser.parse(
-            data,
-            planName: "Claude.ai",
-            now: now
-        )
+        let data = try await http.data(for: request, endpoint: endpoint)
+        return try endpoint.schemaChecked {
+            try ClaudeUsageParser.parse(
+                data,
+                planName: "Claude.ai",
+                now: now
+            )
+        }
     }
 
     private func cachedDesktopUsage(
