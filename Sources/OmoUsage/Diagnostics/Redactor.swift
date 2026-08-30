@@ -12,6 +12,7 @@ enum DiagnosticRedactor {
             provider: provider,
             status: status(for: error),
             category: category,
+            contractRevision: contractRevision(for: error),
             accountOrdinal: accountOrdinal,
             occurredAt: occurredAt
         )
@@ -22,12 +23,25 @@ enum DiagnosticRedactor {
             provider: event.provider,
             status: event.status,
             category: event.category,
+            contractRevision: sanitizedRevision(event.contractRevision),
             accountOrdinal: sanitizedOrdinal(event.accountOrdinal),
             occurredAt: event.occurredAt
         )
     }
 
+    private static func contractRevision(for error: any Error) -> Int? {
+        guard case let ProviderContractError.schemaChanged(
+            _, _, contractRevision
+        ) = error else {
+            return nil
+        }
+        return sanitizedRevision(contractRevision)
+    }
+
     private static func status(for error: any Error) -> DiagnosticStatus {
+        if case ProviderContractError.schemaChanged = error {
+            return .schemaChanged
+        }
         if let transport = error as? ProviderTransportError {
             switch transport {
             case .authenticationRequired:
@@ -56,6 +70,13 @@ enum DiagnosticRedactor {
             }
         }
         return .failed
+    }
+
+    private static func sanitizedRevision(_ revision: Int?) -> Int? {
+        guard let revision, (1...10_000).contains(revision) else {
+            return nil
+        }
+        return revision
     }
 
     private static func sanitizedOrdinal(_ ordinal: Int?) -> Int? {

@@ -23,10 +23,12 @@ struct OpenRouterUsageProvider: UsageProvider {
         let credential = try discovery.openrouter(accountID: accountID)
         async let credits = attempt(
             "https://openrouter.ai/api/v1/credits",
+            purpose: .openRouterCredits,
             token: credential.accessToken
         )
         async let key = attempt(
             "https://openrouter.ai/api/v1/key",
+            purpose: .openRouterKey,
             token: credential.accessToken
         )
         let attempts = await [credits, key]
@@ -41,16 +43,27 @@ struct OpenRouterUsageProvider: UsageProvider {
             }
             throw ProviderTransportError.invalidResponse(id)
         }
-        return try parse(data[0], key: data[1], now: now)
+        let endpoint = ProviderContractCatalog.endpoint(
+            .openRouterCredits,
+            for: id
+        )
+        return try endpoint.schemaChecked {
+            try parse(data[0], key: data[1], now: now)
+        }
     }
 
     private func attempt(
         _ url: String,
+        purpose: ProviderEndpointPurpose,
         token: String
     ) async -> OpenRouterAttempt {
         do {
             return OpenRouterAttempt(
-                data: try await get(url, token: token),
+                data: try await get(
+                    url,
+                    purpose: purpose,
+                    token: token
+                ),
                 error: nil
             )
         } catch let error as ProviderTransportError {
@@ -62,8 +75,10 @@ struct OpenRouterUsageProvider: UsageProvider {
 
     private func get(
         _ url: String,
+        purpose: ProviderEndpointPurpose,
         token: String
     ) async throws -> Data {
+        let endpoint = ProviderContractCatalog.endpoint(purpose, for: id)
         var request = URLRequest(url: URL(string: url)!)
         request.timeoutInterval = 15
         request.setValue(
@@ -71,11 +86,7 @@ struct OpenRouterUsageProvider: UsageProvider {
             forHTTPHeaderField: "Authorization"
         )
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        return try await http.data(
-            for: request,
-            provider: id,
-            operation: .safe
-        )
+        return try await http.data(for: request, endpoint: endpoint)
     }
 
     private func parse(

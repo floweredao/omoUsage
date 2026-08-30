@@ -9,20 +9,30 @@ struct CursorUsageProvider: UsageProvider {
         let credential = try discovery.cursor(now: now)
         async let usageData = get(
             "/api/usage-summary",
+            purpose: .cursorUsageSummary,
             token: credential.accessToken
         )
         async let planData = try? get(
             "/auth/me",
+            purpose: .cursorAccount,
             token: credential.accessToken
         )
         let (usage, plan) = try await (usageData, planData)
-        return try parse(usage, plan: plan, now: now)
+        let endpoint = ProviderContractCatalog.endpoint(
+            .cursorUsageSummary,
+            for: id
+        )
+        return try endpoint.schemaChecked {
+            try parse(usage, plan: plan, now: now)
+        }
     }
 
     private func get(
         _ path: String,
+        purpose: ProviderEndpointPurpose,
         token: String
     ) async throws -> Data {
+        let endpoint = ProviderContractCatalog.endpoint(purpose, for: id)
         var request = URLRequest(
             url: URL(string: "https://api2.cursor.sh\(path)")!
         )
@@ -33,11 +43,7 @@ struct CursorUsageProvider: UsageProvider {
             forHTTPHeaderField: "Authorization"
         )
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        return try await http.data(
-            for: request,
-            provider: id,
-            operation: .safe
-        )
+        return try await http.data(for: request, endpoint: endpoint)
     }
 
     private func parse(

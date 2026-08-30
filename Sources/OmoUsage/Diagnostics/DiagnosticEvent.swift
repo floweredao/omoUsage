@@ -6,6 +6,7 @@ enum DiagnosticStatus: String, Codable, Sendable {
     case requestRejected = "request_rejected"
     case transient
     case invalidResponse = "invalid_response"
+    case schemaChanged = "schema_changed"
     case timedOut = "timed_out"
     case recovered
     case blocked
@@ -33,6 +34,7 @@ struct DiagnosticEvent: Codable, Equatable, Sendable {
     let status: DiagnosticStatus
     let category: DiagnosticCategory
     let schemaRevision: Int
+    let contractRevision: Int?
     let accountOrdinal: Int?
     let occurredAt: Date
 
@@ -40,6 +42,7 @@ struct DiagnosticEvent: Codable, Equatable, Sendable {
         provider: ProviderID? = nil,
         status: DiagnosticStatus,
         category: DiagnosticCategory,
+        contractRevision: Int? = nil,
         accountOrdinal: Int? = nil,
         occurredAt: Date = Date()
     ) {
@@ -47,6 +50,7 @@ struct DiagnosticEvent: Codable, Equatable, Sendable {
         self.status = status
         self.category = category
         schemaRevision = Self.currentSchemaRevision
+        self.contractRevision = contractRevision
         self.accountOrdinal = accountOrdinal
         self.occurredAt = occurredAt
     }

@@ -15,6 +15,7 @@ struct CodexUsageProvider: UsageProvider {
 
     func fetch(now: Date) async throws -> ProviderUsage {
         let credential = try discovery.codex(now: now)
+        let endpoint = ProviderContractCatalog.endpoint(.codexUsage, for: id)
         var request = URLRequest(
             url: URL(string: "https://chatgpt.com/backend-api/wham/usage")!
         )
@@ -31,11 +32,9 @@ struct CodexUsageProvider: UsageProvider {
                 forHTTPHeaderField: "ChatGPT-Account-Id"
             )
         }
-        let data = try await http.data(
-            for: request,
-            provider: id,
-            operation: .safe
-        )
-        return try CodexUsageParser.parse(data, now: now)
+        let data = try await http.data(for: request, endpoint: endpoint)
+        return try endpoint.schemaChecked {
+            try CodexUsageParser.parse(data, now: now)
+        }
     }
 }

@@ -65,8 +65,12 @@ struct ZAIReliabilityTests {
             Issue.record("Usage alone must not become both used and limit")
         } catch {
             #expect(
-                error as? ProviderTransportError
-                    == .invalidResponse(.zai)
+                error as? ProviderContractError
+                    == .schemaChanged(
+                        provider: .zai,
+                        purpose: .zaiQuota,
+                        contractRevision: 1
+                    )
             )
         }
     }
@@ -254,7 +258,7 @@ struct ZAIReliabilityTests {
     }
 
     @Test
-    func malformedQuotaPayloadRemainsInvalidResponse() async {
+    func malformedQuotaPayloadReportsContractRevision() async {
         do {
             _ = try await HephaestusZAIFixture.fetch(
                 quota: #"{"success":true,"data":{"unexpected":[]}}"#,
@@ -264,8 +268,12 @@ struct ZAIReliabilityTests {
             Issue.record("Expected malformed Z.AI quota payload to fail")
         } catch {
             #expect(
-                error as? ProviderTransportError
-                    == .invalidResponse(.zai)
+                error as? ProviderContractError
+                    == .schemaChanged(
+                        provider: .zai,
+                        purpose: .zaiQuota,
+                        contractRevision: 1
+                    )
             )
         }
     }

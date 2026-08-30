@@ -7,6 +7,10 @@ struct DevinUsageProvider: UsageProvider {
 
     func fetch(now: Date) async throws -> ProviderUsage {
         let credential = try discovery.devin()
+        let endpoint = ProviderContractCatalog.endpoint(
+            .devinUserStatus,
+            for: id
+        )
         let server = credential.accountID
             ?? "https://server.codeium.com"
         let service = "exa.seat_management_pb.SeatManagementService"
@@ -43,12 +47,10 @@ struct DevinUsageProvider: UsageProvider {
                 ]
             ]
         )
-        let data = try await http.data(
-            for: request,
-            provider: id,
-            operation: .safe
-        )
-        return try parse(data, now: now)
+        let data = try await http.data(for: request, endpoint: endpoint)
+        return try endpoint.schemaChecked {
+            try parse(data, now: now)
+        }
     }
 
     private func parse(_ data: Data, now: Date) throws -> ProviderUsage {

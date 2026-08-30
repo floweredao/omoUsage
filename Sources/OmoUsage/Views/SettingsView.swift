@@ -869,7 +869,7 @@ enum ProviderConnectionControl: Equatable, Hashable {
         switch availability {
         case nil, .authenticationRequired:
             return [.connect]
-        case .failed:
+        case .failed, .schemaChanged:
             return [.retry, .disconnect]
         case .available, .unavailable:
             return [.disconnect]
@@ -1122,7 +1122,8 @@ private struct ConnectionBadge: View {
         case .authenticated, .failed, nil:
             switch availability {
             case .available: localization.text(.connected)
-            case .failed: localization.text(.checkFailed)
+            case .failed, .schemaChanged:
+                localization.text(.checkFailed)
             case .authenticationRequired, .unavailable:
                 localization.text(.notConnected)
             case nil: localization.text(.checking)
@@ -1137,7 +1138,7 @@ private struct ConnectionBadge: View {
         case .authenticated, .failed, nil:
             switch availability {
             case .available: .green
-            case .failed: .orange
+            case .failed, .schemaChanged: .orange
             case .authenticationRequired, .unavailable: .secondary
             case nil: .secondary.opacity(0.6)
             }
