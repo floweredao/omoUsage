@@ -2,15 +2,46 @@ import SwiftUI
 
 enum RefreshTimestampPresenter {
     static func footerText(
+        lastRefreshAttemptAt: Date,
+        now: Date,
+        language: AppLanguage = .korean,
+        timeZone: TimeZone = .current
+    ) -> String {
+        if age(of: lastRefreshAttemptAt, at: now) < 10 {
+            return AppStrings(language: language).text(.justNow)
+        }
+        return clockText(lastRefreshAttemptAt, timeZone: timeZone)
+    }
+
+    static func footerText(
         refreshedAt: Date,
         now: Date,
         language: AppLanguage = .korean,
         timeZone: TimeZone = .current
     ) -> String {
-        if age(of: refreshedAt, at: now) < 10 {
-            return AppStrings(language: language).text(.justNow)
+        footerText(
+            lastRefreshAttemptAt: refreshedAt,
+            now: now,
+            language: language,
+            timeZone: timeZone
+        )
+    }
+
+    static func providerText(
+        lastSuccessfulAt: Date,
+        now: Date,
+        language: AppLanguage = .korean,
+        timeZone: TimeZone = .current
+    ) -> String {
+        let strings = AppStrings(language: language)
+        if age(of: lastSuccessfulAt, at: now) < 10 {
+            return strings.text(.asOfNow)
         }
-        return clockText(refreshedAt, timeZone: timeZone)
+        return String(
+            format: strings.text(.asOf),
+            locale: language.locale,
+            clockText(lastSuccessfulAt, timeZone: timeZone)
+        )
     }
 
     static func providerText(
@@ -19,14 +50,11 @@ enum RefreshTimestampPresenter {
         language: AppLanguage = .korean,
         timeZone: TimeZone = .current
     ) -> String {
-        let strings = AppStrings(language: language)
-        if age(of: updatedAt, at: now) < 10 {
-            return strings.text(.asOfNow)
-        }
-        return String(
-            format: strings.text(.asOf),
-            locale: language.locale,
-            clockText(updatedAt, timeZone: timeZone)
+        providerText(
+            lastSuccessfulAt: updatedAt,
+            now: now,
+            language: language,
+            timeZone: timeZone
         )
     }
 
@@ -86,14 +114,14 @@ struct RefreshTimestampView: View {
         switch style {
         case .footer:
             let timestamp = RefreshTimestampPresenter.footerText(
-                    refreshedAt: updatedAt,
+                    lastRefreshAttemptAt: updatedAt,
                     now: now,
                     language: localization.language
                 )
-            return localization.format(.lastRefresh, timestamp)
+            return localization.format(.lastRefreshAttempt, timestamp)
         case .provider:
             return RefreshTimestampPresenter.providerText(
-                updatedAt: updatedAt,
+                lastSuccessfulAt: updatedAt,
                 now: now,
                 language: localization.language
             )
