@@ -384,6 +384,48 @@ struct SideNotchHoverPreviewTests {
     // MARK: - Hover boundary
 
     @Test
+    func edgeOriginHoverRequiresMovementIntoTheRail() {
+        let visibleFrame = NSRect(
+            x: 0,
+            y: 25,
+            width: 1_920,
+            height: 1_055
+        )
+
+        #expect(
+            !SideNotchProviderInteractionPolicy.shouldPreview(
+                pointerScreenX: 1_913,
+                visibleFrame: visibleFrame
+            )
+        )
+        #expect(
+            SideNotchProviderInteractionPolicy.shouldPreview(
+                pointerScreenX: 1_911,
+                visibleFrame: visibleFrame
+            )
+        )
+    }
+
+    @Test
+    func providerHitTargetCoversTheEntireRailRow() {
+        let rowSize = CGSize(
+            width: SideNotchPanelLayout.collapsedWidth,
+            height: SideNotchPanelLayout.providerRowHeight
+        )
+
+        #expect(
+            SideNotchProviderInteractionPolicy.hitFrame(
+                for: rowSize
+            ) == CGRect(origin: .zero, size: rowSize)
+        )
+        #expect(
+            SideNotchProviderInteractionPolicy.hitFrame(
+                for: rowSize
+            ).contains(CGPoint(x: 55, y: 29))
+        )
+    }
+
+    @Test
     func exitReportsAreIgnoredWhileThePointerIsStillOverThePanel() {
         // AppKit emits a synthetic exit as the panel resizes under a
         // stationary cursor; that must not collapse the preview.
