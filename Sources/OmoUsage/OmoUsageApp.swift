@@ -1,4 +1,5 @@
 import AppKit
+import CryptoKit
 import Darwin
 
 @main
@@ -15,6 +16,12 @@ enum OmoUsageApp {
             "OMO_USAGE_PROVIDER_MUTATION_FIXTURE"
         ] == "1" {
             runProviderMutationFixture()
+            return
+        }
+        if ProcessInfo.processInfo.environment[
+            "OMO_USAGE_KEY_MIGRATION_QA"
+        ] == "1" {
+            runProviderKeyMigrationQA()
             return
         }
         if ProcessInfo.processInfo.environment[
@@ -107,13 +114,19 @@ enum OmoUsageApp {
         let home = environment["OMO_USAGE_MUTATION_HOME"].map {
             URL(filePath: $0, directoryHint: .isDirectory)
         }
+        let fixtureKeychain = home.map {
+            ProviderMutationFixtureKeychain(
+                directory: $0.appending(path: ".fixture-keychain")
+            )
+        }
         let keyStore: ProviderMutationCoordinator.KeyStore = { provider, accountID in
-            guard let home else { return nil }
+            guard let home, let fixtureKeychain else { return nil }
             return ProviderAPIKeyStore.live(
                 for: provider,
                 accountID: accountID,
                 home: home,
-                environment: [:]
+                environment: [:],
+                keychain: fixtureKeychain
             )
         }
         let coordinator = ProviderMutationCoordinator(
@@ -195,6 +208,50 @@ enum OmoUsageApp {
         }
     }
 
+    private static func runProviderKeyMigrationQA() {
+        let environment = ProcessInfo.processInfo.environment
+        guard let homePath = environment["HOME"],
+              environment["OMO_USAGE_PROVIDER_KEYCHAIN_SERVICE"] != nil
+        else { Darwin.exit(EXIT_FAILURE) }
+        let home = URL(filePath: homePath, directoryHint: .isDirectory)
+        writeFixtureEvent("migration-started")
+        let qaKeychain = ProviderMigrationQAKeychain(
+            reader: SecurityProviderKeychain()
+        )
+        let store = ProviderAccountStore.live(
+            home: home,
+            environment: environment,
+            defaults: UserDefaults(suiteName: "ProviderKeyMigrationQA")!,
+            providerKeychain: qaKeychain
+        )
+        let failpoint = environment["OMO_USAGE_KEY_MIGRATION_FAILPOINT"]
+            .flatMap(ProviderMutationPhase.init(rawValue:))
+        let coordinator = ProviderMutationCoordinator(
+            store: store,
+            keyStore: { provider, accountID in
+                ProviderAPIKeyStore.live(
+                    for: provider,
+                    accountID: accountID,
+                    home: home,
+                    environment: environment,
+                    keychain: qaKeychain
+                )
+            },
+            afterPhase: { phase in
+                if phase == failpoint { throw CocoaError(.fileWriteUnknown) }
+            }
+        )
+        writeFixtureEvent("migration-attempting")
+        let result = coordinator.loadOrRecover()
+        writeFixtureEvent("migration-reconciled")
+        guard result.registry != nil else { Darwin.exit(EXIT_FAILURE) }
+        writeFixtureEvent(
+            coordinator.pendingLegacyCleanup().isEmpty
+                ? "migration-finished"
+                : "cleanup-pending"
+        )
+    }
+
     private static func runDiagnosticFixture() {
         let environment = ProcessInfo.processInfo.environment
         guard
@@ -232,6 +289,50 @@ enum OmoUsageApp {
 
     private static func writeFixtureEvent(_ event: String) {
         FileHandle.standardOutput.write(Data("\(event)\n".utf8))
+    }
+}
+
+private struct ProviderMigrationQAKeychain: ProviderKeychain {
+    let reader: any ProviderKeychain
+    func value(service: String, account: String) throws -> String? {
+        try reader.value(service: service, account: account)
+    }
+    func set(_ value: String, service: String, account: String) throws {
+        throw KeychainReadError(status: errSecReadOnly)
+    }
+    func remove(service: String, account: String) throws {
+        throw KeychainReadError(status: errSecReadOnly)
+    }
+}
+
+private final class ProviderMutationFixtureKeychain: ProviderKeychain, @unchecked Sendable {
+    let directory: URL
+    init(directory: URL) { self.directory = directory }
+
+    func value(service: String, account: String) throws -> String? {
+        let url = itemURL(service: service, account: account)
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        return String(data: try Data(contentsOf: url), encoding: .utf8)
+    }
+
+    func set(_ value: String, service: String, account: String) throws {
+        try ProviderFileDurability.atomicWrite(
+            Data(value.utf8),
+            to: itemURL(service: service, account: account),
+            permissions: 0o600
+        )
+    }
+
+    func remove(service: String, account: String) throws {
+        try ProviderFileDurability.removeIfPresent(
+            itemURL(service: service, account: account)
+        )
+    }
+
+    private func itemURL(service: String, account: String) -> URL {
+        let digest = SHA256.hash(data: Data("\(service)|\(account)".utf8))
+            .map { String(format: "%02x", $0) }.joined()
+        return directory.appending(path: digest)
     }
 }
 

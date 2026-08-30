@@ -80,6 +80,7 @@ struct CredentialDiscovery: Sendable {
     let paths: CredentialPaths
     let environment: [String: String]
     let keychain: any KeychainReading
+    let providerKeychain: any ProviderKeychain
     let keychainWriter: (any KeychainWriting)?
     let homeDirectory: URL
     let commandPaths: [URL]
@@ -88,6 +89,7 @@ struct CredentialDiscovery: Sendable {
         paths: CredentialPaths,
         environment: [String: String],
         keychain: any KeychainReading,
+        providerKeychain: (any ProviderKeychain)? = nil,
         keychainWriter: (any KeychainWriting)? = nil,
         homeDirectory: URL = Foundation.FileManager.default
             .homeDirectoryForCurrentUser,
@@ -99,6 +101,8 @@ struct CredentialDiscovery: Sendable {
         self.paths = paths
         self.environment = environment
         self.keychain = keychain
+        self.providerKeychain = providerKeychain
+            ?? ReadOnlyProviderKeychain(reader: keychain)
         self.keychainWriter = keychainWriter
         self.homeDirectory = homeDirectory
         self.commandPaths = commandPaths
@@ -343,6 +347,7 @@ struct CredentialDiscovery: Sendable {
             ),
             environment: environment,
             keychain: SecurityKeychainReader(),
+            providerKeychain: SecurityProviderKeychain(),
             keychainWriter: SecurityKeychainWriter(),
             homeDirectory: home,
             commandPaths: [
@@ -499,6 +504,19 @@ enum SecretRedactor {
             .reduce(text) { partial, secret in
                 partial.replacingOccurrences(of: secret, with: "<redacted>")
             }
+    }
+}
+
+private struct ReadOnlyProviderKeychain: ProviderKeychain {
+    let reader: any KeychainReading
+    func value(service: String, account: String) throws -> String? {
+        try reader.value(service: service, account: account)
+    }
+    func set(_ value: String, service: String, account: String) throws {
+        throw KeychainReadError(status: errSecReadOnly)
+    }
+    func remove(service: String, account: String) throws {
+        throw KeychainReadError(status: errSecReadOnly)
     }
 }
 

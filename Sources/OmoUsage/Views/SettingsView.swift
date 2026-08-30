@@ -247,6 +247,14 @@ struct SettingsView: View {
                                 connectionPresentation:
                                     connectionCoordinator.state(for: provider),
                                 keyDraft: binding(for: provider),
+                                keySource: accountRegistryController
+                                    .keyStorageSource(for: provider),
+                                needsLegacyCleanup: accountRegistryController
+                                    .pendingLegacyCleanup.contains {
+                                        $0.accountID == .legacy
+                                            && $0.providerID == provider
+                                    },
+                                onCleanupLegacy: retryLegacyKeyCleanup,
                                 onSetup: {
                                     startConnection(for: provider)
                                 },
@@ -439,21 +447,10 @@ struct SettingsView: View {
     }
 
     private func removeKey(for provider: ProviderID) {
-        guard let store = ProviderAPIKeyStore.live(for: provider) else {
-            return
-        }
         do {
             try accountRegistryController.removeLegacyAPIKeyReference(
                 for: provider
             )
-            do {
-                try store.remove()
-            } catch {
-                try? accountRegistryController.ensureLegacyAPIKeyReference(
-                    for: provider
-                )
-                throw error
-            }
             keyDrafts[provider] = ""
             feedback = .formatted(
                 .removedKey,
@@ -462,6 +459,15 @@ struct SettingsView: View {
             onRegistryChange()
         } catch {
             feedback = .key(.removeKeyFailed)
+        }
+    }
+
+    private func retryLegacyKeyCleanup() {
+        do {
+            try accountRegistryController.retryLegacyKeyCleanup()
+            feedback = .key(.legacyKeyCleanupSucceeded)
+        } catch {
+            feedback = .key(.legacyKeyCleanupFailed)
         }
     }
 
@@ -629,6 +635,11 @@ private struct APIKeyAccountsSection: View {
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
+                        if let source = account.source {
+                            Text(localization.text(source.stringKey))
+                                .font(.system(size: 10.5))
+                                .foregroundStyle(.secondary)
+                        }
                     }
                     Spacer(minLength: 8)
                     Button {
@@ -884,6 +895,9 @@ private struct ProviderSettingsRow: View {
     let availability: ProviderAvailability?
     let connectionPresentation: ProviderConnectionPresentationState?
     @Binding var keyDraft: String
+    let keySource: ProviderKeyStorageSource?
+    let needsLegacyCleanup: Bool
+    let onCleanupLegacy: () -> Void
     let onSetup: () -> Void
     let onSave: () -> Void
     let onRemove: () -> Void
@@ -1004,6 +1018,21 @@ private struct ProviderSettingsRow: View {
             }
 
             if descriptor.acceptsAPIKey {
+                if let keySource {
+                    HStack(spacing: 8) {
+                        Text(localization.text(keySource.stringKey))
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(.secondary)
+                        if needsLegacyCleanup {
+                            Button(
+                                localization.text(.retryLegacyKeyCleanup),
+                                action: onCleanupLegacy
+                            )
+                            .buttonStyle(.link)
+                            .controlSize(.small)
+                        }
+                    }
+                }
                 HStack(spacing: 8) {
                     SecureField(
                         localization.text(.apiKey),
@@ -1044,6 +1073,16 @@ private struct ProviderSettingsRow: View {
         ProviderSetup.descriptor(for: provider)!
     }
 
+}
+
+private extension ProviderKeyStorageSource {
+    var stringKey: AppStringKey {
+        switch self {
+        case .environment: .keySourceEnvironment
+        case .keychain: .keySourceKeychain
+        case .legacyFile: .keySourceLegacyFile
+        }
+    }
 }
 
 private struct ProviderHelpPopover: View {

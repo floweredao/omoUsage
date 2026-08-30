@@ -1,192 +1,262 @@
 import CryptoKit
-import Darwin
 import Foundation
 
+protocol ProviderLegacyFileSystem: Sendable {
+    func data(at url: URL) throws -> Data
+    func exists(at url: URL) -> Bool
+    func remove(at url: URL) throws
+}
+
+struct LiveProviderLegacyFileSystem: ProviderLegacyFileSystem {
+    func data(at url: URL) throws -> Data { try Data(contentsOf: url) }
+    func exists(at url: URL) -> Bool {
+        FileManager.default.fileExists(atPath: url.path)
+    }
+    func remove(at url: URL) throws {
+        try ProviderFileDurability.removeIfPresent(url)
+    }
+}
+
 struct ProviderAPIKeyStore: Sendable {
-    let configURL: URL
+    static let serviceName = "com.omo.usage.provider-api-keys.v1"
+
+    let provider: ProviderID
+    let accountID: AccountID
+    let serviceName: String
+    let legacyURL: URL
     let environment: [String: String]
     let environmentNames: [String]
+    let keychain: any ProviderKeychain
+    let legacyFileSystem: any ProviderLegacyFileSystem
 
-    func load() -> String? {
-        loadCredential()?.value
+    var configURL: URL { legacyURL }
+    var service: String { serviceName }
+    var account: String { "\(provider.rawValue)/\(accountID.rawValue)" }
+
+    init(
+        configURL: URL,
+        environment: [String: String],
+        environmentNames: [String]
+    ) {
+        self.init(
+            provider: .openrouter,
+            accountID: .legacy,
+            serviceName: Self.serviceName,
+            legacyURL: configURL,
+            environment: environment,
+            environmentNames: environmentNames,
+            keychain: VolatileProviderKeychain(),
+            legacyFileSystem: LiveProviderLegacyFileSystem()
+        )
     }
 
-    func loadCredential() -> (
-        value: String,
-        source: CredentialSource
-    )? {
+    init(
+        provider: ProviderID,
+        accountID: AccountID,
+        serviceName: String,
+        legacyURL: URL,
+        environment: [String: String],
+        environmentNames: [String],
+        keychain: any ProviderKeychain,
+        legacyFileSystem: any ProviderLegacyFileSystem
+    ) {
+        self.provider = provider
+        self.accountID = accountID
+        self.serviceName = serviceName
+        self.legacyURL = legacyURL
+        self.environment = environment
+        self.environmentNames = environmentNames
+        self.keychain = keychain
+        self.legacyFileSystem = legacyFileSystem
+    }
+
+    func load() -> String? { loadCredential()?.value }
+
+    func loadCredential() -> (value: String, source: CredentialSource)? {
         for name in environmentNames {
             if let value = environment[name]?.trimmedNonEmpty {
                 return (value, .environment)
             }
         }
-        if
-            let data = try? Data(contentsOf: configURL),
-            let object = try? UsageJSON.object(data)
-        {
-            for key in ["apiKey", "api_key", "key"] {
-                if let value = (object[key] as? String)?.trimmedNonEmpty {
-                    return (value, .file)
-                }
+        do {
+            if let value = try keychain.value(service: service, account: account)?
+                .trimmedNonEmpty
+            {
+                return (value, .keychain)
             }
+        } catch {
+            // A denied or ambiguous exact Keychain lookup must not widen to a
+            // lower-precedence plaintext credential.
+            return nil
         }
-        return nil
+        return legacyCredential().map { ($0, .file) }
     }
 
     func save(_ key: String) throws {
         guard let key = key.trimmedNonEmpty else {
             throw ProviderAPIKeyStoreError.empty
         }
-        let data = try JSONSerialization.data(
-            withJSONObject: ["apiKey": key],
-            options: [.prettyPrinted, .sortedKeys]
-        )
-        try ProviderFileDurability.atomicWrite(
-            data,
-            to: configURL,
-            permissions: 0o600
-        )
+        try keychain.set(key, service: service, account: account)
     }
 
     func remove() throws {
-        try ProviderFileDurability.removeIfPresent(configURL)
+        try keychain.remove(service: service, account: account)
     }
 
     func stage(_ key: String, transactionID: UUID) throws {
-        try stagedStore(transactionID: transactionID).save(key)
-    }
-
-    func promoteStagedSecret(transactionID: UUID) throws {
-        let stagedURL = stagedURL(transactionID: transactionID)
-        guard rename(stagedURL.path, configURL.path) == 0 else {
-            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        guard let key = key.trimmedNonEmpty else {
+            throw ProviderAPIKeyStoreError.empty
         }
-        try ProviderFileDurability.syncDirectory(
-            configURL.deletingLastPathComponent()
+        try keychain.set(
+            key,
+            service: service,
+            account: stagingAccount(transactionID)
         )
     }
 
+    func promoteStagedSecret(transactionID: UUID) throws {
+        let staging = stagingAccount(transactionID)
+        guard let value = try keychain.value(service: service, account: staging) else {
+            throw ProviderAPIKeyStoreError.stagedSecretMissing
+        }
+        try keychain.set(value, service: service, account: account)
+        try keychain.remove(service: service, account: staging)
+    }
+
     func removeStagedSecret(transactionID: UUID) throws {
-        try ProviderFileDurability.removeIfPresent(
-            stagedURL(transactionID: transactionID)
+        try keychain.remove(
+            service: service,
+            account: stagingAccount(transactionID)
         )
     }
 
     func stagedSecretExists(transactionID: UUID) -> Bool {
-        FileManager.default.fileExists(
-            atPath: stagedURL(transactionID: transactionID).path
-        )
+        (try? keychain.value(
+            service: service,
+            account: stagingAccount(transactionID)
+        )) != nil
     }
 
     func stagedSecretDigest(transactionID: UUID) -> String? {
-        stagedStore(transactionID: transactionID).load().map(apiKeyDigest)
+        try? keychain.value(
+            service: service,
+            account: stagingAccount(transactionID)
+        ).map(apiKeyDigest)
     }
 
     func persistedSecretDigest() -> String? {
-        ProviderAPIKeyStore(
-            configURL: configURL,
-            environment: [:],
-            environmentNames: []
-        ).load().map(apiKeyDigest)
+        keychainCredential().map(apiKeyDigest)
     }
 
-    private func stagedStore(transactionID: UUID) -> ProviderAPIKeyStore {
-        ProviderAPIKeyStore(
-            configURL: stagedURL(transactionID: transactionID),
-            environment: [:],
-            environmentNames: []
-        )
+    func keychainCredential() -> String? {
+        (try? keychain.value(service: service, account: account)) ?? nil
     }
 
-    private func stagedURL(transactionID: UUID) -> URL {
-        configURL.deletingLastPathComponent().appending(
-            path: ".\(configURL.lastPathComponent).mutation-\(transactionID.uuidString.lowercased())"
-        )
+    func legacyCredential() -> String? {
+        guard legacyFileSystem.exists(at: legacyURL),
+              let data = try? legacyFileSystem.data(at: legacyURL),
+              let object = try? UsageJSON.object(data)
+        else { return nil }
+        for key in ["apiKey", "api_key", "key"] {
+            if let value = (object[key] as? String)?.trimmedNonEmpty { return value }
+        }
+        return nil
+    }
+
+    var legacyExists: Bool { legacyFileSystem.exists(at: legacyURL) }
+
+    func removeLegacy() throws { try legacyFileSystem.remove(at: legacyURL) }
+
+    private func stagingAccount(_ transactionID: UUID) -> String {
+        "\(account)#staging#\(transactionID.uuidString.lowercased())"
     }
 
     static func live(
         for provider: ProviderID,
         home: URL = FileManager.default.homeDirectoryForCurrentUser,
-        environment: [String: String] = ProcessInfo.processInfo.environment
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        keychain: any ProviderKeychain = SecurityProviderKeychain(),
+        legacyFileSystem: any ProviderLegacyFileSystem = LiveProviderLegacyFileSystem()
     ) -> ProviderAPIKeyStore? {
-        let configHome: URL
-        if
-            let value = environment["XDG_CONFIG_HOME"]?.trimmedNonEmpty,
-            value.hasPrefix("/")
-        {
-            configHome = URL(
-                filePath: value,
-                directoryHint: .isDirectory
-            )
-        } else {
-            configHome = home.appending(
-                path: ".config",
-                directoryHint: .isDirectory
-            )
-        }
-        let base = configHome.appending(
-            path: "openusage",
-            directoryHint: .isDirectory
+        live(
+            for: provider,
+            accountID: .legacy,
+            home: home,
+            environment: environment,
+            keychain: keychain,
+            legacyFileSystem: legacyFileSystem
         )
-        switch provider {
-        case .opencode:
-            return ProviderAPIKeyStore(
-                configURL: base.appending(path: "opencode.json"),
-                environment: environment,
-                environmentNames: ["OPENCODE_API_KEY"]
-            )
-        case .openrouter:
-            return ProviderAPIKeyStore(
-                configURL: base.appending(path: "openrouter.json"),
-                environment: environment,
-                environmentNames: [
-                    "OPENROUTER_API_KEY",
-                    "OPENROUTER_KEY"
-                ]
-            )
-        case .zai:
-            return ProviderAPIKeyStore(
-                configURL: base.appending(path: "zai.json"),
-                environment: environment,
-                environmentNames: ["ZAI_API_KEY", "GLM_API_KEY"]
-            )
-        default:
-            return nil
-        }
     }
 
     static func live(
         for provider: ProviderID,
         accountID: AccountID,
         home: URL = FileManager.default.homeDirectoryForCurrentUser,
-        environment: [String: String] = ProcessInfo.processInfo.environment
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        keychain: any ProviderKeychain = SecurityProviderKeychain(),
+        legacyFileSystem: any ProviderLegacyFileSystem = LiveProviderLegacyFileSystem()
     ) -> ProviderAPIKeyStore? {
-        guard let legacy = live(
-            for: provider,
-            home: home,
-            environment: environment
-        ) else {
+        let fileName: String
+        let environmentNames: [String]
+        switch provider {
+        case .opencode:
+            fileName = "opencode.json"
+            environmentNames = ["OPENCODE_API_KEY"]
+        case .openrouter:
+            fileName = "openrouter.json"
+            environmentNames = ["OPENROUTER_API_KEY", "OPENROUTER_KEY"]
+        case .zai:
+            fileName = "zai.json"
+            environmentNames = ["ZAI_API_KEY", "GLM_API_KEY"]
+        default:
             return nil
         }
-        guard accountID != .legacy else { return legacy }
-        let accountDirectory = legacy.configURL
-            .deletingLastPathComponent()
-            .appending(
-                path: "accounts/\(accountID.rawValue)",
-                directoryHint: .isDirectory
-            )
+        let configHome: URL
+        if let value = environment["XDG_CONFIG_HOME"]?.trimmedNonEmpty,
+           value.hasPrefix("/") {
+            configHome = URL(filePath: value, directoryHint: .isDirectory)
+        } else {
+            configHome = home.appending(path: ".config", directoryHint: .isDirectory)
+        }
+        var legacyURL = configHome.appending(path: "openusage", directoryHint: .isDirectory)
+        if accountID != .legacy {
+            legacyURL.append(path: "accounts/\(accountID.rawValue)", directoryHint: .isDirectory)
+        }
+        legacyURL.append(path: fileName)
+        let serviceName = environment["OMO_USAGE_KEY_MIGRATION_QA"] == "1"
+            ? environment["OMO_USAGE_PROVIDER_KEYCHAIN_SERVICE"]?.trimmedNonEmpty
+                ?? Self.serviceName
+            : Self.serviceName
         return ProviderAPIKeyStore(
-            configURL: accountDirectory.appending(
-                path: legacy.configURL.lastPathComponent
-            ),
+            provider: provider,
+            accountID: accountID,
+            serviceName: serviceName,
+            legacyURL: legacyURL,
             environment: environment,
-            environmentNames: []
+            environmentNames: accountID == .legacy ? environmentNames : [],
+            keychain: keychain,
+            legacyFileSystem: legacyFileSystem
         )
     }
 }
 
 enum ProviderAPIKeyStoreError: Error, Equatable {
     case empty
+    case stagedSecretMissing
+}
+
+private final class VolatileProviderKeychain: ProviderKeychain, @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [String: String] = [:]
+    func value(service: String, account: String) throws -> String? {
+        lock.withLock { values[service + "|" + account] }
+    }
+    func set(_ value: String, service: String, account: String) throws {
+        lock.withLock { values[service + "|" + account] = value }
+    }
+    func remove(service: String, account: String) throws {
+        _ = lock.withLock { values.removeValue(forKey: service + "|" + account) }
+    }
 }
 
 private func apiKeyDigest(_ value: String) -> String {

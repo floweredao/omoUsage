@@ -15,7 +15,8 @@ struct FreshInstallStateTests {
         let store = ProviderAccountStore.live(
             home: fixture.home,
             environment: ["XDG_CONFIG_HOME": xdgConfig.path],
-            defaults: fixture.defaults
+            defaults: fixture.defaults,
+            providerKeychain: FreshInstallMissingProviderKeychain()
         )
 
         let registry = try store.loadOrMigrate()
@@ -49,7 +50,8 @@ struct FreshInstallStateTests {
         let store = ProviderAccountStore.live(
             home: fixture.home,
             environment: ["XDG_CONFIG_HOME": "relative-config"],
-            defaults: fixture.defaults
+            defaults: fixture.defaults,
+            providerKeychain: FreshInstallMissingProviderKeychain()
         )
 
         #expect(
@@ -97,6 +99,12 @@ struct FreshInstallStateTests {
         )
         return try #require(attributes[.posixPermissions] as? Int)
     }
+}
+
+private struct FreshInstallMissingProviderKeychain: ProviderKeychain {
+    func value(service: String, account: String) throws -> String? { nil }
+    func set(_ value: String, service: String, account: String) throws {}
+    func remove(service: String, account: String) throws {}
 }
 
 private struct FreshInstallFixture {

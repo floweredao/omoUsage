@@ -52,13 +52,7 @@ struct ProviderRosterTests {
 
             try store.save("fixture-secret")
             #expect(store.load() == "fixture-secret")
-            let attributes = try FileManager.default.attributesOfItem(
-                atPath: url.path
-            )
-            #expect(
-                (attributes[.posixPermissions] as? NSNumber)?.intValue
-                    == 0o600
-            )
+            #expect(!FileManager.default.fileExists(atPath: url.path))
             try store.remove()
             #expect(store.load() == nil)
         }

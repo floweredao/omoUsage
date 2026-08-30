@@ -60,7 +60,8 @@ struct ProviderMutationRecoveryTests {
                 for: identity.providerID,
                 accountID: identity.accountID,
                 home: fixture.homeURL,
-                environment: [:]
+                environment: [:],
+                keychain: fixture.keychain
             )?.load()
             #expect(value == oldSecret || value == secret)
         }
@@ -195,6 +196,7 @@ private final class MutationRecoveryFixture {
     let homeURL: URL
     let defaults: UserDefaults
     let store: ProviderAccountStore
+    let keychain = MutationFakeKeychain()
     let identity = AccountProviderID(
         accountID: AccountID(rawValue: "00000000-0000-0000-0000-000000001200")!,
         providerID: .openrouter
@@ -223,7 +225,8 @@ private final class MutationRecoveryFixture {
                     for: provider,
                     accountID: accountID,
                     home: self.homeURL,
-                    environment: [:]
+                    environment: [:],
+                    keychain: self.keychain
                 )
             },
             afterPhase: { reached in
@@ -241,7 +244,8 @@ private final class MutationRecoveryFixture {
             for: identity.providerID,
             accountID: identity.accountID,
             home: homeURL,
-            environment: [:]
+            environment: [:],
+            keychain: keychain
         )?.load() != nil
         #expect(referenced == secretExists)
         #expect(registry.accounts.contains { $0.id == identity.accountID } == referenced)
@@ -254,6 +258,20 @@ private final class MutationRecoveryFixture {
 }
 
 private struct ProviderMutationInjectedFailure: Error {}
+
+private final class MutationFakeKeychain: ProviderKeychain, @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [String: String] = [:]
+    func value(service: String, account: String) throws -> String? {
+        lock.withLock { values[service + "|" + account] }
+    }
+    func set(_ value: String, service: String, account: String) throws {
+        lock.withLock { values[service + "|" + account] = value }
+    }
+    func remove(service: String, account: String) throws {
+        _ = lock.withLock { values.removeValue(forKey: service + "|" + account) }
+    }
+}
 
 private enum MutationFixtureError: Error {
     case executableNotFound

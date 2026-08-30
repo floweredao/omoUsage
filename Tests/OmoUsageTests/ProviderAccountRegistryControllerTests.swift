@@ -294,6 +294,7 @@ private final class ControllerFixture {
     let registryURL: URL
     let defaults: UserDefaults
     let store: ProviderAccountStore
+    let keychain = ControllerFakeKeychain()
     let nextAccountIDs = [
         AccountID(rawValue: "00000000-0000-0000-0000-00000000000a")!,
         AccountID(rawValue: "00000000-0000-0000-0000-00000000000b")!,
@@ -350,7 +351,8 @@ private final class ControllerFixture {
             for: provider,
             accountID: accountID,
             home: homeURL,
-            environment: environment
+            environment: environment,
+            keychain: keychain
         )
     }
 
@@ -361,6 +363,20 @@ private final class ControllerFixture {
 }
 
 private struct ControllerMutationFailure: Error {}
+
+private final class ControllerFakeKeychain: ProviderKeychain, @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [String: String] = [:]
+    func value(service: String, account: String) throws -> String? {
+        lock.withLock { values[service + "|" + account] }
+    }
+    func set(_ value: String, service: String, account: String) throws {
+        lock.withLock { values[service + "|" + account] = value }
+    }
+    func remove(service: String, account: String) throws {
+        _ = lock.withLock { values.removeValue(forKey: service + "|" + account) }
+    }
+}
 
 private struct CompositionProvider: UsageProvider {
     let id: ProviderID

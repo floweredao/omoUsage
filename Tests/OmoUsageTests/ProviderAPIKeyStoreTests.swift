@@ -5,7 +5,7 @@ import Testing
 @Suite
 struct ProviderAPIKeyStoreTests {
     @Test
-    func savesSecretsWithPrivateFileAndDirectoryPermissions() throws {
+    func savesSecretsWithoutCreatingAPlaintextFile() throws {
         let directory = FileManager.default.temporaryDirectory.appending(
             path: "ProviderAPIKeyStoreTests-\(UUID().uuidString)",
             directoryHint: .isDirectory
@@ -20,14 +20,8 @@ struct ProviderAPIKeyStoreTests {
 
         try store.save("secret")
 
-        let fileAttributes = try FileManager.default.attributesOfItem(
-            atPath: configURL.path
-        )
-        let directoryAttributes = try FileManager.default.attributesOfItem(
-            atPath: directory.path
-        )
-        #expect(fileAttributes[.posixPermissions] as? Int == 0o600)
-        #expect(directoryAttributes[.posixPermissions] as? Int == 0o700)
+        #expect(store.load() == "secret")
+        #expect(!FileManager.default.fileExists(atPath: configURL.path))
     }
 
     @Test
@@ -51,6 +45,24 @@ struct ProviderAPIKeyStoreTests {
         )
 
         #expect(resolved.load() == "environment-key")
+    }
+
+    @Test
+    func stableServiceAndProviderQualifiedAccountsCoverEveryManagedProvider() throws {
+        let home = FileManager.default.temporaryDirectory.appending(
+            path: "ProviderAPIKeyNaming-\(UUID().uuidString)"
+        )
+        let keychain = APIKeyStoreFakeKeychain()
+        for provider in [ProviderID.opencode, .openrouter, .zai] {
+            let store = try #require(ProviderAPIKeyStore.live(
+                for: provider,
+                home: home,
+                environment: [:],
+                keychain: keychain
+            ))
+            #expect(store.service == "com.omo.usage.provider-api-keys.v1")
+            #expect(store.account == "\(provider.rawValue)/\(AccountID.legacy.rawValue)")
+        }
     }
 
     @Test
@@ -92,17 +104,20 @@ struct ProviderAPIKeyStoreTests {
         let secondID = try #require(AccountID(
             rawValue: "00000000-0000-0000-0000-000000000003"
         ))
+        let keychain = APIKeyStoreFakeKeychain()
         let first = try #require(ProviderAPIKeyStore.live(
             for: .openrouter,
             accountID: firstID,
             home: home,
-            environment: [:]
+            environment: [:],
+            keychain: keychain
         ))
         let second = try #require(ProviderAPIKeyStore.live(
             for: .openrouter,
             accountID: secondID,
             home: home,
-            environment: [:]
+            environment: [:],
+            keychain: keychain
         ))
 
         try first.save("first-secret")
@@ -126,18 +141,21 @@ struct ProviderAPIKeyStoreTests {
         )
         defer { try? FileManager.default.removeItem(at: home) }
         let accountID = AccountID()
+        let keychain = APIKeyStoreFakeKeychain()
         let saved = try #require(ProviderAPIKeyStore.live(
             for: .openrouter,
             accountID: accountID,
             home: home,
-            environment: [:]
+            environment: [:],
+            keychain: keychain
         ))
         try saved.save("account-key")
         let resolved = try #require(ProviderAPIKeyStore.live(
             for: .openrouter,
             accountID: accountID,
             home: home,
-            environment: ["OPENROUTER_API_KEY": "global-key"]
+            environment: ["OPENROUTER_API_KEY": "global-key"],
+            keychain: keychain
         ))
 
         #expect(resolved.load() == "account-key")
@@ -163,5 +181,19 @@ struct ProviderAPIKeyStoreTests {
                     path: ".config/openusage/openrouter.json"
                 )
         )
+    }
+}
+
+private final class APIKeyStoreFakeKeychain: ProviderKeychain, @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [String: String] = [:]
+    func value(service: String, account: String) throws -> String? {
+        lock.withLock { values[service + "|" + account] }
+    }
+    func set(_ value: String, service: String, account: String) throws {
+        lock.withLock { values[service + "|" + account] = value }
+    }
+    func remove(service: String, account: String) throws {
+        _ = lock.withLock { values.removeValue(forKey: service + "|" + account) }
     }
 }

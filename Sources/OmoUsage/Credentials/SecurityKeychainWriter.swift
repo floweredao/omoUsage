@@ -9,10 +9,17 @@ struct SecurityItemCopyResult: @unchecked Sendable {
 
 protocol SecurityItemAPI: Sendable {
     func copyMatching(_ query: [String: Any]) -> SecurityItemCopyResult
+    func add(_ attributes: [String: Any]) -> OSStatus
     func update(
         _ query: [String: Any],
         attributes: [String: Any]
     ) -> OSStatus
+    func delete(_ query: [String: Any]) -> OSStatus
+}
+
+extension SecurityItemAPI {
+    func add(_ attributes: [String: Any]) -> OSStatus { errSecUnimplemented }
+    func delete(_ query: [String: Any]) -> OSStatus { errSecUnimplemented }
 }
 
 struct SecurityFrameworkItemAPI: SecurityItemAPI {
@@ -22,11 +29,102 @@ struct SecurityFrameworkItemAPI: SecurityItemAPI {
         return SecurityItemCopyResult(status: status, value: value)
     }
 
+    func add(_ attributes: [String: Any]) -> OSStatus {
+        SecItemAdd(attributes as CFDictionary, nil)
+    }
+
     func update(
         _ query: [String: Any],
         attributes: [String: Any]
     ) -> OSStatus {
         SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+    }
+
+    func delete(_ query: [String: Any]) -> OSStatus {
+        SecItemDelete(query as CFDictionary)
+    }
+}
+
+protocol ProviderKeychain: Sendable {
+    func value(service: String, account: String) throws -> String?
+    func set(_ value: String, service: String, account: String) throws
+    func remove(service: String, account: String) throws
+}
+
+/// OmoUsage-owned generic-password items. Exact service/account matching keeps
+/// provider-owned credentials outside this adapter's mutation boundary.
+struct SecurityProviderKeychain: ProviderKeychain {
+    let api: any SecurityItemAPI
+
+    init(api: any SecurityItemAPI = SecurityFrameworkItemAPI()) {
+        self.api = api
+    }
+
+    func value(service: String, account: String) throws -> String? {
+        let result = api.copyMatching(query(
+            service: service,
+            account: account,
+            returningData: true
+        ))
+        if result.status == errSecItemNotFound { return nil }
+        guard result.status == errSecSuccess else {
+            throw KeychainReadError(status: result.status)
+        }
+        guard let data = result.value as? Data,
+              let value = String(data: data, encoding: .utf8),
+              !value.isEmpty
+        else {
+            throw KeychainReadError(status: errSecDecode)
+        }
+        return value
+    }
+
+    func set(_ value: String, service: String, account: String) throws {
+        let match = query(service: service, account: account)
+        let status: OSStatus
+        if try self.value(service: service, account: account) == nil {
+            status = api.add(match.merging([
+                securityKey(kSecValueData): Data(value.utf8),
+                securityKey(kSecAttrAccessible):
+                    securityKey(kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly),
+                securityKey(kSecUseAuthenticationContext):
+                    noninteractiveContext()
+            ], uniquingKeysWith: { _, new in new }))
+        } else {
+            status = api.update(
+                match,
+                attributes: [securityKey(kSecValueData): Data(value.utf8)]
+            )
+        }
+        guard status == errSecSuccess else {
+            throw KeychainReadError(status: status)
+        }
+    }
+
+    func remove(service: String, account: String) throws {
+        let status = api.delete(query(service: service, account: account))
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw KeychainReadError(status: status)
+        }
+    }
+
+    private func query(
+        service: String,
+        account: String,
+        returningData: Bool = false
+    ) -> [String: Any] {
+        var value: [String: Any] = [
+            securityKey(kSecClass): securityKey(kSecClassGenericPassword),
+            securityKey(kSecAttrService): service,
+            securityKey(kSecAttrAccount): account
+        ]
+        if returningData {
+            value[securityKey(kSecReturnData)] = true
+            value[securityKey(kSecMatchLimit)] = securityKey(kSecMatchLimitOne)
+            value[securityKey(kSecUseAuthenticationContext)] =
+                noninteractiveContext()
+        }
+        return value
     }
 }
 

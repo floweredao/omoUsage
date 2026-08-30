@@ -24,6 +24,7 @@ private enum ProviderMutationSecretAction: String, Codable {
     case none
     case write
     case remove
+    case migrateLegacy
 }
 
 private struct ProviderMutationJournal: Codable {
@@ -42,27 +43,33 @@ private struct ProviderMutationJournal: Codable {
 struct ProviderMutationCoordinator {
     typealias KeyStore = (ProviderID, AccountID) -> ProviderAPIKeyStore?
     typealias PhaseHook = (ProviderMutationPhase) throws -> Void
+    typealias RegistrySave = (ProviderAccountRegistry) throws -> ProviderAccountRegistry
 
     let store: ProviderAccountStore
     let keyStore: KeyStore
     let afterPhase: PhaseHook
+    let saveRegistry: RegistrySave
 
     init(
         store: ProviderAccountStore,
         keyStore: @escaping KeyStore = {
             ProviderAPIKeyStore.live(for: $0, accountID: $1)
         },
-        afterPhase: @escaping PhaseHook = { _ in }
+        afterPhase: @escaping PhaseHook = { _ in },
+        saveRegistry: RegistrySave? = nil
     ) {
         self.store = store
         self.keyStore = keyStore
         self.afterPhase = afterPhase
+        self.saveRegistry = saveRegistry ?? store.save
     }
 
     func loadOrRecover() -> ProviderAccountLoadResult {
         do {
             return try withMutationLock { try loadOrRecoverLocked() }
         } catch {
+            let fallback = store.loadOrRecover()
+            if fallback.registry != nil { return fallback }
             return ProviderAccountLoadResult(
                 registry: nil,
                 state: .blocked(
@@ -70,6 +77,28 @@ struct ProviderMutationCoordinator {
                     quarantineURLs: store.existingQuarantineURLsForMutation
                 )
             )
+        }
+    }
+
+    func pendingLegacyCleanup() -> [AccountProviderID] {
+        (try? withMutationLock {
+            guard let journal = try readJournalIfPresent(),
+                  journal.secretAction == .migrateLegacy,
+                  journal.phase == .journalCompleted,
+                  let identity = journal.identity
+            else { return [] }
+            return [identity]
+        }) ?? []
+    }
+
+    func retryLegacyCleanup() throws {
+        try withMutationLock {
+            guard let journal = try readJournalIfPresent(),
+                  journal.secretAction == .migrateLegacy,
+                  journal.phase == .journalCompleted
+            else { return }
+            try removeMigratedLegacy(journal)
+            try ProviderFileDurability.removeIfPresent(store.mutationJournalURL)
         }
     }
 
@@ -196,38 +225,137 @@ struct ProviderMutationCoordinator {
     }
 
     private func loadOrRecoverLocked() throws -> ProviderAccountLoadResult {
-        let initial = store.loadOrRecover()
-        guard let current = initial.registry else { return initial }
-        guard FileManager.default.fileExists(atPath: store.mutationJournalURL.path) else {
-            return initial
+        var result = store.loadOrRecover()
+        guard var current = result.registry else { return result }
+
+        if let journal = try readJournalIfPresent() {
+            try validate(journal)
+            if journal.secretAction == .migrateLegacy {
+                if journal.phase == .intentSynced || journal.phase == .secretStaged {
+                    try removeStagedSecret(journal)
+                    try ProviderFileDurability.removeIfPresent(store.mutationJournalURL)
+                } else {
+                    try completeSecretOperation(journal)
+                    if journal.phase == .journalCompleted {
+                        do {
+                            try removeMigratedLegacy(journal)
+                            try ProviderFileDurability.removeIfPresent(store.mutationJournalURL)
+                        } catch {
+                            return result
+                        }
+                    } else {
+                        var completed = journal
+                        completed.phase = .journalCompleted
+                        try writeJournal(completed)
+                        do {
+                            try removeMigratedLegacy(completed)
+                            try ProviderFileDurability.removeIfPresent(store.mutationJournalURL)
+                        } catch {
+                            return result
+                        }
+                    }
+                }
+            } else {
+                let currentDigest = registryDigest(current)
+                if currentDigest == journal.oldRegistryDigest {
+                    try removeStagedSecret(journal)
+                } else if currentDigest == journal.newRegistryDigest {
+                    try completeSecretOperation(journal)
+                } else {
+                    throw ProviderMutationCoordinatorError.inconsistentJournal
+                }
+                try ProviderFileDurability.removeIfPresent(store.mutationJournalURL)
+            }
+            result = store.loadOrRecover()
+            guard let recovered = result.registry else { return result }
+            current = recovered
         }
 
-        let journal: ProviderMutationJournal
+        for identity in current.apiKeyReferences {
+            guard let secretStore = keyStore(identity.providerID, identity.accountID),
+                  secretStore.legacyExists
+            else { continue }
+            try migrateLegacySecret(identity: identity, registry: current, secretStore: secretStore)
+            if FileManager.default.fileExists(atPath: store.mutationJournalURL.path) {
+                return result
+            }
+        }
+        return store.loadOrRecover()
+    }
+
+    private func readJournalIfPresent() throws -> ProviderMutationJournal? {
+        guard FileManager.default.fileExists(atPath: store.mutationJournalURL.path) else {
+            return nil
+        }
         do {
-            journal = try JSONDecoder().decode(
+            return try JSONDecoder().decode(
                 ProviderMutationJournal.self,
                 from: Data(contentsOf: store.mutationJournalURL)
             )
         } catch {
             throw ProviderMutationCoordinatorError.invalidJournal
         }
+    }
+
+    private func validate(_ journal: ProviderMutationJournal) throws {
         guard journal.version == 1,
               registryDigest(journal.oldRegistry) == journal.oldRegistryDigest,
               registryDigest(journal.newRegistry) == journal.newRegistryDigest
-        else {
-            throw ProviderMutationCoordinatorError.invalidJournal
-        }
+        else { throw ProviderMutationCoordinatorError.invalidJournal }
+    }
 
-        let currentDigest = registryDigest(current)
-        if currentDigest == journal.oldRegistryDigest {
-            try removeStagedSecret(journal)
-        } else if currentDigest == journal.newRegistryDigest {
-            try completeSecretOperation(journal)
-        } else {
-            throw ProviderMutationCoordinatorError.inconsistentJournal
+    private func migrateLegacySecret(
+        identity: AccountProviderID,
+        registry: ProviderAccountRegistry,
+        secretStore: ProviderAPIKeyStore
+    ) throws {
+        guard let key = secretStore.keychainCredential() ?? secretStore.legacyCredential() else {
+            return
         }
-        try ProviderFileDurability.removeIfPresent(store.mutationJournalURL)
-        return store.loadOrRecover()
+        let transactionID = UUID()
+        var journal = ProviderMutationJournal(
+            version: 1,
+            transactionID: transactionID,
+            oldRegistry: registry,
+            newRegistry: registry,
+            oldRegistryDigest: registryDigest(registry),
+            newRegistryDigest: registryDigest(registry),
+            secretAction: .migrateLegacy,
+            identity: identity,
+            secretDigest: secretDigest(key),
+            phase: .intentSynced
+        )
+        try writeJournal(journal)
+        try afterPhase(.intentSynced)
+        if secretStore.keychainCredential() == nil {
+            try secretStore.stage(key, transactionID: transactionID)
+        }
+        journal.phase = .secretStaged
+        try writeJournal(journal)
+        try afterPhase(.secretStaged)
+        do {
+            _ = try saveRegistry(registry)
+        } catch {
+            try? secretStore.removeStagedSecret(transactionID: transactionID)
+            try? ProviderFileDurability.removeIfPresent(store.mutationJournalURL)
+            throw error
+        }
+        journal.phase = .registryCommitted
+        try writeJournal(journal)
+        try afterPhase(.registryCommitted)
+        try completeSecretOperation(journal)
+        journal.phase = .secretPromotedOrRemoved
+        try writeJournal(journal)
+        try afterPhase(.secretPromotedOrRemoved)
+        journal.phase = .journalCompleted
+        try writeJournal(journal)
+        try afterPhase(.journalCompleted)
+        do {
+            try secretStore.removeLegacy()
+            try ProviderFileDurability.removeIfPresent(store.mutationJournalURL)
+        } catch {
+            return
+        }
     }
 
     private func performLocked(
@@ -266,7 +394,7 @@ struct ProviderMutationCoordinator {
         try writeJournal(journal)
         try afterPhase(.secretStaged)
 
-        _ = try store.save(new)
+        _ = try saveRegistry(new)
         journal.phase = .registryCommitted
         try writeJournal(journal)
         try afterPhase(.registryCommitted)
@@ -287,7 +415,7 @@ struct ProviderMutationCoordinator {
         switch journal.secretAction {
         case .none:
             return
-        case .write:
+        case .write, .migrateLegacy:
             guard let identity = journal.identity,
                   let digest = journal.secretDigest,
                   let secretStore = keyStore(identity.providerID, identity.accountID)
@@ -313,13 +441,22 @@ struct ProviderMutationCoordinator {
     }
 
     private func removeStagedSecret(_ journal: ProviderMutationJournal) throws {
-        guard journal.secretAction == .write else { return }
+        guard journal.secretAction == .write
+                || journal.secretAction == .migrateLegacy
+        else { return }
         guard let identity = journal.identity,
               let secretStore = keyStore(identity.providerID, identity.accountID)
         else {
             throw ProviderMutationCoordinatorError.invalidJournal
         }
         try secretStore.removeStagedSecret(transactionID: journal.transactionID)
+    }
+
+    private func removeMigratedLegacy(_ journal: ProviderMutationJournal) throws {
+        guard let identity = journal.identity,
+              let secretStore = keyStore(identity.providerID, identity.accountID)
+        else { throw ProviderMutationCoordinatorError.invalidJournal }
+        try secretStore.removeLegacy()
     }
 
     private func writeJournal(_ journal: ProviderMutationJournal) throws {
