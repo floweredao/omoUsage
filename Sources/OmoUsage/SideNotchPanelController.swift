@@ -6,6 +6,7 @@ import SwiftUI
 enum SideNotchPanelLayout {
     static let hiddenWidth: CGFloat = 6
     static let hiddenTrackingWidth: CGFloat = 8
+    static let hiddenTrackingHeight: CGFloat = 144
     static let collapsedWidth: CGFloat = 56
     static let detailWidth: CGFloat = 280
     static let detailSpacing: CGFloat = 8
@@ -78,11 +79,17 @@ enum SideNotchPanelLayout {
         presentedContentMinimumHeight: CGFloat = 0
     ) -> NSRect {
         if mode == .hidden {
+            let height = min(hiddenTrackingHeight, visibleFrame.height)
+            let proposedY = (anchorY ?? visibleFrame.midY) - height / 2
+            let y = min(
+                max(proposedY, visibleFrame.minY),
+                visibleFrame.maxY - height
+            )
             return NSRect(
                 x: visibleFrame.maxX - hiddenTrackingWidth,
-                y: visibleFrame.minY,
+                y: y,
                 width: hiddenTrackingWidth,
-                height: visibleFrame.height
+                height: height
             )
         }
 
