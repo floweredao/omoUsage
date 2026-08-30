@@ -134,7 +134,7 @@ private enum HephaestusOpenRouterFixture {
                 homeDirectory: directory,
                 commandPaths: []
             ),
-            http: ProviderHTTP(session: session)
+            http: providerHTTPTestClient(session: session)
         )
 
         return try await provider.fetch(now: now)

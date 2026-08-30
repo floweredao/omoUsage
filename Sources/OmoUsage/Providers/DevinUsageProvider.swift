@@ -43,7 +43,11 @@ struct DevinUsageProvider: UsageProvider {
                 ]
             ]
         )
-        let data = try await http.data(for: request, provider: id)
+        let data = try await http.data(
+            for: request,
+            provider: id,
+            operation: .safe
+        )
         return try parse(data, now: now)
     }
 

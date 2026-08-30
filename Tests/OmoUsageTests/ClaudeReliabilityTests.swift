@@ -83,8 +83,9 @@ struct ClaudeReliabilityTests {
             discovery: HephaestusClaudeReliabilityFixtures.discovery(
                 environment: ["CLAUDE_CODE_OAUTH_TOKEN": "transient-test-token"]
             ),
-            http: ProviderHTTP(
-                session: URLSession(configuration: configuration)
+            http: providerHTTPTestClient(
+                session: URLSession(configuration: configuration),
+                retryPolicy: ProviderRetryPolicy(maximumAttempts: 1)
             ),
             desktopSessionDiscovery: ClaudeDesktopSessionDiscovery {
                 ClaudeDesktopSession(
@@ -210,7 +211,7 @@ private final class HephaestusOAuthHeaderURLProtocol: URLProtocol,
             url: request.url!,
             statusCode: statusCode,
             httpVersion: nil,
-            headerFields: nil
+            headerFields: ["Content-Type": "application/json"]
         )!
         client?.urlProtocol(
             self,
@@ -272,7 +273,7 @@ private final class HephaestusTransientFallbackURLProtocol: URLProtocol,
             url: request.url!,
             statusCode: statusCode,
             httpVersion: nil,
-            headerFields: nil
+            headerFields: ["Content-Type": "application/json"]
         )!
         client?.urlProtocol(
             self,

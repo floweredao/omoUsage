@@ -45,7 +45,11 @@ struct OpenCodeUsageProvider: UsageProvider {
             forHTTPHeaderField: "Authorization"
         )
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        let data = try await http.data(for: request, provider: id)
+        let data = try await http.data(
+            for: request,
+            provider: id,
+            operation: .safe
+        )
         let root = try ProviderPayload.object(data)
         guard let usage = UsageJSON.object(root["usage"]) else {
             throw ProviderTransportError.invalidResponse(id)

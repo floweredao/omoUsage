@@ -3,33 +3,262 @@ import Foundation
 enum ProviderTransportError: Error, Equatable, Sendable {
     case authenticationRequired(ProviderID)
     case requestFailed(ProviderID, Int)
+    case transientTransport(ProviderID, URLError.Code)
     case invalidResponse(ProviderID)
+    case invalidContentType(ProviderID, String?)
+    case responseTooLarge(ProviderID, limit: Int)
+    case invalidJSON(ProviderID)
+    case operationTimedOut(ProviderID)
+}
+
+enum ProviderHTTPOperation: Sendable {
+    case safe
+    case unsafe
 }
 
 struct ProviderHTTP: Sendable {
-    let session: URLSession
+    typealias MonotonicNow = @Sendable () -> TimeInterval
+    typealias WallNow = @Sendable () -> Date
+    typealias Sleeper = @Sendable (TimeInterval) async throws -> Void
+    typealias Random = @Sendable () -> Double
 
-    init(session: URLSession = .shared) {
+    let session: URLSession
+    let retryPolicy: ProviderRetryPolicy
+    private let monotonicNow: MonotonicNow
+    private let wallNow: WallNow
+    private let sleep: Sleeper
+    private let random: Random
+
+    init(
+        session: URLSession = .shared,
+        retryPolicy: ProviderRetryPolicy = ProviderRetryPolicy(),
+        monotonicNow: @escaping MonotonicNow = {
+            ProcessInfo.processInfo.systemUptime
+        },
+        wallNow: @escaping WallNow = Date.init,
+        sleep: @escaping Sleeper = { delay in
+            try await Task.sleep(for: .seconds(delay))
+        },
+        random: @escaping Random = { Double.random(in: 0...1) }
+    ) {
         self.session = session
+        self.retryPolicy = retryPolicy
+        self.monotonicNow = monotonicNow
+        self.wallNow = wallNow
+        self.sleep = sleep
+        self.random = random
     }
 
     func data(
         for request: URLRequest,
-        provider: ProviderID
+        provider: ProviderID,
+        operation: ProviderHTTPOperation? = nil
     ) async throws -> Data {
-        let (data, response) = try await session.data(for: request)
-        guard let response = response as? HTTPURLResponse else {
-            throw ProviderTransportError.invalidResponse(provider)
+        let retrySafe: Bool
+        switch operation {
+        case .safe:
+            retrySafe = true
+        case .unsafe:
+            retrySafe = false
+        case nil:
+            retrySafe = Self.isSafeMethod(request.httpMethod)
         }
-        if response.statusCode == 401 || response.statusCode == 403 {
-            throw ProviderTransportError.authenticationRequired(provider)
+        let deadline = monotonicNow() + retryPolicy.operationTimeout
+        var attempt = 1
+
+        while true {
+            try Task.checkCancellation()
+            let remaining = deadline - monotonicNow()
+            guard remaining > 0 else {
+                throw ProviderTransportError.operationTimedOut(provider)
+            }
+            var attemptRequest = request
+            if attemptRequest.timeoutInterval <= 0 {
+                attemptRequest.timeoutInterval = remaining
+            } else {
+                attemptRequest.timeoutInterval = min(
+                    attemptRequest.timeoutInterval,
+                    remaining
+                )
+            }
+
+            do {
+                let (data, response) = try await session.data(
+                    for: attemptRequest
+                )
+                try Task.checkCancellation()
+                guard let response = response as? HTTPURLResponse else {
+                    throw ProviderTransportError.invalidResponse(provider)
+                }
+                try validateBodySize(
+                    data,
+                    response: response,
+                    provider: provider
+                )
+                if response.statusCode == 401 || response.statusCode == 403 {
+                    throw ProviderTransportError.authenticationRequired(
+                        provider
+                    )
+                }
+                guard (200..<300).contains(response.statusCode) else {
+                    let error = ProviderTransportError.requestFailed(
+                        provider,
+                        response.statusCode
+                    )
+                    guard
+                        retrySafe,
+                        Self.isRetryable(status: response.statusCode),
+                        attempt < retryPolicy.maximumAttempts
+                    else {
+                        throw error
+                    }
+                    let delay = retryPolicy.retryAfterDelay(
+                        from: response,
+                        now: wallNow()
+                    ) ?? retryPolicy.backoffDelay(
+                        afterAttempt: attempt,
+                        randomValue: random()
+                    )
+                    try await waitBeforeRetry(
+                        delay: delay,
+                        deadline: deadline,
+                        provider: provider
+                    )
+                    attempt += 1
+                    continue
+                }
+                try validateJSONResponse(
+                    data,
+                    response: response,
+                    provider: provider
+                )
+                return data
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch let error as ProviderTransportError {
+                throw error
+            } catch let error as URLError {
+                guard error.code != .cancelled else {
+                    throw CancellationError()
+                }
+                guard
+                    retrySafe,
+                    Self.isTransient(error.code),
+                    attempt < retryPolicy.maximumAttempts
+                else {
+                    if Self.isTransient(error.code) {
+                        throw ProviderTransportError.transientTransport(
+                            provider,
+                            error.code
+                        )
+                    }
+                    throw error
+                }
+                let delay = retryPolicy.backoffDelay(
+                    afterAttempt: attempt,
+                    randomValue: random()
+                )
+                try await waitBeforeRetry(
+                    delay: delay,
+                    deadline: deadline,
+                    provider: provider
+                )
+                attempt += 1
+            }
         }
-        guard (200..<300).contains(response.statusCode) else {
-            throw ProviderTransportError.requestFailed(
+    }
+
+    private func waitBeforeRetry(
+        delay: TimeInterval,
+        deadline: TimeInterval,
+        provider: ProviderID
+    ) async throws {
+        let remaining = deadline - monotonicNow()
+        guard delay <= remaining else {
+            throw ProviderTransportError.operationTimedOut(provider)
+        }
+        try await sleep(delay)
+        try Task.checkCancellation()
+        guard monotonicNow() < deadline else {
+            throw ProviderTransportError.operationTimedOut(provider)
+        }
+    }
+
+    private func validateBodySize(
+        _ data: Data,
+        response: HTTPURLResponse,
+        provider: ProviderID
+    ) throws {
+        let declaredSize = response.expectedContentLength
+        guard
+            declaredSize <= 0
+                || declaredSize <= retryPolicy.maximumResponseBytes,
+            data.count <= retryPolicy.maximumResponseBytes
+        else {
+            throw ProviderTransportError.responseTooLarge(
                 provider,
-                response.statusCode
+                limit: retryPolicy.maximumResponseBytes
             )
         }
-        return data
+    }
+
+    private func validateJSONResponse(
+        _ data: Data,
+        response: HTTPURLResponse,
+        provider: ProviderID
+    ) throws {
+        let contentType = response.value(
+            forHTTPHeaderField: "Content-Type"
+        )
+        guard Self.isJSONContentType(contentType) else {
+            throw ProviderTransportError.invalidContentType(
+                provider,
+                contentType
+            )
+        }
+        do {
+            _ = try JSONSerialization.jsonObject(
+                with: data,
+                options: [.fragmentsAllowed]
+            )
+        } catch {
+            throw ProviderTransportError.invalidJSON(provider)
+        }
+    }
+
+    private static func isSafeMethod(_ method: String?) -> Bool {
+        switch (method ?? "GET").uppercased() {
+        case "GET", "HEAD", "OPTIONS": true
+        default: false
+        }
+    }
+
+    private static func isRetryable(status: Int) -> Bool {
+        status == 408 || status == 429 || (500...599).contains(status)
+    }
+
+    private static func isTransient(_ code: URLError.Code) -> Bool {
+        switch code {
+        case .timedOut,
+             .cannotFindHost,
+             .cannotConnectToHost,
+             .networkConnectionLost,
+             .dnsLookupFailed,
+             .notConnectedToInternet,
+             .internationalRoamingOff,
+             .callIsActive,
+             .dataNotAllowed:
+            true
+        default:
+            false
+        }
+    }
+
+    private static func isJSONContentType(_ contentType: String?) -> Bool {
+        guard let contentType else { return false }
+        let mime = contentType.split(separator: ";", maxSplits: 1).first?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        return mime == "application/json" || mime?.hasSuffix("+json") == true
     }
 }

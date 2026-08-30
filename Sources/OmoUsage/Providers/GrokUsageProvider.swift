@@ -72,7 +72,8 @@ struct GrokUsageProvider: UsageProvider {
         )
         let discoveryData = try await http.data(
             for: URLRequest(url: discoveryURL),
-            provider: id
+            provider: id,
+            operation: .safe
         )
         let discoveryPayload = try ProviderPayload.object(discoveryData)
         guard
@@ -124,7 +125,11 @@ struct GrokUsageProvider: UsageProvider {
             forHTTPHeaderField: "Content-Type"
         )
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        let tokenData = try await http.data(for: request, provider: id)
+        let tokenData = try await http.data(
+            for: request,
+            provider: id,
+            operation: .unsafe
+        )
         let tokenPayload = try ProviderPayload.object(tokenData)
         guard
             let accessToken = ProviderPayload.text(
@@ -179,7 +184,11 @@ struct GrokUsageProvider: UsageProvider {
             forHTTPHeaderField: "X-XAI-Token-Auth"
         )
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        return try await http.data(for: request, provider: id)
+        return try await http.data(
+            for: request,
+            provider: id,
+            operation: .safe
+        )
     }
 
     private func parse(

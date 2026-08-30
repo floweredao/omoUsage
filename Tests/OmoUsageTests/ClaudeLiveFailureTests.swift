@@ -43,7 +43,7 @@ struct ClaudeLiveFailureTests {
                 keychain: MissingClaudeLiveKeychain(),
                 homeDirectory: directory
             ),
-            http: ProviderHTTP(
+            http: providerHTTPTestClient(
                 session: URLSession(configuration: configuration)
             ),
             desktopUsageURL: historyURL,

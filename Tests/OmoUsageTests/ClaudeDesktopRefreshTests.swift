@@ -264,7 +264,7 @@ private final class ClaudeRefreshURLProtocol: URLProtocol,
             url: request.url!,
             statusCode: 200,
             httpVersion: nil,
-            headerFields: nil
+            headerFields: ["Content-Type": "application/json"]
         )!
         client?.urlProtocol(
             self,

@@ -71,7 +71,11 @@ struct OpenRouterUsageProvider: UsageProvider {
             forHTTPHeaderField: "Authorization"
         )
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        return try await http.data(for: request, provider: id)
+        return try await http.data(
+            for: request,
+            provider: id,
+            operation: .safe
+        )
     }
 
     private func parse(
