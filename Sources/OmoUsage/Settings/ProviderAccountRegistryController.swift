@@ -12,11 +12,18 @@ enum ProviderAccountRegistryControllerError: Error, Equatable {
     case registryUnavailable
 }
 
+enum ProviderKeyStorageSource: Equatable, Sendable {
+    case environment
+    case keychain
+    case legacyFile
+}
+
 struct ProviderAPIKeyAccountMetadata: Identifiable, Equatable, Sendable {
     var id: AccountProviderID { accountProviderID }
     let accountProviderID: AccountProviderID
     let provider: ProviderID
     let label: String
+    let source: ProviderKeyStorageSource?
 }
 
 struct AppAccountComposition {
@@ -124,8 +131,32 @@ final class ProviderAccountRegistryController {
             return ProviderAPIKeyAccountMetadata(
                 accountProviderID: identity,
                 provider: identity.providerID,
-                label: AccountLabel.sanitized(account.label)
+                label: AccountLabel.sanitized(account.label),
+                source: keyStorageSource(for: identity)
             )
+        }
+    }
+
+    func keyStorageSource(for provider: ProviderID) -> ProviderKeyStorageSource? {
+        keyStorageSource(for: AccountProviderID(accountID: .legacy, providerID: provider))
+    }
+
+    var pendingLegacyCleanup: [AccountProviderID] {
+        mutationCoordinator.pendingLegacyCleanup()
+    }
+
+    func retryLegacyKeyCleanup() throws {
+        try mutationCoordinator.retryLegacyCleanup()
+    }
+
+    private func keyStorageSource(for identity: AccountProviderID) -> ProviderKeyStorageSource? {
+        guard let source = keyStore(identity.providerID, identity.accountID)?
+            .loadCredential()?.source
+        else { return nil }
+        switch source {
+        case .environment: return .environment
+        case .keychain: return .keychain
+        case .file: return .legacyFile
         }
     }
 

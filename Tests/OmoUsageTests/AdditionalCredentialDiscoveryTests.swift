@@ -255,27 +255,37 @@ struct AdditionalCredentialDiscoveryTests {
     }
 
     @Test
-    func discoversDistinctOpenRouterAccountFiles() throws {
+    func discoversDistinctOpenRouterAccountsInKeychain() throws {
         try withFixtureDirectory { home in
             let firstID = AccountID()
             let secondID = AccountID()
+            let providerKeychain = AdditionalProviderKeychain()
             let firstStore = try #require(ProviderAPIKeyStore.live(
                 for: .openrouter,
                 accountID: firstID,
                 home: home,
-                environment: [:]
+                environment: [:],
+                keychain: providerKeychain
             ))
             let secondStore = try #require(ProviderAPIKeyStore.live(
                 for: .openrouter,
                 accountID: secondID,
                 home: home,
-                environment: [:]
+                environment: [:],
+                keychain: providerKeychain
             ))
             try firstStore.save("first-openrouter-key")
             try secondStore.save("second-openrouter-key")
-            let discovery = fixtureDiscovery(
-                home: home,
-                keychain: AdditionalKeychain()
+            let discovery = CredentialDiscovery(
+                paths: CredentialPaths(
+                    claude: home.appending(path: ".claude/credentials.json"),
+                    codex: home.appending(path: ".codex/auth.json")
+                ),
+                environment: [:],
+                keychain: AdditionalKeychain(),
+                providerKeychain: providerKeychain,
+                homeDirectory: home,
+                commandPaths: []
             )
 
             #expect(
@@ -587,6 +597,20 @@ struct AdditionalCredentialDiscoveryTests {
         )
         defer { try? FileManager.default.removeItem(at: directory) }
         try body(directory)
+    }
+}
+
+private final class AdditionalProviderKeychain: ProviderKeychain, @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [String: String] = [:]
+    func value(service: String, account: String) throws -> String? {
+        lock.withLock { values[service + "|" + account] }
+    }
+    func set(_ value: String, service: String, account: String) throws {
+        lock.withLock { values[service + "|" + account] = value }
+    }
+    func remove(service: String, account: String) throws {
+        _ = lock.withLock { values.removeValue(forKey: service + "|" + account) }
     }
 }
 

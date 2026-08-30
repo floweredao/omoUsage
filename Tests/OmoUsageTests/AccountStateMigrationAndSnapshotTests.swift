@@ -185,7 +185,8 @@ struct AccountStateMigrationAndSnapshotTests {
         let store = ProviderAccountStore.live(
             home: fixture.rootURL,
             environment: [:],
-            defaults: fixture.defaults
+            defaults: fixture.defaults,
+            providerKeychain: AccountStateMissingProviderKeychain()
         )
 
         let registry = try store.loadOrMigrate()
@@ -216,7 +217,8 @@ struct AccountStateMigrationAndSnapshotTests {
         let store = ProviderAccountStore.live(
             home: fixture.rootURL,
             environment: [:],
-            defaults: fixture.defaults
+            defaults: fixture.defaults,
+            providerKeychain: AccountStateMissingProviderKeychain()
         )
 
         let registry = try store.loadOrMigrate()
@@ -368,6 +370,12 @@ struct AccountStateMigrationAndSnapshotTests {
             """.utf8
         )
     }
+}
+
+private struct AccountStateMissingProviderKeychain: ProviderKeychain {
+    func value(service: String, account: String) throws -> String? { nil }
+    func set(_ value: String, service: String, account: String) throws {}
+    func remove(service: String, account: String) throws {}
 }
 
 private struct RegistryFixture {

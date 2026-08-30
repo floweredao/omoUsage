@@ -10,6 +10,38 @@ struct SecurityKeychainWriterTests {
     private let secret = "writer-test-secret-must-stay-private"
 
     @Test
+    func ownedGenericPasswordUsesNativeAddCopyUpdateAndDelete() throws {
+        let api = MutableSecurityItemAPI()
+        let keychain = SecurityProviderKeychain(api: api)
+
+        try keychain.set(secret, service: "com.omo.usage.synthetic", account: "openrouter/legacy")
+        #expect(try keychain.value(service: "com.omo.usage.synthetic", account: "openrouter/legacy") == secret)
+        try keychain.set("replacement", service: "com.omo.usage.synthetic", account: "openrouter/legacy")
+        try keychain.remove(service: "com.omo.usage.synthetic", account: "openrouter/legacy")
+
+        #expect(api.addCount == 1)
+        #expect(api.updateCount == 1)
+        #expect(api.deleteCount == 1)
+        #expect(api.copyCount >= 3)
+        #expect(api.lastAdd?[key(kSecAttrAccessible)] as? String == key(kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly))
+        #expect(api.lastAdd?[key(kSecAttrService)] as? String == "com.omo.usage.synthetic")
+        #expect(api.lastAdd?[key(kSecAttrAccount)] as? String == "openrouter/legacy")
+    }
+
+    @Test(arguments: [errSecDuplicateItem, errSecInteractionNotAllowed])
+    func ownedGenericPasswordPropagatesAmbiguousOrDeniedLookup(status: OSStatus) {
+        let api = MutableSecurityItemAPI(copyStatus: status)
+        #expect(throws: KeychainReadError(status: status)) {
+            _ = try SecurityProviderKeychain(api: api).value(
+                service: "com.omo.usage.synthetic",
+                account: "zai/legacy"
+            )
+        }
+        #expect(api.addCount == 0)
+        #expect(api.updateCount == 0)
+    }
+
+    @Test
     func injectedFacadeResolvesEmptyAccountWithoutLaunchingProcess() throws {
         let reference = Data([0x01, 0x02, 0x03])
         let api = RecordingSecurityItemAPI(
@@ -174,6 +206,50 @@ struct SecurityKeychainWriterTests {
             key(kSecAttrAccount): account,
             key(kSecValuePersistentRef): reference
         ]
+    }
+}
+
+private final class MutableSecurityItemAPI: SecurityItemAPI, @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: Data?
+    private let copyStatus: OSStatus?
+    private(set) var copyCount = 0
+    private(set) var addCount = 0
+    private(set) var updateCount = 0
+    private(set) var deleteCount = 0
+    private(set) var lastAdd: [String: Any]?
+
+    init(copyStatus: OSStatus? = nil) { self.copyStatus = copyStatus }
+
+    func copyMatching(_ query: [String: Any]) -> SecurityItemCopyResult {
+        lock.withLock {
+            copyCount += 1
+            if let copyStatus { return SecurityItemCopyResult(status: copyStatus, value: nil) }
+            guard let stored else { return SecurityItemCopyResult(status: errSecItemNotFound, value: nil) }
+            return SecurityItemCopyResult(status: errSecSuccess, value: stored)
+        }
+    }
+    func add(_ attributes: [String: Any]) -> OSStatus {
+        lock.withLock {
+            addCount += 1
+            lastAdd = attributes
+            stored = attributes[key(kSecValueData)] as? Data
+            return errSecSuccess
+        }
+    }
+    func update(_ query: [String: Any], attributes: [String: Any]) -> OSStatus {
+        lock.withLock {
+            updateCount += 1
+            stored = attributes[key(kSecValueData)] as? Data
+            return errSecSuccess
+        }
+    }
+    func delete(_ query: [String: Any]) -> OSStatus {
+        lock.withLock {
+            deleteCount += 1
+            stored = nil
+            return errSecSuccess
+        }
     }
 }
 

@@ -123,7 +123,8 @@ struct ProviderAccountStore {
     static func live(
         home: URL = FileManager.default.homeDirectoryForCurrentUser,
         environment: [String: String] = ProcessInfo.processInfo.environment,
-        defaults: UserDefaults = .standard
+        defaults: UserDefaults = .standard,
+        providerKeychain: any ProviderKeychain = SecurityProviderKeychain()
     ) -> ProviderAccountStore {
         let configHome: URL
         if
@@ -144,7 +145,8 @@ struct ProviderAccountStore {
                 if ProviderAPIKeyStore.live(
                     for: provider,
                     home: home,
-                    environment: environment
+                    environment: environment,
+                    keychain: providerKeychain
                 )?.load() != nil {
                     return true
                 }

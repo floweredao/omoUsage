@@ -260,7 +260,8 @@ extension CredentialDiscovery {
                 for: .opencode,
                 accountID: accountID,
                 home: home,
-                environment: environment
+                environment: environment,
+                keychain: providerKeychain
             ),
             let loaded = store.loadCredential()
         {
@@ -383,7 +384,8 @@ extension CredentialDiscovery {
                 for: provider,
                 accountID: accountID,
                 home: home,
-                environment: environment
+                environment: environment,
+                keychain: providerKeychain
             ),
             let loaded = store.loadCredential()
         else {

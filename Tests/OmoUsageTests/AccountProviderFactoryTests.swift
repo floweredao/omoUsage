@@ -94,17 +94,20 @@ struct AccountProviderFactoryTests {
         defer { try? FileManager.default.removeItem(at: home) }
         let first = AccountID()
         let second = AccountID()
+        let providerKeychain = AccountProviderFakeKeychain()
         try #require(ProviderAPIKeyStore.live(
             for: .openrouter,
             accountID: first,
             home: home,
-            environment: [:]
+            environment: [:],
+            keychain: providerKeychain
         )).save("first-token")
         try #require(ProviderAPIKeyStore.live(
             for: .openrouter,
             accountID: second,
             home: home,
-            environment: [:]
+            environment: [:],
+            keychain: providerKeychain
         )).save("second-token")
         let discovery = CredentialDiscovery(
             paths: CredentialPaths(
@@ -113,6 +116,7 @@ struct AccountProviderFactoryTests {
             ),
             environment: [:],
             keychain: AccountProviderMissingKeychain(),
+            providerKeychain: providerKeychain,
             homeDirectory: home,
             commandPaths: []
         )
@@ -136,6 +140,20 @@ struct AccountProviderFactoryTests {
 
         #expect(firstUsage.groups[0].meters[0].percentRemaining == 75)
         #expect(secondUsage.groups[0].meters[0].percentRemaining == 25)
+    }
+}
+
+private final class AccountProviderFakeKeychain: ProviderKeychain, @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [String: String] = [:]
+    func value(service: String, account: String) throws -> String? {
+        lock.withLock { values[service + "|" + account] }
+    }
+    func set(_ value: String, service: String, account: String) throws {
+        lock.withLock { values[service + "|" + account] = value }
+    }
+    func remove(service: String, account: String) throws {
+        _ = lock.withLock { values.removeValue(forKey: service + "|" + account) }
     }
 }
 

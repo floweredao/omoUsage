@@ -328,30 +328,22 @@ struct ProviderSetupTruthfulnessTests {
         )
         defer { try? FileManager.default.removeItem(at: home) }
         let accountID = AccountID()
+        let keychain = TruthfulnessProviderKeychain()
         let store = try #require(
             ProviderAPIKeyStore.live(
                 for: .opencode,
                 accountID: accountID,
                 home: home,
-                environment: [:]
+                environment: [:],
+                keychain: keychain
             )
         )
 
         try store.save("account-opencode-key")
 
-        #expect(
-            store.configURL.path.contains(
-                "/accounts/\(accountID.rawValue)/opencode.json"
-            )
-        )
-        let fileAttributes = try FileManager.default.attributesOfItem(
-            atPath: store.configURL.path
-        )
-        let directoryAttributes = try FileManager.default.attributesOfItem(
-            atPath: store.configURL.deletingLastPathComponent().path
-        )
-        #expect(fileAttributes[.posixPermissions] as? Int == 0o600)
-        #expect(directoryAttributes[.posixPermissions] as? Int == 0o700)
+        #expect(store.account == "opencode/\(accountID.rawValue)")
+        #expect(store.service == ProviderAPIKeyStore.serviceName)
+        #expect(!FileManager.default.fileExists(atPath: store.configURL.path))
     }
 
     @Test
@@ -360,11 +352,13 @@ struct ProviderSetupTruthfulnessTests {
             path: "OpenCodeEnvironmentKey-\(UUID().uuidString)"
         )
         defer { try? FileManager.default.removeItem(at: home) }
+        let keychain = TruthfulnessProviderKeychain()
         let stored = try #require(
             ProviderAPIKeyStore.live(
                 for: .opencode,
                 home: home,
-                environment: [:]
+                environment: [:],
+                keychain: keychain
             )
         )
         try stored.save("saved-opencode-key")
@@ -372,7 +366,8 @@ struct ProviderSetupTruthfulnessTests {
             ProviderAPIKeyStore.live(
                 for: .opencode,
                 home: home,
-                environment: ["OPENCODE_API_KEY": "environment-key"]
+                environment: ["OPENCODE_API_KEY": "environment-key"],
+                keychain: keychain
             )
         )
 
@@ -386,11 +381,13 @@ struct ProviderSetupTruthfulnessTests {
             path: "ProviderSetupTruthfulness-\(UUID().uuidString)"
         )
         defer { try? FileManager.default.removeItem(at: home) }
+        let keychain = TruthfulnessProviderKeychain()
         let store = try #require(
             ProviderAPIKeyStore.live(
                 for: .opencode,
                 home: home,
-                environment: [:]
+                environment: [:],
+                keychain: keychain
             )
         )
         try store.save("omo-opencode-key")
@@ -411,6 +408,7 @@ struct ProviderSetupTruthfulnessTests {
             ),
             environment: [:],
             keychain: TruthfulnessKeychain(),
+            providerKeychain: keychain,
             homeDirectory: home,
             commandPaths: []
         )
@@ -421,4 +419,18 @@ struct ProviderSetupTruthfulnessTests {
 
 private struct TruthfulnessKeychain: KeychainReading {
     func value(service: String, account: String) throws -> String? { nil }
+}
+
+private final class TruthfulnessProviderKeychain: ProviderKeychain, @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [String: String] = [:]
+    func value(service: String, account: String) throws -> String? {
+        lock.withLock { values[service + "|" + account] }
+    }
+    func set(_ value: String, service: String, account: String) throws {
+        lock.withLock { values[service + "|" + account] = value }
+    }
+    func remove(service: String, account: String) throws {
+        _ = lock.withLock { values.removeValue(forKey: service + "|" + account) }
+    }
 }
