@@ -456,10 +456,12 @@ final class UsageDashboardViewModel {
                     group.addTask {
                         do {
                             let fetched = try await provider.fetch(now: fetchNow)
-                            let usage = fetched.assigningAccount(
-                                id: provider.accountID,
-                                label: provider.accountLabel
-                            )
+                            let usage = fetched
+                                .assigningAccount(
+                                    id: provider.accountID,
+                                    label: provider.accountLabel
+                                )
+                                .recordingRefreshAttempt(at: fetchNow)
                             return ProviderFetchResult(
                                 id: provider.accountProviderID,
                                 usage: usage.availability == .available
@@ -480,7 +482,9 @@ final class UsageDashboardViewModel {
                                 usage: nil,
                                 availability: Self.availability(for: error),
                                 retainsPreviousUsage:
-                                    Self.retainsPreviousUsage(for: error)
+                                    Self.retainsPreviousUsage(for: error),
+                                refreshFailure:
+                                    Self.refreshFailure(for: error)
                             )
                         }
                     }
@@ -540,7 +544,10 @@ final class UsageDashboardViewModel {
                     result.availability == .failed
                         || result.retainsPreviousUsage
                 {
-                    return previous[identity]
+                    return previous[identity]?.recordingRefreshAttempt(
+                        at: fetchNow,
+                        failure: result.refreshFailure ?? .unknown
+                    )
                 }
                 return nil
             }
@@ -679,6 +686,32 @@ final class UsageDashboardViewModel {
         return .failed
     }
 
+    /// Classifies a retained failure so every surface can explain why the
+    /// displayed values stopped advancing.
+    nonisolated
+    private static func refreshFailure(
+        for error: any Error
+    ) -> ProviderRefreshFailure {
+        if error is CredentialDiscoveryError {
+            return .credential
+        }
+        if let error = error as? ProviderTransportError {
+            switch error {
+            case .invalidResponse:
+                return .schema
+            case .requestFailed, .authenticationRequired:
+                return .service
+            }
+        }
+        if error is UsageParsingError {
+            return .schema
+        }
+        if error is URLError {
+            return .network
+        }
+        return .unknown
+    }
+
     nonisolated
     private static func retainsPreviousUsage(
         for error: any Error
@@ -704,4 +737,5 @@ private struct ProviderFetchResult: Sendable {
     let availability: ProviderAvailability
     var wasCancelled = false
     var retainsPreviousUsage = false
+    var refreshFailure: ProviderRefreshFailure?
 }

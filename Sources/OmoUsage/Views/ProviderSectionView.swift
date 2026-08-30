@@ -53,16 +53,29 @@ struct ProviderSectionView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, 8)
             } else {
+                let freshness = DashboardLayout.freshnessDisplay(for: usage)
+
+                if freshness.showsStaleBadge {
+                    StaleUsageBadge()
+                }
+
                 ForEach(usage.groups) { group in
                     UsageGroupView(group: group)
                 }
 
-                if let updatedAt = usage.updatedAt,
-                   DashboardLayout.showsProviderTimestamp(for: usage)
-                {
+                if let successAt = freshness.successAt {
                     RefreshTimestampView(
-                        updatedAt: updatedAt,
+                        updatedAt: successAt,
                         style: .provider
+                    )
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+
+                if let attemptAt = freshness.attemptAt {
+                    RefreshTimestampView(
+                        updatedAt: attemptAt,
+                        style: .footer
                     )
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
@@ -72,6 +85,52 @@ struct ProviderSectionView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+}
+
+struct StaleUsageBadge: View {
+    @Environment(\.appLocalization)
+    private var localization
+
+    var body: some View {
+        HStack(spacing: StaleUsageVisualTokens.badgeSpacing) {
+            Image(systemName: StaleUsageVisualTokens.symbolName)
+                .font(
+                    .system(
+                        size: StaleUsageVisualTokens.badgeSymbolPointSize,
+                        weight: .bold
+                    )
+                )
+            Text(localization.staleBadgeText())
+                .font(
+                    .system(
+                        size: StaleUsageVisualTokens.badgeFontSize,
+                        weight: .semibold
+                    )
+                )
+        }
+        .foregroundStyle(StaleUsageVisualTokens.accent.color)
+        .padding(
+            .horizontal,
+            StaleUsageVisualTokens.badgeHorizontalPadding
+        )
+        .padding(.vertical, StaleUsageVisualTokens.badgeVerticalPadding)
+        .background(
+            StaleUsageVisualTokens.accent.color.opacity(
+                StaleUsageVisualTokens.badgeBackgroundOpacity
+            ),
+            in: Capsule()
+        )
+        .overlay {
+            Capsule()
+                .stroke(
+                    StaleUsageVisualTokens.accent.color.opacity(
+                        StaleUsageVisualTokens.badgeBorderOpacity
+                    ),
+                    lineWidth: 0.5
+                )
+        }
+        .accessibilityElement(children: .combine)
+    }
 }
 
 private struct UsageGroupView: View {

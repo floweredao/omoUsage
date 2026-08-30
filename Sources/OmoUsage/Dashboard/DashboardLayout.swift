@@ -32,16 +32,32 @@ enum DashboardLayout {
             .contains { $0.period == .extra && $0.resetText != nil }
     }
 
+    static func freshnessDisplay(
+        for usage: ProviderUsage
+    ) -> ProviderFreshnessDisplay {
+        ProviderFreshnessDisplay.make(
+            for: usage,
+            includesSuccessRow: showsProviderTimestamp(for: usage)
+        )
+    }
+
     static func sectionHeight(
         _ usage: ProviderUsage
     ) -> CGFloat {
+        let freshness = freshnessDisplay(for: usage)
         var children: [CGFloat] = [20]
+        if freshness.showsStaleBadge {
+            children.append(StaleUsageVisualTokens.badgeRowHeight)
+        }
         children.append(
             contentsOf: usage.groups.map(groupHeight)
         )
-        if showsProviderTimestamp(for: usage) {
-            children.append(14)
-        }
+        children.append(
+            contentsOf: repeatElement(
+                CGFloat(14),
+                count: freshness.rowCount
+            )
+        )
         return children.reduce(0, +)
             + CGFloat(max(0, children.count - 1)) * 8
     }

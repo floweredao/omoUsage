@@ -5,6 +5,12 @@ extension LocalizationResolving {
         ProviderTextLocalization.text(value, language: language)
     }
 
+    /// Text shown beside the stale symbol so retained usage never relies on
+    /// color alone to explain that its last refresh failed.
+    func staleBadgeText() -> String {
+        text(.refreshFailed)
+    }
+
     func availabilityText(
         _ availability: ProviderAvailability
     ) -> String? {
@@ -102,7 +108,9 @@ extension DashboardSnapshot {
                         )
                     },
                     availability: provider.availability,
-                    lastSuccessfulAt: provider.lastSuccessfulAt
+                    lastSuccessfulAt: provider.lastSuccessfulAt,
+                    lastRefreshAttemptAt: provider.lastRefreshAttemptAt,
+                    refreshFailure: provider.refreshFailure
                 )
             },
             generatedAt: generatedAt,
