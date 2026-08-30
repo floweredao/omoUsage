@@ -51,6 +51,122 @@ struct ZAIReliabilityTests {
     }
 
     @Test
+    func rejectsUsageOnlyPayloadInsteadOfReportingZeroRemaining() async {
+        do {
+            _ = try await HephaestusZAIFixture.fetch(
+                quota: """
+                {"data":{"limits":[
+                  {"type":"TIME_LIMIT","usage":10}
+                ]}}
+                """,
+                subscription: #"{"data":[]}"#,
+                now: now
+            )
+            Issue.record("Usage alone must not become both used and limit")
+        } catch {
+            #expect(
+                error as? ProviderTransportError
+                    == .invalidResponse(.zai)
+            )
+        }
+    }
+
+    @Test
+    func parsesExplicitUsedAndLimitValues() async throws {
+        let usage = try await HephaestusZAIFixture.fetch(
+            quota: """
+            {"data":{"limits":[
+              {"type":"SEARCH_LIMIT","used":2,"limit":10}
+            ]}}
+            """,
+            subscription: #"{"data":[]}"#,
+            now: now
+        )
+
+        #expect(usage.groups.flatMap(\.meters).map(\.percentRemaining) == [80])
+    }
+
+    @Test
+    func aggregatesRepeatedSearchAndTimeWindowsRegardlessOfOrder() async throws {
+        let search = """
+        {"type":"SEARCH_LIMIT","percentage":20,"nextResetTime":1786042800}
+        """
+        let time = """
+        {"type":"TIME_LIMIT","currentValue":6,"usage":10,"nextResetTime":1786039200}
+        """
+        let first = try await HephaestusZAIFixture.fetch(
+            quota: """
+            {"data":{"limits":[\(search),\(time)]}}
+            """,
+            subscription: #"{"data":[]}"#,
+            now: now
+        )
+        let second = try await HephaestusZAIFixture.fetch(
+            quota: """
+            {"data":{"limits":[\(time),\(search)]}}
+            """,
+            subscription: #"{"data":[]}"#,
+            now: now
+        )
+        let firstMeters = first.groups.flatMap(\.meters)
+        let secondMeters = second.groups.flatMap(\.meters)
+
+        #expect(firstMeters == secondMeters)
+        #expect(firstMeters.map(\.id) == ["zai-search"])
+        #expect(firstMeters.first?.percentRemaining == 40)
+    }
+
+    @Test
+    func aggregatesDuplicateWindowIdentitiesWithUniqueStableIDs() async throws {
+        let firstWindow = """
+        {"type":"CREDIT_LIMIT","unit":6,"number":1,"percentage":20}
+        """
+        let secondWindow = """
+        {"type":"CREDIT_LIMIT","unit":6,"number":1,"percentage":70}
+        """
+        let first = try await HephaestusZAIFixture.fetch(
+            quota: """
+            {"data":{"limits":[\(firstWindow),\(secondWindow)]}}
+            """,
+            subscription: #"{"data":[]}"#,
+            now: now
+        )
+        let second = try await HephaestusZAIFixture.fetch(
+            quota: """
+            {"data":{"limits":[\(secondWindow),\(firstWindow)]}}
+            """,
+            subscription: #"{"data":[]}"#,
+            now: now
+        )
+        let meters = first.groups.flatMap(\.meters)
+
+        #expect(meters == second.groups.flatMap(\.meters))
+        #expect(meters.map(\.id) == ["zai-week"])
+        #expect(Set(meters.map(\.id)).count == meters.count)
+        #expect(meters.first?.percentRemaining == 30)
+    }
+
+    @Test
+    func parsesSanitizedRealSchemaFixtureWithStableUnknownUnitOrder() async throws {
+        let usage = try await HephaestusZAIFixture.fetch(
+            quota: HephaestusZAIQuotaFixture.sanitizedQuota,
+            subscription: #"{"data":[]}"#,
+            now: now
+        )
+        let meters = usage.groups.flatMap(\.meters)
+
+        #expect(meters.map(\.id) == [
+            "zai-session",
+            "zai-week",
+            "zai-search",
+            "zai-token-42-8"
+        ])
+        #expect(meters.map(\.percentRemaining) == [80, 80, 60, 75])
+        #expect(Set(meters.map(\.id)).count == meters.count)
+        #expect(!meters.contains { $0.percentRemaining == 0 })
+    }
+
+    @Test
     func parsesProductNameFromSubscriptionDataArray() async throws {
         let usage = try await HephaestusZAIFixture.fetch(
             quota: """
@@ -153,6 +269,52 @@ struct ZAIReliabilityTests {
             )
         }
     }
+}
+
+private enum HephaestusZAIQuotaFixture {
+    static let sanitizedQuota = """
+    {
+      "data": {
+        "limits": [
+          {
+            "type": "CREDIT_LIMIT",
+            "unit": 42,
+            "number": 8,
+            "percentage": 25,
+            "nextResetTime": 1786122000
+          },
+          {
+            "type": "TIME_LIMIT",
+            "currentValue": 4,
+            "usage": 10,
+            "nextResetTime": 1786039200
+          },
+          {
+            "type": "CREDIT_LIMIT",
+            "unit": 6,
+            "number": 1,
+            "used": 2,
+            "limit": 10,
+            "nextResetTime": 1786644000
+          },
+          {
+            "type": "SEARCH_LIMIT",
+            "usage": 3,
+            "limit": 12,
+            "nextResetTime": 1786042800
+          },
+          {
+            "type": "CREDIT_LIMIT",
+            "unit": 3,
+            "number": 5,
+            "currentValue": 1,
+            "usage": 5,
+            "nextResetTime": 1786035600
+          }
+        ]
+      }
+    }
+    """
 }
 
 private enum HephaestusZAIFixture {
