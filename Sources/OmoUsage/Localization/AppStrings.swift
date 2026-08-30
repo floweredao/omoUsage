@@ -24,6 +24,10 @@ enum AppStringKey: String, CaseIterable, Sendable {
     case launchNotFound
     case launchChangeFailed
     case openLoginItems
+    case webDashboard
+    case webDashboardDescription
+    case openWebDashboard
+    case webDashboardOpenFailed
     case connected
     case checkFailed
     case notConnected
@@ -132,6 +136,11 @@ struct AppStrings: Sendable {
         .launchNotFound: "앱을 Applications 폴더에 설치한 뒤 다시 시도해 주세요.",
         .launchChangeFailed: "로그인 항목을 변경하지 못했습니다.",
         .openLoginItems: "로그인 항목 설정 열기",
+        .webDashboard: "웹 대시보드",
+        .webDashboardDescription:
+            "일회용 보안 링크로 이 Mac의 대시보드를 엽니다.",
+        .openWebDashboard: "대시보드 열기",
+        .webDashboardOpenFailed: "웹 대시보드를 열지 못했습니다.",
         .connected: "연결됨",
         .checkFailed: "확인 실패",
         .notConnected: "연결 안 됨",
@@ -230,6 +239,11 @@ struct AppStrings: Sendable {
         .launchNotFound: "Install the app in Applications, then try again.",
         .launchChangeFailed: "Could not update the login item.",
         .openLoginItems: "Open Login Items Settings",
+        .webDashboard: "Web Dashboard",
+        .webDashboardDescription:
+            "Open this Mac's dashboard with a one-use secure link.",
+        .openWebDashboard: "Open Dashboard",
+        .webDashboardOpenFailed: "Could not open the web dashboard.",
         .connected: "Connected",
         .checkFailed: "Check Failed",
         .notConnected: "Not Connected",

@@ -162,17 +162,20 @@ struct WebDashboardHTTPRequest: Sendable {
 
     let method: String
     let path: String
+    let query: String?
     let headers: [String: String]
     let body: Data
 
     init(
         method: String,
         path: String,
+        query: String? = nil,
         headers: [String: String] = [:],
         body: Data = Data()
     ) {
         self.method = method
         self.path = path
+        self.query = query
         self.headers = Dictionary(
             uniqueKeysWithValues: headers.map {
                 ($0.key.lowercased(), $0.value)
@@ -241,14 +244,20 @@ struct WebDashboardHTTPRequest: Sendable {
             return nil
         }
         let target = String(parts[1])
-        let path = target.split(
+        guard target.hasPrefix("/"), !target.contains("#") else {
+            return nil
+        }
+        let targetParts = target.split(
             separator: "?",
             maxSplits: 1,
             omittingEmptySubsequences: false
-        ).first.map(String.init) ?? target
+        )
+        let path = String(targetParts[0])
+        let query = targetParts.count == 2 ? String(targetParts[1]) : nil
         return WebDashboardHTTPRequest(
             method: String(parts[0]),
             path: path,
+            query: query,
             headers: headers,
             body: Data(data[bodyStart..<bodyEnd])
         )
@@ -799,7 +808,7 @@ final class WebDashboardServer: @unchecked Sendable {
     }
 
     private let listener: any WebDashboardListening
-    private let router: WebDashboardRouter
+    private let gateway: WebDashboardAccessGateway
     private let lock = NSLock()
     private var state = State.stopped
 
@@ -809,10 +818,14 @@ final class WebDashboardServer: @unchecked Sendable {
 
     init(
         listener: any WebDashboardListening,
-        router: WebDashboardRouter
+        router: WebDashboardRouter,
+        accessStore: WebDashboardAccessStore
     ) {
         self.listener = listener
-        self.router = router
+        self.gateway = WebDashboardAccessGateway(
+            accessStore: accessStore,
+            router: router
+        )
     }
 
     func start() throws {
@@ -825,10 +838,10 @@ final class WebDashboardServer: @unchecked Sendable {
 
         do {
             try listener.start(
-                response: { [router] request in
+                response: { [gateway] request in
                     Self.responseData(
                         for: request,
-                        router: router
+                        gateway: gateway
                     )
                 },
                 stateChanged: { [weak self] listenerState in
@@ -877,12 +890,12 @@ final class WebDashboardServer: @unchecked Sendable {
 
     private static func responseData(
         for request: Data,
-        router: WebDashboardRouter
+        gateway: WebDashboardAccessGateway
     ) -> Data {
         guard let request = WebDashboardHTTPRequest.parse(request) else {
             return badRequest.serialized()
         }
-        return router.response(
+        return gateway.response(
             request: request
         ).serialized()
     }

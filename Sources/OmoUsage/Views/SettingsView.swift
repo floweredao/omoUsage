@@ -9,6 +9,7 @@ struct SettingsView: View {
     let onLanguageChange: () -> Void
     let onPresentationStyleChange: (DashboardPresentationStyle) -> Void
     let onSideNotchHideDelayChange: (SideNotchHideDelay) -> Void
+    let onOpenWebDashboard: () -> Bool
     @State private var keyDrafts: [ProviderID: String] = [:]
     @State private var newAccountProvider = ProviderID.openrouter
     @State private var newAccountLabel = ""
@@ -35,7 +36,8 @@ struct SettingsView: View {
         onPresentationStyleChange:
             @escaping (DashboardPresentationStyle) -> Void,
         onSideNotchHideDelayChange:
-            @escaping (SideNotchHideDelay) -> Void
+            @escaping (SideNotchHideDelay) -> Void,
+        onOpenWebDashboard: @escaping () -> Bool
     ) {
         self.viewModel = viewModel
         self.localization = localization
@@ -45,6 +47,7 @@ struct SettingsView: View {
         self.onPresentationStyleChange = onPresentationStyleChange
         self.onSideNotchHideDelayChange =
             onSideNotchHideDelayChange
+        self.onOpenWebDashboard = onOpenWebDashboard
         _presentationStyle = State(initialValue: presentationStyle)
         _sideNotchHideDelay = State(initialValue: sideNotchHideDelay)
     }
@@ -190,6 +193,12 @@ struct SettingsView: View {
                     LaunchAtLoginSettingsRow(
                         controller: launchAtLogin
                     )
+
+                    WebDashboardSettingsRow {
+                        if !onOpenWebDashboard() {
+                            feedback = .key(.webDashboardOpenFailed)
+                        }
+                    }
 
                     ProviderOrderingView(viewModel: viewModel)
                         .padding(.top, 4)
@@ -537,6 +546,50 @@ private struct APIKeyAccountsSection: View {
     private var canAdd: Bool {
         !label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+}
+
+private struct WebDashboardSettingsRow: View {
+    let onOpen: () -> Void
+    @Environment(\.appLocalization) private var localization
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "globe")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 24, height: 24)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(localization.text(.webDashboard))
+                    .font(.system(size: 13.5, weight: .semibold))
+                Text(localization.text(.webDashboardDescription))
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 8)
+
+            Button(
+                localization.text(.openWebDashboard),
+                action: onOpen
+            )
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+        }
+        .padding(10)
+        .background(
+            Color(nsColor: .controlBackgroundColor),
+            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(
+                    Color(nsColor: .separatorColor),
+                    lineWidth: 0.5
+                )
+        }
     }
 }
 

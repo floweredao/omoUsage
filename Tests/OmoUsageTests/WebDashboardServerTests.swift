@@ -976,7 +976,10 @@ struct WebDashboardServerTests {
         )
         let server = WebDashboardServer(
             listener: listener,
-            router: router
+            router: router,
+            accessStore: WebDashboardAccessStore(
+                mode: .local(port: 7_827)
+            )
         )
 
         try server.start()
@@ -1026,7 +1029,10 @@ struct WebDashboardServerTests {
         )
         let server = WebDashboardServer(
             listener: listener,
-            router: router
+            router: router,
+            accessStore: WebDashboardAccessStore(
+                mode: .local(port: 7_827)
+            )
         )
 
         try server.start()
