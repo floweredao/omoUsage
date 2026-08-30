@@ -114,6 +114,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let webDashboardSettingsStore: WebDashboardSettingsStore
     private let webDashboardLanguageStore: WebDashboardLanguageStore
     private let webDashboardCommandBridge: WebDashboardCommandBridge
+    private let webDashboardAccessStore: WebDashboardAccessStore
     private let webDashboardServer: WebDashboardServer
     private let presentationStyleStore: DashboardPresentationStyleStore
     private var presentationStyle: DashboardPresentationStyle
@@ -220,6 +221,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             language: webLanguage
         )
         let webDashboardCommandBridge = WebDashboardCommandBridge()
+        let environment = ProcessInfo.processInfo.environment
+        let webDashboardPort = WebDashboardPortPolicy.resolve(
+            environment: environment
+        )
+        let webDashboardAccessStore = WebDashboardAccessStore(
+            mode: WebDashboardAccessMode.resolve(
+                environment: environment,
+                port: webDashboardPort
+            )
+        )
         let mutationNonce = UUID().uuidString.replacingOccurrences(
             of: "-",
             with: ""
@@ -268,11 +279,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             publishControlState: webDashboardSettingsStore.update
         )
         let webDashboardServer = WebDashboardServer(
-            listener: NWWebDashboardListener(
-                port: WebDashboardPortPolicy.resolve(
-                    environment: ProcessInfo.processInfo.environment
-                )
-            ),
+            listener: NWWebDashboardListener(port: webDashboardPort),
             router: WebDashboardRouter(
                 snapshotData: {
                     let language = AppLanguage(
@@ -292,7 +299,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 appIconSVG: WebDashboardAssets.appIconSVG,
                 mutationNonce: mutationNonce,
                 dispatchCommand: webDashboardCommandBridge.send
-            )
+            ),
+            accessStore: webDashboardAccessStore
         )
 
         self.viewModel = viewModel
@@ -303,6 +311,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         self.webDashboardSettingsStore = webDashboardSettingsStore
         self.webDashboardLanguageStore = webDashboardLanguageStore
         self.webDashboardCommandBridge = webDashboardCommandBridge
+        self.webDashboardAccessStore = webDashboardAccessStore
         self.webDashboardServer = webDashboardServer
         self.presentationStyleStore = presentationStyleStore
         self.presentationStyle = presentationStyle
@@ -516,6 +525,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 },
                 onSideNotchHideDelayChange: { [weak self] delay in
                     self?.setSideNotchHideDelay(delay)
+                },
+                onOpenWebDashboard: { [weak self] in
+                    guard let self else { return false }
+                    do {
+                        let url = try self.webDashboardAccessStore
+                            .makeBootstrapURL()
+                        return NSWorkspace.shared.open(url)
+                    } catch {
+                        return false
+                    }
                 }
             )
         )

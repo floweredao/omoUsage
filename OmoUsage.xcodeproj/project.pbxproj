@@ -68,6 +68,7 @@
 		B025B2016537FDACEC08B10A /* DashboardSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71A182659CB7E2F4FDD510F0 /* DashboardSnapshot.swift */; };
 		B249B7C0F61BD0C951EDEC61 /* OpenRouterUsageProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 332B6061B110A89D9233C052 /* OpenRouterUsageProvider.swift */; };
 		B399D2EAF532C1A631F03814 /* SecurityKeychainWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = D14D433914F0A08A93F1ECD9 /* SecurityKeychainWriter.swift */; };
+		B4433F23638D97D52DDCF882 /* WebDashboardAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = A076EBF8590E1B517FFA8635 /* WebDashboardAccess.swift */; };
 		B49803124479D286A44097B4 /* AppIconFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDBDAA9604D9D64ED51A325C /* AppIconFactory.swift */; };
 		C4EA5C82813C76747D7861AB /* DevinUsageProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DABB14A0BEE73305B501919 /* DevinUsageProvider.swift */; };
 		C514F1A530CAEFBB9EFC0980 /* UsageSnapshotSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = E65A1667ED51CD4C93B9F9B0 /* UsageSnapshotSync.swift */; };
@@ -146,6 +147,7 @@
 		93846E49B0DF5547337BB90F /* AGENTS.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = AGENTS.md; sourceTree = "<group>"; };
 		99E35EB45A3EB81DB7A55A08 /* ProviderIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderIcon.swift; sourceTree = "<group>"; };
 		9EABF919950219809021F3EC /* SecurityKeychainReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecurityKeychainReader.swift; sourceTree = "<group>"; };
+		A076EBF8590E1B517FFA8635 /* WebDashboardAccess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebDashboardAccess.swift; sourceTree = "<group>"; };
 		A081648FEC2B1C86F53B4A00 /* claude.svg */ = {isa = PBXFileReference; path = claude.svg; sourceTree = "<group>"; };
 		A0EF238B1691AA11179C0707 /* DashboardLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardLayout.swift; sourceTree = "<group>"; };
 		A0F4EC80CCE9E554E5F97735 /* WebDashboardAssets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebDashboardAssets.swift; sourceTree = "<group>"; };
@@ -352,6 +354,7 @@
 			isa = PBXGroup;
 			children = (
 				3C69FACC582DA88612C34BF0 /* AGENTS.md */,
+				A076EBF8590E1B517FFA8635 /* WebDashboardAccess.swift */,
 				A0F4EC80CCE9E554E5F97735 /* WebDashboardAssets.swift */,
 				F935CA0E95F3EE3F07E1431F /* WebDashboardServer.swift */,
 			);
@@ -580,6 +583,7 @@
 				440F27E36B0B17BD49E0ADDA /* UsageProvider.swift in Sources */,
 				F1E5811217BBFC2D2DCD3A31 /* UsageRefreshScheduler.swift in Sources */,
 				30BC7C264D6FB26696BA75C6 /* UsageSnapshotSync.swift in Sources */,
+				B4433F23638D97D52DDCF882 /* WebDashboardAccess.swift in Sources */,
 				A9F96F5F80FC0EAC299BBB6F /* WebDashboardAssets.swift in Sources */,
 				E414B3019788683553A7FF2D /* WebDashboardServer.swift in Sources */,
 				4D56D9A1368CDEDE47FA1207 /* ZAIUsageProvider.swift in Sources */,
