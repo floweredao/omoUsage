@@ -75,6 +75,7 @@ struct ClaudeTokenRefreshTests {
 
         let write = try #require(writer.lastWrite())
         #expect(write.service == "Claude Code-credentials")
+        #expect(write.account.isEmpty)
         let root = try #require(
             try JSONSerialization.jsonObject(
                 with: Data(write.value.utf8)
