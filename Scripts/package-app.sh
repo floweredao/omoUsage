@@ -8,8 +8,22 @@ ICONSET="$ROOT/.build/OmoUsage.iconset"
 IDENTITY="${OMO_USAGE_CODESIGN_IDENTITY:--}"
 TEAM_IDENTIFIER="${OMO_USAGE_TEAM_IDENTIFIER:-}"
 ENTITLEMENTS_TEMPLATE="$ROOT/Config/OmoUsage.entitlements"
+VERSION_CONFIGURATION="$ROOT/Config/Version.xcconfig"
 TEMP_ENTITLEMENTS=""
 EXTRACTED_ENTITLEMENTS=""
+
+version_setting() {
+    value="$(awk -F ' = ' -v key="$1" '$1 == key { print $2; exit }' "$VERSION_CONFIGURATION")"
+    if [ -z "$value" ]; then
+        printf 'error: %s is missing from %s\n' "$1" "$VERSION_CONFIGURATION" >&2
+        exit 1
+    fi
+    printf '%s\n' "$value"
+}
+
+MARKETING_VERSION="$(version_setting MARKETING_VERSION)"
+CURRENT_PROJECT_VERSION="$(version_setting CURRENT_PROJECT_VERSION)"
+SOURCE_COMMIT="$(git -C "$ROOT" rev-parse HEAD)"
 
 usage() {
     printf '%s\n' "usage: $0 [--print-signing-plan]" >&2
@@ -43,6 +57,9 @@ if [ "$IDENTITY" != "-" ] && [ -z "$TEAM_IDENTIFIER" ]; then
 fi
 
 if [ "$MODE" = "plan" ]; then
+    printf 'MARKETING_VERSION=%s\n' "$MARKETING_VERSION"
+    printf 'CURRENT_PROJECT_VERSION=%s\n' "$CURRENT_PROJECT_VERSION"
+    printf 'SOURCE_COMMIT=%s\n' "$SOURCE_COMMIT"
     printf 'SIGNING_IDENTITY=%s\n' "$IDENTITY"
     if [ -n "$TEAM_IDENTIFIER" ]; then
         printf 'TEAM_IDENTIFIER=%s\n' "$TEAM_IDENTIFIER"
@@ -80,6 +97,9 @@ cp "Config/Info.plist" "$CONTENTS/Info.plist"
     -c "Set :CFBundleExecutable OmoUsage" \
     -c "Set :CFBundleIdentifier com.omo.usage" \
     -c "Set :CFBundleName OmoUsage" \
+    -c "Set :CFBundleShortVersionString $MARKETING_VERSION" \
+    -c "Set :CFBundleVersion $CURRENT_PROJECT_VERSION" \
+    -c "Set :OmoUsageSourceCommit $SOURCE_COMMIT" \
     "$CONTENTS/Info.plist"
 cp Sources/OmoUsage/Resources/ProviderIcons/*.svg \
     "$CONTENTS/Resources/ProviderIcons/"

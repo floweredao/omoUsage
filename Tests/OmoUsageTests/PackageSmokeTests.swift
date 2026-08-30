@@ -8,7 +8,17 @@ struct PackageSmokeTests {
     func desktopBundleDeclaresReleaseVersionAndIcon() throws {
         let info = try desktopInfo()
 
-        #expect(info["CFBundleShortVersionString"] as? String == "0.1.8")
+        #expect(
+            info["CFBundleShortVersionString"] as? String ==
+                "$(MARKETING_VERSION)"
+        )
+        #expect(
+            info["CFBundleVersion"] as? String ==
+                "$(CURRENT_PROJECT_VERSION)"
+        )
+        #expect(
+            info["OmoUsageSourceCommit"] as? String == "$(SOURCE_COMMIT)"
+        )
         #expect(info["CFBundleIconFile"] as? String == "OmoUsage.icns")
         #expect(info["LSUIElement"] as? Bool == true)
     }
@@ -32,6 +42,11 @@ struct PackageSmokeTests {
     func packageScriptReportsDeterministicSigningPlans() throws {
         let adHoc = try signingPlan(environment: [:])
         #expect(adHoc.status == 0)
+        #expect(adHoc.output.contains("MARKETING_VERSION=0.1.8\n"))
+        #expect(adHoc.output.contains("CURRENT_PROJECT_VERSION=2\n"))
+        #expect(
+            adHoc.output.contains("SOURCE_COMMIT=\(try sourceCommit())\n")
+        )
         #expect(adHoc.output.contains("SIGNING_IDENTITY=-\n"))
         #expect(adHoc.output.contains("CLOUD_KVS_AVAILABLE=no\n"))
 
@@ -134,6 +149,26 @@ struct PackageSmokeTests {
                 format: nil
             ) as? [String: Any]
         )
+    }
+
+    private func sourceCommit() throws -> String {
+        let process = Process()
+        let output = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = [
+            "-C",
+            repositoryRoot.path,
+            "rev-parse",
+            "HEAD"
+        ]
+        process.standardOutput = output
+        try process.run()
+        process.waitUntilExit()
+        #expect(process.terminationStatus == 0)
+        return String(
+            decoding: output.fileHandleForReading.readDataToEndOfFile(),
+            as: UTF8.self
+        ).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func signingPlan(
