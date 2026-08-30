@@ -47,6 +47,31 @@ struct MultiAccountRefreshTests {
 
     @Test
     @MainActor
+    func duplicateProviderIdentityFetchesOnlyFirstConfiguredProvider() async {
+        let first = MultiAccountScriptedProvider(
+            accountID: accountA,
+            accountLabel: "Account A",
+            responses: [.success(makeUsage(planName: "First"))]
+        )
+        let duplicate = MultiAccountScriptedProvider(
+            accountID: accountA,
+            accountLabel: "Duplicate",
+            responses: [.success(makeUsage(planName: "Second"))]
+        )
+        let viewModel = UsageDashboardViewModel(
+            providers: [first, duplicate],
+            now: { now }
+        )
+
+        await viewModel.refresh()
+
+        #expect(viewModel.snapshot.providers.map(\.planName) == ["First"])
+        #expect(await first.observedFetchCount() == 1)
+        #expect(await duplicate.observedFetchCount() == 0)
+    }
+
+    @Test
+    @MainActor
     func accountRegistryOverridesStaleLegacyDisconnectAfterRosterGrows() {
         let providerA = MultiAccountScriptedProvider(
             accountID: accountA,
@@ -385,5 +410,9 @@ private actor MultiAccountScriptedProvider: UsageProvider {
             await firstFetchBarrier?.arriveAndWait()
         }
         return try responses.removeFirst().get()
+    }
+
+    func observedFetchCount() -> Int {
+        fetchCount
     }
 }

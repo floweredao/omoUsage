@@ -89,8 +89,18 @@ struct MobileUsageView: View {
         return ScrollView {
             LazyVStack(spacing: 12) {
                 HStack(spacing: 6) {
-                    Image(systemName: "icloud.fill")
-                    Text(localization.text(.syncedThroughICloud))
+                    Image(
+                        systemName: viewModel.loadState == .failed
+                            ? "exclamationmark.icloud"
+                            : "icloud.fill"
+                    )
+                    Text(
+                        localization.text(
+                            viewModel.loadState == .failed
+                                ? .mobileSyncFailed
+                                : .syncedThroughICloud
+                        )
+                    )
                     Spacer()
                     Text(
                         snapshot.refreshedAt,

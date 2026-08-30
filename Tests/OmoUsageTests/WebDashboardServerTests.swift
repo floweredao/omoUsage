@@ -1242,6 +1242,103 @@ struct WebDashboardServerTests {
     }
 
     @Test
+    func legacyDashboardAccountDoesNotRenderDefaultAlias() {
+        let html = String(
+            decoding: WebDashboardAssets.indexHTML(
+                mutationNonce: "test-nonce"
+            ),
+            as: UTF8.self
+        )
+
+        #expect(
+            html.contains(
+                "providerIdentity(provider).accountID !== legacyAccountID"
+            )
+        )
+        #expect(
+            !html.contains(
+                "return provider.accountID !== legacyAccountID"
+            )
+        )
+    }
+
+    @Test
+    func webClientHasOneInitialSnapshotRefreshOwner() {
+        let html = String(
+            decoding: WebDashboardAssets.indexHTML(
+                mutationNonce: "test-nonce"
+            ),
+            as: UTF8.self
+        )
+
+        #expect(
+            !html.contains(
+                "\n    refresh();\n    setInterval(refresh, 30_000);"
+            )
+        )
+        #expect(
+            html.contains(
+                "syncSettings().catch(() => {}).finally(refresh);"
+            )
+        )
+    }
+
+    @Test
+    func settingsFailureHidesStaleSynchronizationSuccess() throws {
+        let html = String(
+            decoding: WebDashboardAssets.indexHTML(
+                mutationNonce: "test-nonce"
+            ),
+            as: UTF8.self
+        )
+        let failurePattern = try NSRegularExpression(
+            pattern:
+                #"settingsSync\.hidden = true;\s*settingsError\.hidden = false;"#
+        )
+
+        #expect(
+            failurePattern.numberOfMatches(
+                in: html,
+                range: NSRange(
+                    html.startIndex..<html.endIndex,
+                    in: html
+                )
+            ) == 1
+        )
+    }
+
+    @Test
+    func failedSettingsMutationKeepsFailureWithoutSuccessCopy() {
+        let html = String(
+            decoding: WebDashboardAssets.indexHTML(
+                mutationNonce: "test-nonce"
+            ),
+            as: UTF8.self
+        )
+
+        #expect(
+            html.contains(
+                "const failedSettingsMutations = new Set();"
+            )
+        )
+        #expect(
+            html.contains(
+                "failedSettingsMutations.add(mutationKey);"
+            )
+        )
+        #expect(
+            html.contains(
+                "settingsSync.hidden = failedSettingsMutations.size > 0;"
+            )
+        )
+        #expect(
+            html.contains(
+                "if (failedSettingsMutations.size === 0) {"
+            )
+        )
+    }
+
+    @Test
     func settingsMutationsScopeBusyStateToAffectedControl() throws {
         let html = String(
             decoding: WebDashboardAssets.indexHTML(

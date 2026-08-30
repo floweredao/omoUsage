@@ -1104,7 +1104,7 @@
 
     function accountAlias(provider, sameProviderCount) {
       const label = provider.accountLabel || "Default Account";
-      return provider.accountID !== legacyAccountID
+      return providerIdentity(provider).accountID !== legacyAccountID
         || label !== "Default Account"
         || sameProviderCount > 1
         ? label
@@ -1297,7 +1297,6 @@
       }
     }
 
-    refresh();
     setInterval(refresh, 30_000);
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "visible") refresh();
@@ -1323,6 +1322,7 @@
 
     let localSettingsState = null;
     const settingsMutationsInFlight = new Map();
+    const failedSettingsMutations = new Set();
     let refreshCommandInFlight = false;
 
     function configurePage() {
@@ -1457,15 +1457,21 @@
     async function syncSettings() {
       try {
         const state = applySettingsState(await fetchSettingsState());
-        settingsError.hidden = true;
-        const syncText = state.isRefreshing
-          ? localized("localRefreshInProgress")
-          : localized("synchronized");
+        if (failedSettingsMutations.size === 0) {
+          settingsError.hidden = true;
+        }
+        const syncText = settingsMutationsInFlight.size > 0
+          ? localized("synchronizing")
+          : state.isRefreshing
+            ? localized("localRefreshInProgress")
+            : localized("synchronized");
         if (settingsSync.textContent !== syncText) {
           settingsSync.textContent = syncText;
         }
+        settingsSync.hidden = failedSettingsMutations.size > 0;
         return state;
       } catch (error) {
+        settingsSync.hidden = true;
         settingsError.hidden = false;
         settingsError.textContent = localized("localSettingsUnavailable");
         throw error;
@@ -1518,19 +1524,27 @@
     async function mutateSettings(mutationKey, body, expected) {
       if (settingsMutationsInFlight.has(mutationKey)) return;
       settingsMutationsInFlight.set(mutationKey, expected);
+      failedSettingsMutations.delete(mutationKey);
       settingsSync.textContent = localized("synchronizing");
-      settingsError.hidden = true;
+      settingsSync.hidden = false;
+      if (failedSettingsMutations.size === 0) {
+        settingsError.hidden = true;
+      }
       renderSettings();
       try {
         await sendCommand("/api/settings", body);
         await waitForSettings(expected);
       } catch (error) {
+        failedSettingsMutations.add(mutationKey);
         settingsError.hidden = false;
         settingsError.textContent = localized("settingFailed");
       } finally {
         settingsMutationsInFlight.delete(mutationKey);
         if (settingsMutationsInFlight.size === 0) {
-          settingsSync.textContent = localized("synchronized");
+          settingsSync.hidden = failedSettingsMutations.size > 0;
+          if (failedSettingsMutations.size === 0) {
+            settingsSync.textContent = localized("synchronized");
+          }
         }
         renderSettings();
       }
@@ -1763,7 +1777,7 @@
     refreshButton.addEventListener("click", triggerLocalRefresh);
 
     configurePage();
-    syncSettings().then(refresh).catch(() => {});
+    syncSettings().catch(() => {}).finally(refresh);
     setInterval(() => syncSettings().catch(() => {}), 2_000);
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "visible") {
