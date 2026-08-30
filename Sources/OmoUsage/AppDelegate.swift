@@ -177,7 +177,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         let providerOrder = orderStore.load()
         let disconnectedProviders = disconnectionStore.load()
         let accountStore = ProviderAccountStore.live(defaults: .standard)
-        let registryLoadResult = accountStore.loadOrRecover()
+        let registryLoadResult = ProviderMutationCoordinator(
+            store: accountStore
+        ).loadOrRecover()
         if registryLoadResult.state != .ready {
             NSLog(
                 "OmoUsage account registry recovery state: %@",

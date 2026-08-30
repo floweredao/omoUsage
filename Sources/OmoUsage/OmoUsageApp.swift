@@ -11,6 +11,12 @@ enum OmoUsageApp {
             runSingleInstanceFixture()
             return
         }
+        if ProcessInfo.processInfo.environment[
+            "OMO_USAGE_PROVIDER_MUTATION_FIXTURE"
+        ] == "1" {
+            runProviderMutationFixture()
+            return
+        }
 
         let singleInstance: SingleInstanceController
         do {
@@ -66,6 +72,108 @@ enum OmoUsageApp {
             }
         } catch {
             writeFixtureEvent("error")
+            Darwin.exit(EXIT_FAILURE)
+        }
+    }
+
+    private static func runProviderMutationFixture() {
+        let environment = ProcessInfo.processInfo.environment
+        guard let registryPath = environment["OMO_USAGE_MUTATION_REGISTRY_PATH"],
+              let providerValue = environment["OMO_USAGE_MUTATION_PROVIDER"],
+              let provider = ProviderID(rawValue: providerValue),
+              let defaults = UserDefaults(
+                  suiteName: "ProviderMutationFixture-\(UUID().uuidString)"
+              )
+        else {
+            Darwin.exit(EXIT_FAILURE)
+        }
+        let store = ProviderAccountStore(
+            registryURL: URL(filePath: registryPath),
+            defaults: defaults,
+            legacyAPIKeyPresence: { _ in false }
+        )
+        let home = environment["OMO_USAGE_MUTATION_HOME"].map {
+            URL(filePath: $0, directoryHint: .isDirectory)
+        }
+        let keyStore: ProviderMutationCoordinator.KeyStore = { provider, accountID in
+            guard let home else { return nil }
+            return ProviderAPIKeyStore.live(
+                for: provider,
+                accountID: accountID,
+                home: home,
+                environment: [:]
+            )
+        }
+        let coordinator = ProviderMutationCoordinator(
+            store: store,
+            keyStore: keyStore,
+            afterPhase: { phase in
+                let isRegistryLock = environment["OMO_USAGE_MUTATION_ACTION"]
+                    == "registry" && phase == .intentSynced
+                let isFailpoint = environment["OMO_USAGE_MUTATION_FAILPOINT"]
+                    == phase.rawValue
+                guard isRegistryLock || isFailpoint else { return }
+                writeFixtureEvent(isFailpoint ? phase.rawValue : "acquired")
+                let shouldBlock = isFailpoint
+                    || environment["OMO_USAGE_MUTATION_HOLD"] == "1"
+                guard !shouldBlock
+                    || FileHandle.standardInput.readData(ofLength: 1).count == 1
+                else {
+                    throw CocoaError(.fileReadUnknown)
+                }
+            }
+        )
+        do {
+            switch environment["OMO_USAGE_MUTATION_ACTION"] ?? "registry" {
+            case "add":
+                let accountID = AccountID(
+                    rawValue: "00000000-0000-0000-0000-000000001212"
+                )!
+                writeFixtureEvent("attempting")
+                _ = try coordinator.addAPIKeyAccount(
+                    provider: provider,
+                    accountID: accountID,
+                    label: "Fixture",
+                    key: "provider-mutation-fixture-value"
+                )
+                writeFixtureEvent("completed")
+            case "recover":
+                let result = coordinator.loadOrRecover()
+                let identity = AccountProviderID(
+                    accountID: AccountID(
+                        rawValue: "00000000-0000-0000-0000-000000001212"
+                    )!,
+                    providerID: provider
+                )
+                guard let registry = result.registry,
+                      let secretStore = keyStore(provider, identity.accountID),
+                      registry.apiKeyReferences.contains(identity)
+                          == (secretStore.load() != nil)
+                else {
+                    Darwin.exit(EXIT_FAILURE)
+                }
+                writeFixtureEvent("consistent")
+            default:
+                writeFixtureEvent("attempting")
+                _ = try coordinator.mutateRegistry { registry in
+                    let identity = AccountProviderID(
+                        accountID: .legacy,
+                        providerID: provider
+                    )
+                    return ProviderAccountRegistry(
+                        version: registry.version,
+                        migrationVersion: registry.migrationVersion,
+                        accounts: registry.accounts,
+                        displayOrder: registry.displayOrder,
+                        disconnected: registry.disconnected.contains(identity)
+                            ? registry.disconnected
+                            : registry.disconnected + [identity],
+                        apiKeyReferences: registry.apiKeyReferences
+                    )
+                }
+                writeFixtureEvent("completed")
+            }
+        } catch {
             Darwin.exit(EXIT_FAILURE)
         }
     }

@@ -45,12 +45,12 @@ struct ProviderAccountRegistryControllerTests {
     func failedRegistrySaveRollsBackNewAccountKey() throws {
         let fixture = try ControllerFixture()
         defer { fixture.remove() }
-        let controller = try fixture.makeController()
-        try FileManager.default.removeItem(at: fixture.registryURL)
-        try FileManager.default.createDirectory(at: fixture.registryURL, withIntermediateDirectories: true)
+        let controller = try fixture.makeController(
+            failingAfter: .secretStaged
+        )
         let accountID = fixture.nextAccountIDs[0]
 
-        #expect(throws: (any Error).self) {
+        #expect(throws: ControllerMutationFailure.self) {
             try controller.addAPIKeyAccount(
                 provider: .zai,
                 label: "Team",
@@ -88,6 +88,29 @@ struct ProviderAccountRegistryControllerTests {
                 AccountProviderID(accountID: .legacy, providerID: .opencode)
             )
         }
+    }
+
+    @Test
+    func staleControllersReloadInsideLockWithoutLosingMutations() throws {
+        let fixture = try ControllerFixture()
+        defer { fixture.remove() }
+        let first = try fixture.makeController()
+        let second = try fixture.makeController()
+
+        try first.ensureLegacyAPIKeyReference(for: .openrouter)
+        try second.ensureLegacyAPIKeyReference(for: .zai)
+
+        let persisted = try fixture.store.loadOrMigrate()
+        #expect(
+            persisted.apiKeyReferences.contains(
+                AccountProviderID(accountID: .legacy, providerID: .openrouter)
+            )
+        )
+        #expect(
+            persisted.apiKeyReferences.contains(
+                AccountProviderID(accountID: .legacy, providerID: .zai)
+            )
+        )
     }
 
     @Test
@@ -298,7 +321,8 @@ private final class ControllerFixture {
 
     @MainActor
     func makeController(
-        persistenceEnabled: Bool = true
+        persistenceEnabled: Bool = true,
+        failingAfter phase: ProviderMutationPhase? = nil
     ) throws -> ProviderAccountRegistryController {
         ProviderAccountRegistryController(
             store: store,
@@ -310,6 +334,9 @@ private final class ControllerFixture {
             makeAccountID: { [unowned self] in
                 defer { self.accountIndex += 1 }
                 return self.nextAccountIDs[self.accountIndex]
+            },
+            mutationAfterPhase: { reached in
+                if reached == phase { throw ControllerMutationFailure() }
             }
         )
     }
@@ -332,6 +359,8 @@ private final class ControllerFixture {
         try? FileManager.default.removeItem(at: rootURL)
     }
 }
+
+private struct ControllerMutationFailure: Error {}
 
 private struct CompositionProvider: UsageProvider {
     let id: ProviderID
