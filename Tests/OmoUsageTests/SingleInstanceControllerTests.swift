@@ -50,6 +50,43 @@ struct SingleInstanceControllerTests {
         #expect(try await owner.terminationStatus() == 0)
     }
 
+    @Test
+    func pendingFixtureEventWaitIsCancellationResponsive() async {
+        let events = SingleInstanceFixtureEvents()
+        let waiter = Task {
+            try await events.nextEvent()
+        }
+        waiter.cancel()
+        events.finishOutput()
+        events.terminate(status: 0)
+
+        do {
+            _ = try await waiter.value
+            Issue.record("Cancelled fixture event wait unexpectedly succeeded")
+        } catch is CancellationError {
+        } catch {
+            Issue.record("Cancelled fixture event wait returned \(type(of: error))")
+        }
+    }
+
+    @Test
+    func pendingFixtureTerminationWaitIsCancellationResponsive() async {
+        let events = SingleInstanceFixtureEvents()
+        let waiter = Task {
+            try await events.terminationStatus()
+        }
+        waiter.cancel()
+        events.terminate(status: 0)
+
+        do {
+            _ = try await waiter.value
+            Issue.record("Cancelled fixture termination wait unexpectedly succeeded")
+        } catch is CancellationError {
+        } catch {
+            Issue.record("Cancelled termination wait returned \(type(of: error))")
+        }
+    }
+
     @Test @MainActor
     func productionNamespaceAndLockLocationAreAppSpecific() throws {
         let lockURL = try SingleInstanceController.defaultLockURL(
@@ -179,66 +216,180 @@ private final class SingleInstanceFixtureProcess: @unchecked Sendable {
 }
 
 private final class SingleInstanceFixtureEvents: @unchecked Sendable {
-    private let condition = NSCondition()
+    private struct EventWaiter {
+        let id: UUID
+        let continuation: CheckedContinuation<String, any Error>
+    }
+
+    private struct TerminationWaiter {
+        let id: UUID
+        let continuation: CheckedContinuation<Int32, any Error>
+    }
+
+    private let lock = NSLock()
     private var bufferedData = Data()
     private var lines: [String] = []
     private var status: Int32?
     private var outputFinished = false
+    private var eventWaiter: EventWaiter?
+    private var terminationWaiter: TerminationWaiter?
 
     func receive(_ data: Data) {
-        condition.withLock {
-            bufferedData.append(data)
-            while let newline = bufferedData.firstIndex(of: 0x0A) {
-                let lineData = bufferedData[..<newline]
-                bufferedData.removeSubrange(...newline)
-                if let line = String(data: lineData, encoding: .utf8) {
-                    lines.append(line)
+        let delivery: (CheckedContinuation<String, any Error>, String)? =
+            lock.withLock {
+                bufferedData.append(data)
+                while let newline = bufferedData.firstIndex(of: 0x0A) {
+                    let lineData = bufferedData[..<newline]
+                    bufferedData.removeSubrange(...newline)
+                    if let line = String(data: lineData, encoding: .utf8) {
+                        lines.append(line)
+                    }
                 }
+                guard let eventWaiter, !lines.isEmpty else { return nil }
+                self.eventWaiter = nil
+                return (eventWaiter.continuation, lines.removeFirst())
             }
-            condition.broadcast()
+        if let (continuation, line) = delivery {
+            continuation.resume(returning: line)
         }
     }
 
     func finishOutput() {
-        condition.withLock {
+        let failure: (
+            CheckedContinuation<String, any Error>,
+            SingleInstanceFixtureError
+        )? = lock.withLock {
             outputFinished = true
-            condition.broadcast()
+            guard
+                lines.isEmpty,
+                let status,
+                let eventWaiter
+            else {
+                return nil
+            }
+            self.eventWaiter = nil
+            return (
+                eventWaiter.continuation,
+                .exitedBeforeEvent(status)
+            )
+        }
+        if let (continuation, error) = failure {
+            continuation.resume(throwing: error)
         }
     }
 
     func terminate(status: Int32) {
-        condition.withLock {
+        let deliveries: (
+            event: (
+                CheckedContinuation<String, any Error>,
+                SingleInstanceFixtureError
+            )?,
+            termination: CheckedContinuation<Int32, any Error>?
+        ) = lock.withLock {
             self.status = status
-            condition.broadcast()
+            let eventDelivery: (
+                CheckedContinuation<String, any Error>,
+                SingleInstanceFixtureError
+            )?
+            if outputFinished, lines.isEmpty, let eventWaiter {
+                self.eventWaiter = nil
+                eventDelivery = (
+                    eventWaiter.continuation,
+                    .exitedBeforeEvent(status)
+                )
+            } else {
+                eventDelivery = nil
+            }
+            let terminationDelivery = terminationWaiter?.continuation
+            terminationWaiter = nil
+            return (eventDelivery, terminationDelivery)
         }
+        if let (continuation, error) = deliveries.event {
+            continuation.resume(throwing: error)
+        }
+        deliveries.termination?.resume(returning: status)
     }
 
     func nextEvent() async throws -> String {
-        try await Task.detached {
-            try self.condition.withLock {
-                while true {
-                    if !self.lines.isEmpty {
-                        return self.lines.removeFirst()
+        let id = UUID()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                let result: Result<String, any Error>? = lock.withLock {
+                    if Task.isCancelled {
+                        return .failure(CancellationError())
                     }
-                    if self.outputFinished, let status = self.status {
-                        throw SingleInstanceFixtureError
-                            .exitedBeforeEvent(status)
+                    if !lines.isEmpty {
+                        return .success(lines.removeFirst())
                     }
-                    self.condition.wait()
+                    if outputFinished, let status {
+                        return .failure(
+                            SingleInstanceFixtureError
+                                .exitedBeforeEvent(status)
+                        )
+                    }
+                    precondition(eventWaiter == nil)
+                    eventWaiter = EventWaiter(
+                        id: id,
+                        continuation: continuation
+                    )
+                    return nil
+                }
+                if let result {
+                    continuation.resume(with: result)
                 }
             }
-        }.value
+        } onCancel: {
+            cancelEventWaiter(id: id)
+        }
     }
 
     func terminationStatus() async throws -> Int32 {
-        await Task.detached {
-            self.condition.withLock {
-                while self.status == nil {
-                    self.condition.wait()
+        let id = UUID()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                let result: Result<Int32, any Error>? = lock.withLock {
+                    if Task.isCancelled {
+                        return .failure(CancellationError())
+                    }
+                    if let status {
+                        return .success(status)
+                    }
+                    precondition(terminationWaiter == nil)
+                    terminationWaiter = TerminationWaiter(
+                        id: id,
+                        continuation: continuation
+                    )
+                    return nil
                 }
-                return self.status!
+                if let result {
+                    continuation.resume(with: result)
+                }
             }
-        }.value
+        } onCancel: {
+            cancelTerminationWaiter(id: id)
+        }
+    }
+
+    private func cancelEventWaiter(id: UUID) {
+        let continuation: CheckedContinuation<String, any Error>? =
+            lock.withLock {
+                guard eventWaiter?.id == id else { return nil }
+                let continuation = eventWaiter?.continuation
+                eventWaiter = nil
+                return continuation
+            }
+        continuation?.resume(throwing: CancellationError())
+    }
+
+    private func cancelTerminationWaiter(id: UUID) {
+        let continuation: CheckedContinuation<Int32, any Error>? =
+            lock.withLock {
+                guard terminationWaiter?.id == id else { return nil }
+                let continuation = terminationWaiter?.continuation
+                terminationWaiter = nil
+                return continuation
+            }
+        continuation?.resume(throwing: CancellationError())
     }
 }
 

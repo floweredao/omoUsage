@@ -58,6 +58,10 @@ enum OmoUsageApp {
                 RunLoop.main.run()
                 withExtendedLifetime(singleInstance) {}
             case .contender:
+                guard singleInstance.activationHandoffWasAcknowledged else {
+                    writeFixtureEvent("handoff-timeout")
+                    Darwin.exit(EXIT_FAILURE)
+                }
                 writeFixtureEvent("contender")
             }
         } catch {
