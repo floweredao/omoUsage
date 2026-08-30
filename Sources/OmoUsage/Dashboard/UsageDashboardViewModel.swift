@@ -61,6 +61,10 @@ final class UsageDashboardViewModel {
     @ObservationIgnored
     private let now: @Sendable () -> Date
     @ObservationIgnored
+    private let providerDeadline: TimeInterval
+    @ObservationIgnored
+    private let sleep: @Sendable (TimeInterval) async throws -> Void
+    @ObservationIgnored
     private let persistProviderOrder: ([ProviderID]) -> Void
     @ObservationIgnored
     private let persistAccountProviderOrder: ([AccountProviderID]) -> Void
@@ -134,6 +138,10 @@ final class UsageDashboardViewModel {
         publishControlState: @escaping @MainActor (
             UsageDashboardControlState
         ) -> Void = { _ in },
+        providerDeadline: TimeInterval = 30,
+        sleep: @escaping @Sendable (TimeInterval) async throws -> Void = {
+            try await Task.sleep(for: .seconds($0))
+        },
         now: @escaping @Sendable () -> Date = Date.init
     ) {
         let uniqueProviders = Self.uniqueProviders(providers)
@@ -184,6 +192,8 @@ final class UsageDashboardViewModel {
             persistDisconnectedAccountProviders
         self.publishSnapshot = publishSnapshot
         self.publishControlState = publishControlState
+        self.providerDeadline = providerDeadline
+        self.sleep = sleep
         self.now = now
         snapshot = DashboardSnapshot(providers: [], refreshedAt: now())
         accountConnectionStates = Dictionary(
@@ -445,6 +455,8 @@ final class UsageDashboardViewModel {
             let fetchNow = now()
             let refreshRosterVersion = providerRosterVersion
             let refreshProviders = providers
+            let deadline = providerDeadline
+            let deadlineSleep = sleep
             let results = await withTaskGroup(
                 of: ProviderFetchResult.self,
                 returning: [ProviderFetchResult].self
@@ -454,39 +466,12 @@ final class UsageDashboardViewModel {
                     provider.accountProviderID
                 ) {
                     group.addTask {
-                        do {
-                            let fetched = try await provider.fetch(now: fetchNow)
-                            let usage = fetched
-                                .assigningAccount(
-                                    id: provider.accountID,
-                                    label: provider.accountLabel
-                                )
-                                .recordingRefreshAttempt(at: fetchNow)
-                            return ProviderFetchResult(
-                                id: provider.accountProviderID,
-                                usage: usage.availability == .available
-                                    ? usage
-                                    : nil,
-                                availability: usage.availability
-                            )
-                        } catch is CancellationError {
-                            return ProviderFetchResult(
-                                id: provider.accountProviderID,
-                                usage: nil,
-                                availability: .failed,
-                                wasCancelled: true
-                            )
-                        } catch {
-                            return ProviderFetchResult(
-                                id: provider.accountProviderID,
-                                usage: nil,
-                                availability: Self.availability(for: error),
-                                retainsPreviousUsage:
-                                    Self.retainsPreviousUsage(for: error),
-                                refreshFailure:
-                                    Self.refreshFailure(for: error)
-                            )
-                        }
+                        await Self.fetch(
+                            provider,
+                            now: fetchNow,
+                            deadline: deadline,
+                            sleep: deadlineSleep
+                        )
                     }
                 }
 
@@ -557,6 +542,82 @@ final class UsageDashboardViewModel {
                 accountProviderOrder: accountProviderOrder
             ))
         } while refreshAfterCurrent && !Task.isCancelled
+    }
+
+    nonisolated
+    private static func fetch(
+        _ provider: any UsageProvider,
+        now: Date,
+        deadline: TimeInterval,
+        sleep: @escaping @Sendable (TimeInterval) async throws -> Void
+    ) async -> ProviderFetchResult {
+        let race = ProviderDeadlineRace()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                race.install(continuation)
+                let fetchTask = Task {
+                    let result: ProviderFetchResult
+                    do {
+                        let fetched = try await provider.fetch(now: now)
+                        let usage = fetched
+                            .assigningAccount(
+                                id: provider.accountID,
+                                label: provider.accountLabel
+                            )
+                            .recordingRefreshAttempt(at: now)
+                        result = ProviderFetchResult(
+                            id: provider.accountProviderID,
+                            usage: usage.availability == .available
+                                ? usage
+                                : nil,
+                            availability: usage.availability
+                        )
+                    } catch is CancellationError {
+                        result = ProviderFetchResult(
+                            id: provider.accountProviderID,
+                            usage: nil,
+                            availability: .failed,
+                            wasCancelled: true
+                        )
+                    } catch {
+                        result = ProviderFetchResult(
+                            id: provider.accountProviderID,
+                            usage: nil,
+                            availability: availability(for: error),
+                            retainsPreviousUsage:
+                                retainsPreviousUsage(for: error),
+                            refreshFailure: refreshFailure(for: error)
+                        )
+                    }
+                    race.resolve(result)
+                }
+                let deadlineTask = Task {
+                    do {
+                        try await sleep(max(0, deadline))
+                        race.resolve(ProviderFetchResult(
+                            id: provider.accountProviderID,
+                            usage: nil,
+                            availability: .failed,
+                            retainsPreviousUsage: true,
+                            refreshFailure: .network
+                        ))
+                    } catch {
+                        if !Task.isCancelled {
+                            race.resolve(ProviderFetchResult(
+                                id: provider.accountProviderID,
+                                usage: nil,
+                                availability: .failed,
+                                retainsPreviousUsage: true,
+                                refreshFailure: .network
+                            ))
+                        }
+                    }
+                }
+                race.setTasks(fetch: fetchTask, deadline: deadlineTask)
+            }
+        } onCancel: {
+            race.cancel(id: provider.accountProviderID)
+        }
     }
 
     @discardableResult
@@ -743,4 +804,67 @@ private struct ProviderFetchResult: Sendable {
     var wasCancelled = false
     var retainsPreviousUsage = false
     var refreshFailure: ProviderRefreshFailure?
+}
+
+private final class ProviderDeadlineRace: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<ProviderFetchResult, Never>?
+    private var fetchTask: Task<Void, Never>?
+    private var deadlineTask: Task<Void, Never>?
+    private var result: ProviderFetchResult?
+
+    func install(
+        _ continuation: CheckedContinuation<ProviderFetchResult, Never>
+    ) {
+        let resolved = lock.withLock { () -> ProviderFetchResult? in
+            guard result == nil else { return result }
+            self.continuation = continuation
+            return nil
+        }
+        if let resolved { continuation.resume(returning: resolved) }
+    }
+
+    func setTasks(
+        fetch: Task<Void, Never>,
+        deadline: Task<Void, Never>
+    ) {
+        let shouldCancel = lock.withLock {
+            fetchTask = fetch
+            deadlineTask = deadline
+            return result != nil
+        }
+        if shouldCancel {
+            fetch.cancel()
+            deadline.cancel()
+        }
+    }
+
+    func resolve(_ result: ProviderFetchResult) {
+        let completion = lock.withLock { () -> (
+            CheckedContinuation<ProviderFetchResult, Never>?,
+            Task<Void, Never>?,
+            Task<Void, Never>?
+        )? in
+            guard self.result == nil else { return nil }
+            self.result = result
+            let completion = (continuation, fetchTask, deadlineTask)
+            continuation = nil
+            fetchTask = nil
+            deadlineTask = nil
+            return completion
+        }
+        guard let completion else { return }
+        completion.1?.cancel()
+        completion.2?.cancel()
+        completion.0?.resume(returning: result)
+    }
+
+    func cancel(id: AccountProviderID) {
+        resolve(ProviderFetchResult(
+            id: id,
+            usage: nil,
+            availability: .failed,
+            wasCancelled: true
+        ))
+    }
 }

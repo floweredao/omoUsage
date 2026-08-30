@@ -8,16 +8,20 @@ enum ClaudeCookieDatabase {
         '__cf_bm'
         """
 
-    static func read(at url: URL) throws -> [(String, Data)] {
+    static func read(
+        at url: URL,
+        timeout: TimeInterval = 5
+    ) throws -> [(String, Data)] {
         do {
-            return try readDirectly(at: url)
+            return try readDirectly(at: url, timeout: timeout)
         } catch {
-            return try readWithSystemSQLite(at: url)
+            return try readWithSystemSQLite(at: url, timeout: timeout)
         }
     }
 
     private static func readDirectly(
-        at url: URL
+        at url: URL,
+        timeout: TimeInterval
     ) throws -> [(String, Data)] {
         var database: OpaquePointer?
         guard
@@ -32,6 +36,24 @@ enum ClaudeCookieDatabase {
             throw ClaudeDesktopSessionError.databaseUnavailable
         }
         defer { sqlite3_close(database) }
+        let deadline = ClaudeSQLiteDeadline(timeout: timeout)
+        sqlite3_busy_timeout(
+            database,
+            Int32(max(0, min(timeout * 1_000, Double(Int32.max))))
+        )
+        sqlite3_progress_handler(
+            database,
+            1_000,
+            { context in
+                guard let context else { return 1 }
+                let deadline = Unmanaged<ClaudeSQLiteDeadline>
+                    .fromOpaque(context)
+                    .takeUnretainedValue()
+                return deadline.hasExpired ? 1 : 0
+            },
+            Unmanaged.passUnretained(deadline).toOpaque()
+        )
+        defer { sqlite3_progress_handler(database, 0, nil, nil) }
 
         let query = """
             SELECT name, encrypted_value
@@ -56,7 +78,8 @@ enum ClaudeCookieDatabase {
         defer { sqlite3_finalize(statement) }
 
         var cookies: [(String, Data)] = []
-        while sqlite3_step(statement) == SQLITE_ROW {
+        var status = sqlite3_step(statement)
+        while status == SQLITE_ROW {
             guard
                 let nameBytes = sqlite3_column_text(statement, 0),
                 let encryptedBytes = sqlite3_column_blob(statement, 1)
@@ -70,12 +93,17 @@ enum ClaudeCookieDatabase {
                     Data(bytes: encryptedBytes, count: byteCount)
                 )
             )
+            status = sqlite3_step(statement)
+        }
+        guard status == SQLITE_DONE else {
+            throw ClaudeDesktopSessionError.databaseUnavailable
         }
         return cookies
     }
 
     private static func readWithSystemSQLite(
-        at url: URL
+        at url: URL,
+        timeout: TimeInterval
     ) throws -> [(String, Data)] {
         let query = """
             SELECT name, hex(encrypted_value) AS encryptedHex
@@ -84,18 +112,20 @@ enum ClaudeCookieDatabase {
               AND name IN (\(names))
             ORDER BY name
             """
-        let process = Process()
-        process.executableURL = URL(filePath: "/usr/bin/sqlite3")
-        process.arguments = ["-json", url.path(), query]
-        let standardOutput = Pipe()
-        process.standardOutput = standardOutput
-        process.standardError = FileHandle.nullDevice
-        try process.run()
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else {
+        let result: BoundedProcessResult
+        do {
+            result = try BoundedProcessRunner().run(
+                executable: URL(filePath: "/usr/bin/sqlite3"),
+                arguments: ["-readonly", "-json", url.path(), query],
+                timeout: timeout
+            )
+        } catch {
             throw ClaudeDesktopSessionError.databaseUnavailable
         }
-        let data = standardOutput.fileHandleForReading.readDataToEndOfFile()
+        guard result.status == 0 else {
+            throw ClaudeDesktopSessionError.databaseUnavailable
+        }
+        let data = result.standardOutput
         let rows = try JSONDecoder().decode([CookieRow].self, from: data)
         return try rows.map { row in
             guard let encrypted = Data(hexadecimal: row.encryptedHex) else {
@@ -103,6 +133,18 @@ enum ClaudeCookieDatabase {
             }
             return (row.name, encrypted)
         }
+    }
+}
+
+private final class ClaudeSQLiteDeadline {
+    private let deadline: TimeInterval
+
+    init(timeout: TimeInterval) {
+        deadline = ProcessInfo.processInfo.systemUptime + max(0, timeout)
+    }
+
+    var hasExpired: Bool {
+        ProcessInfo.processInfo.systemUptime >= deadline
     }
 }
 
