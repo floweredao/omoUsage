@@ -4,7 +4,8 @@ struct SideNotchPanelView: View {
     @Bindable var viewModel: UsageDashboardViewModel
     let localization: LocalizationController
     @Bindable var state: SideNotchPanelState
-    let onSelectionChange: (ProviderID?, Bool) -> Void
+    let onSelectionIntent: (SideNotchSelectionIntent, Bool) -> Void
+    let onKeyboardFocusTarget: (AccountProviderID) -> Void
     let onProviderCountChange: (Int) -> Void
     let onPointerEntered: (CGFloat?) -> Void
     let onPointerExited: () -> Void
@@ -26,21 +27,34 @@ struct SideNotchPanelView: View {
                     )
                     .frame(width: SideNotchPanelLayout.hiddenWidth)
                     .frame(maxHeight: .infinity)
-                } else if state.selectedProvider != nil {
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            onSelectionChange(nil, !reduceMotion)
-                        }
-                }
+                } else {
+                    if state.selection != nil {
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                onSelectionIntent(
+                                    .collapse,
+                                    !reduceMotion
+                                )
+                            }
+                    }
 
-                if state.mode != .hidden {
                     HStack(
                         alignment: .top,
                         spacing: SideNotchPanelLayout.detailSpacing
                     ) {
                         if let usage = selectedUsage {
-                            SideNotchDetailView(usage: usage)
+                            SideNotchDetailView(
+                                usage: usage,
+                                showsAccountLabel:
+                                    DashboardAccountIdentityRule.showsAlias(
+                                        for: usage,
+                                        sameProviderCount:
+                                            viewModel.snapshot.providers.count {
+                                                $0.provider == usage.provider
+                                            }
+                                    )
+                            )
                                 .frame(
                                     width:
                                         SideNotchPanelLayout.detailWidth
@@ -54,15 +68,16 @@ struct SideNotchPanelView: View {
 
                         SideNotchRailView(
                             providers: viewModel.snapshot.providers,
-                            selectedProvider: state.selectedProvider,
+                            selectedTarget: state.selectedTarget,
                             isRefreshing: viewModel.isRefreshing,
-                            onSelect: { provider in
-                                let selection =
-                                    state.selectedProvider == provider
-                                        ? nil
-                                        : provider
-                                onSelectionChange(selection, true)
+                            onSelect: { target in
+                                onSelectionIntent(.commit(target), true)
                             },
+                            onHoverTarget: { target in
+                                onSelectionIntent(.hover(target), true)
+                            },
+                            onKeyboardFocusTarget:
+                                onKeyboardFocusTarget,
                             onRefresh: onRefresh,
                             onSettings: onSettings,
                             onQuit: onQuit
@@ -100,26 +115,21 @@ struct SideNotchPanelView: View {
             initial: true
         ) { _, providers in
             onProviderCountChange(providers.count)
-            guard
-                let selectedProvider = state.selectedProvider,
-                !providers.contains(where: {
-                    $0.provider == selectedProvider
-                })
-            else {
-                return
-            }
-            onSelectionChange(nil, false)
+            onSelectionIntent(
+                .reconcile(providers.map(\.accountProviderID)),
+                false
+            )
         }
         .onExitCommand {
-            onSelectionChange(nil, !reduceMotion)
+            onSelectionIntent(.collapse, !reduceMotion)
         }
     }
 
     private func detailTop(in containerHeight: CGFloat) -> CGFloat {
         guard
-            let selectedProvider = state.selectedProvider,
+            let target = state.selectedTarget,
             let index = viewModel.snapshot.providers.firstIndex(
-                where: { $0.provider == selectedProvider }
+                where: { $0.accountProviderID == target }
             )
         else {
             return SideNotchPanelLayout.detailCardMargin
@@ -143,11 +153,11 @@ struct SideNotchPanelView: View {
     }
 
     private var selectedUsage: ProviderUsage? {
-        guard let provider = state.selectedProvider else {
+        guard let target = state.selectedTarget else {
             return nil
         }
         return viewModel.snapshot.providers.first {
-            $0.provider == provider
+            $0.accountProviderID == target
         }
     }
 }
@@ -250,9 +260,11 @@ private struct SideNotchTrackingSurface: NSViewRepresentable {
 
 private struct SideNotchRailView: View {
     let providers: [ProviderUsage]
-    let selectedProvider: ProviderID?
+    let selectedTarget: AccountProviderID?
     let isRefreshing: Bool
-    let onSelect: (ProviderID) -> Void
+    let onSelect: (AccountProviderID) -> Void
+    let onHoverTarget: (AccountProviderID) -> Void
+    let onKeyboardFocusTarget: (AccountProviderID) -> Void
     let onRefresh: () -> Void
     let onSettings: () -> Void
     let onQuit: () -> Void
@@ -263,6 +275,10 @@ private struct SideNotchRailView: View {
     private var reduceMotion
 
     var body: some View {
+        let providerCounts = Dictionary(
+            grouping: providers,
+            by: \.provider
+        ).mapValues(\.count)
         VStack(spacing: 0) {
             if providers.isEmpty {
                 VStack(spacing: 8) {
@@ -277,13 +293,35 @@ private struct SideNotchRailView: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: 0) {
-                        ForEach(providers) { usage in
+                        // Keyed by account AND provider so two accounts on one
+                        // provider are two distinct rows.
+                        ForEach(
+                            providers,
+                            id: \.accountProviderID
+                        ) { usage in
                             SideNotchProviderButton(
                                 usage: usage,
+                                showsAccountLabel:
+                                    DashboardAccountIdentityRule.showsAlias(
+                                        for: usage,
+                                        sameProviderCount: providerCounts[
+                                            usage.provider,
+                                            default: 0
+                                        ]
+                                    ),
                                 isSelected:
-                                    selectedProvider == usage.provider,
+                                    selectedTarget
+                                    == usage.accountProviderID,
                                 action: {
-                                    onSelect(usage.provider)
+                                    onSelect(usage.accountProviderID)
+                                },
+                                onHoverTarget: {
+                                    onHoverTarget(usage.accountProviderID)
+                                },
+                                onKeyboardFocus: {
+                                    onKeyboardFocusTarget(
+                                        usage.accountProviderID
+                                    )
                                 }
                             )
                             .frame(
@@ -323,6 +361,7 @@ private struct SideNotchRailView: View {
                 .accessibilityLabel(localization.text(.settings))
             }
             .frame(height: SideNotchPanelLayout.footerHeight)
+            .padding(.top, SideNotchPanelLayout.footerClearance)
             .overlay(alignment: .top) {
                 Divider()
             }
@@ -413,16 +452,21 @@ private struct SideNotchSpinningRefreshButton: View {
 
 private struct SideNotchProviderButton: View {
     let usage: ProviderUsage
+    let showsAccountLabel: Bool
     let isSelected: Bool
     let action: () -> Void
+    let onHoverTarget: () -> Void
+    let onKeyboardFocus: () -> Void
 
     @Environment(\.appLocalization)
     private var localization
     @Environment(\.accessibilityReduceMotion)
     private var reduceMotion
+    @FocusState private var isKeyboardFocused: Bool
     @State private var isHovered = false
 
     var body: some View {
+        let accountLabel = AccountLabel.sanitized(usage.accountLabel)
         Button(action: action) {
             VStack(spacing: 4) {
                 ZStack {
@@ -454,6 +498,27 @@ private struct SideNotchProviderButton: View {
                             width: SideNotchPanelLayout.providerIconSize,
                             height: SideNotchPanelLayout.providerIconSize
                         )
+
+                    if
+                        showsAccountLabel,
+                        let badge = SideNotchAccountIdentity.badgeText(
+                            for: accountLabel
+                        )
+                    {
+                        Text(badge)
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(.primary)
+                            .frame(width: 14, height: 14)
+                            .background(.regularMaterial, in: Circle())
+                            .overlay {
+                                Circle()
+                                    .stroke(
+                                        Color(nsColor: .separatorColor),
+                                        lineWidth: 0.5
+                                    )
+                            }
+                            .offset(x: 14, y: 14)
+                    }
 
                     if usage.availability == .failed {
                         Image(systemName: "exclamationmark.circle.fill")
@@ -497,16 +562,41 @@ private struct SideNotchProviderButton: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .focusable()
+        .focused($isKeyboardFocused)
         .padding(.horizontal, 6)
+        .onChange(of: isKeyboardFocused) { _, focused in
+            guard focused else { return }
+            onKeyboardFocus()
+        }
+        .onKeyPress(keys: [.return, .space]) { _ in
+            action()
+            return .handled
+        }
         .onHover { hovering in
             withAnimation(
                 reduceMotion ? nil : .easeOut(duration: 0.12)
             ) {
                 isHovered = hovering
             }
+            // Entering a row previews it. Leaving is deliberately not handled
+            // here: the panel-level tracker owns collapse, so crossing the gap
+            // into the detail card keeps the preview open.
+            guard hovering else { return }
+            onHoverTarget()
         }
-        .help(accessibilityValue)
-        .accessibilityLabel(usage.provider.displayName)
+        .help(
+            SideNotchAccountIdentity.accessibleName(
+                providerName: usage.provider.displayName,
+                accountLabel: showsAccountLabel ? accountLabel : nil
+            )
+        )
+        .accessibilityLabel(
+            SideNotchAccountIdentity.accessibleName(
+                providerName: usage.provider.displayName,
+                accountLabel: showsAccountLabel ? accountLabel : nil
+            )
+        )
         .accessibilityValue(accessibilityValue)
         .accessibilityHint(localization.text(.sideNotchShowDetails))
     }
@@ -534,10 +624,14 @@ private struct SideNotchProviderButton: View {
 
 private struct SideNotchDetailView: View {
     let usage: ProviderUsage
+    let showsAccountLabel: Bool
 
     var body: some View {
         ScrollView {
-            ProviderSectionView(usage: usage)
+            ProviderSectionView(
+                usage: usage,
+                showsAccountLabel: showsAccountLabel
+            )
                 .padding(SideNotchPanelLayout.detailContentPadding)
         }
         .scrollIndicators(.hidden)
@@ -560,5 +654,25 @@ private struct SideNotchDetailView: View {
             )
         }
         .shadow(color: .black.opacity(0.16), radius: 10, y: 4)
+    }
+}
+
+enum SideNotchAccountIdentity {
+    static func badgeText(
+        for accountLabel: String
+    ) -> String? {
+        AccountLabel.sanitized(accountLabel)
+            .split(whereSeparator: \.isWhitespace)
+            .last?
+            .first
+            .map { String($0).uppercased() }
+    }
+
+    static func accessibleName(
+        providerName: String,
+        accountLabel: String?
+    ) -> String {
+        guard let accountLabel else { return providerName }
+        return "\(providerName), \(AccountLabel.sanitized(accountLabel))"
     }
 }

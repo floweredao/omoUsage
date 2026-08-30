@@ -2,19 +2,25 @@ import Foundation
 
 struct OpenCodeUsageProvider: UsageProvider {
     let id = ProviderID.opencode
+    let accountID: AccountID
+    let accountLabel: String
     let discovery: CredentialDiscovery
     let http: ProviderHTTP
 
     init(
         discovery: CredentialDiscovery,
-        http: ProviderHTTP = ProviderHTTP()
+        http: ProviderHTTP = ProviderHTTP(),
+        accountID: AccountID = .legacy,
+        accountLabel: String = AccountLabel.defaultValue
     ) {
+        self.accountID = accountID
+        self.accountLabel = accountLabel
         self.discovery = discovery
         self.http = http
     }
 
     func fetch(now: Date) async throws -> ProviderUsage {
-        let credential = try discovery.opencode()
+        let credential = try discovery.opencode(accountID: accountID)
         if credential.accessToken != "local" {
             return try await fetchGoUsage(
                 token: credential.accessToken,

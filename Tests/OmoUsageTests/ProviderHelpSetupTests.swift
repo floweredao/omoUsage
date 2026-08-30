@@ -41,9 +41,7 @@ struct ProviderHelpSetupTests {
                         executable: "codex",
                         arguments: ["login"]
                     ),
-                    fallbackURL: URL(
-                        string: "https://chatgpt.com/codex"
-                    )!
+                    fallbackURL: nil
                 )
         )
         #expect(
@@ -115,16 +113,7 @@ struct ProviderHelpSetupTests {
                 )
         )
         #expect(
-            try descriptor(.opencode).action
-                == .terminal(
-                    TerminalLaunchSpecification(
-                        executable: "opencode",
-                        arguments: [
-                            "auth", "login", "--provider", "opencode-go"
-                        ]
-                    ),
-                    fallbackURL: nil
-                )
+            try descriptor(.opencode).action == .apiKey
         )
         #expect(try descriptor(.openrouter).action == .apiKey)
         #expect(

@@ -1,6 +1,20 @@
 import AppKit
 import SwiftUI
 
+enum SettingsWindowContract {
+    static let styleMask: NSWindow.StyleMask = [
+        .titled,
+        .closable,
+        .resizable
+    ]
+
+    @MainActor
+    static func apply(to window: NSWindow) {
+        window.styleMask = styleMask
+        window.standardWindowButton(.miniaturizeButton)?.isHidden = true
+    }
+}
+
 enum StatusPanelPresentationContract {
     static let usesNativePopover = true
     static let drawsCustomPointer = false
@@ -94,6 +108,7 @@ private final class StatusPopoverWindowObservation: NSObject {
 final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let viewModel: UsageDashboardViewModel
     private let localization: LocalizationController
+    private let accountRegistryController: ProviderAccountRegistryController
     private let snapshotSync: UbiquitousUsageSnapshotStore
     private let webDashboardSnapshotStore: WebDashboardSnapshotStore
     private let webDashboardSettingsStore: WebDashboardSettingsStore
@@ -158,6 +173,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         let sideNotchHideDelay = sideNotchHideDelayStore.load()
         let providerOrder = orderStore.load()
         let disconnectedProviders = disconnectionStore.load()
+        let accountStore = ProviderAccountStore.live(defaults: .standard)
+        let registry: ProviderAccountRegistry
+        let registryPersistenceEnabled: Bool
+        do {
+            registry = try accountStore.loadOrMigrate()
+            registryPersistenceEnabled = true
+        } catch {
+            NSLog(
+                "OmoUsage account registry unavailable (%@)",
+                String(reflecting: type(of: error))
+            )
+            registry = AppAccountCompositionFactory
+                .deterministicLegacyRegistry(
+                    providerOrder: providerOrder,
+                    disconnectedProviders: disconnectedProviders
+                )
+            registryPersistenceEnabled = false
+        }
+        let accountRegistryController = ProviderAccountRegistryController(
+            store: accountStore,
+            registry: registry,
+            persistenceEnabled: registryPersistenceEnabled
+        )
+        let accountComposition = AppAccountCompositionFactory.make(
+            registry: registry
+        )
         let webDashboardSnapshotStore = WebDashboardSnapshotStore(
             DashboardSnapshot(
                 providers: [],
@@ -168,6 +209,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             controlState: UsageDashboardControlState(
                 providerOrder: providerOrder,
                 disconnectedProviders: disconnectedProviders,
+                accountProviderOrder:
+                    accountComposition.accountProviderOrder,
+                disconnectedAccountProviders:
+                    accountComposition.disconnected,
                 isRefreshing: false
             ),
             language: webLanguage
@@ -178,11 +223,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             with: ""
         )
         let viewModel = UsageDashboardViewModel(
-            providers: ProviderFactory.current(),
+            providers: accountComposition.providers,
             providerOrder: providerOrder,
             persistProviderOrder: orderStore.save,
+            accountProviderOrder: accountComposition.accountProviderOrder,
+            persistAccountProviderOrder: { order in
+                do {
+                    try accountRegistryController.saveOrder(order)
+                } catch {
+                    NSLog(
+                        "OmoUsage account order persistence failed (%@)",
+                        String(reflecting: type(of: error))
+                    )
+                }
+            },
             disconnectedProviders: disconnectedProviders,
+            disconnectedAccountProviders: accountComposition.disconnected,
             persistDisconnectedProviders: disconnectionStore.save,
+            persistDisconnectedAccountProviders: { disconnected in
+                do {
+                    try accountRegistryController.saveDisconnected(
+                        disconnected
+                    )
+                } catch {
+                    NSLog(
+                        "OmoUsage account disconnection persistence failed (%@)",
+                        String(reflecting: type(of: error))
+                    )
+                }
+            },
             publishSnapshot: { snapshot in
                 webDashboardSnapshotStore.update(snapshot)
                 do {
@@ -197,7 +266,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             publishControlState: webDashboardSettingsStore.update
         )
         let webDashboardServer = WebDashboardServer(
-            listener: NWWebDashboardListener(port: 7_827),
+            listener: NWWebDashboardListener(
+                port: WebDashboardPortPolicy.resolve(
+                    environment: ProcessInfo.processInfo.environment
+                )
+            ),
             router: WebDashboardRouter(
                 snapshotData: {
                     let language = AppLanguage(
@@ -222,6 +295,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
         self.viewModel = viewModel
         self.localization = localization
+        self.accountRegistryController = accountRegistryController
         self.snapshotSync = snapshotSync
         self.webDashboardSnapshotStore = webDashboardSnapshotStore
         self.webDashboardSettingsStore = webDashboardSettingsStore
@@ -241,7 +315,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     func applicationDidFinishLaunching(
         _ notification: Notification
     ) {
-        NSApp.setActivationPolicy(.accessory)
         configureStatusItem()
         configureStatusPopover()
         if presentationStyle == .sideNotch {
@@ -417,6 +490,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 localization: localization,
                 presentationStyle: presentationStyle,
                 sideNotchHideDelay: sideNotchHideDelay,
+                accountRegistryController: accountRegistryController,
+                onRegistryChange: { [weak self] in
+                    self?.applyAccountRegistryChange()
+                },
                 onLanguageChange: { [weak self] in
                     self?.applyLocalization()
                 },
@@ -430,12 +507,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         )
         let window = NSWindow(contentViewController: controller)
         window.title = localization.text(.settingsTitle)
-        window.styleMask = [
-            .titled,
-            .closable,
-            .miniaturizable,
-            .resizable
-        ]
+        SettingsWindowContract.apply(to: window)
         window.isReleasedWhenClosed = false
         window.setContentSize(NSSize(width: 480, height: 620))
         window.center()
@@ -443,6 +515,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         settingsWindow = window
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func applyAccountRegistryChange() {
+        let composition = AppAccountCompositionFactory.make(
+            registry: accountRegistryController.registry
+        )
+        viewModel.updateProviders(
+            composition.providers,
+            accountProviderOrder: composition.accountProviderOrder,
+            disconnected: composition.disconnected
+        )
+        Task { [weak self] in
+            await self?.viewModel.refresh()
+        }
     }
 
     private func applyLocalization() {
@@ -511,6 +597,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 }
             } else {
                 viewModel.disconnectProvider(provider)
+            }
+        case .setAccountProviderOrder(let order):
+            viewModel.setAccountProviderOrder(order)
+        case .setAccountVisibility(let accountProvider, let isVisible):
+            if isVisible {
+                viewModel.reconnectAccountProvider(accountProvider)
+                Task { [weak self] in
+                    await self?.viewModel.refresh()
+                }
+            } else {
+                viewModel.disconnectAccountProvider(accountProvider)
             }
         case .setWebLanguage(let language):
             webDashboardLanguageStore.save(language)

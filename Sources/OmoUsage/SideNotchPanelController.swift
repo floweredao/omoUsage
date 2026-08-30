@@ -11,6 +11,7 @@ enum SideNotchPanelLayout {
     static let expandedWidth: CGFloat = 344
     static let providerRowHeight: CGFloat = 58
     static let verticalPadding: CGFloat = 14
+    static let footerClearance: CGFloat = 8
     static let footerHeight: CGFloat = 58
     static let detailMaximumHeight: CGFloat = 320
     static let detailContentPadding: CGFloat = 14
@@ -68,6 +69,7 @@ enum SideNotchPanelLayout {
             minimumHeight,
             verticalPadding
                 + CGFloat(providerCount) * providerRowHeight
+                + footerClearance
                 + footerHeight
         )
         let desiredHeight = max(
@@ -119,11 +121,204 @@ enum SideNotchPanelLayout {
 enum SideNotchMotionPolicy {
     static let duration = 0.2
 
+    static func reduceMotionEnabled(
+        systemValue: Bool,
+        environment: [String: String]
+    ) -> Bool {
+        systemValue
+            || (
+                environment["OMO_USAGE_FIXTURE_MODE"] == "1"
+                    && environment[
+                        "OMO_USAGE_REDUCE_MOTION_FIXTURE"
+                    ] == "1"
+            )
+    }
+
     static func shouldAnimate(
         requested: Bool,
         reduceMotion: Bool
     ) -> Bool {
         requested && !reduceMotion
+    }
+
+    static func shouldAnimateSelectionMutation(
+        current: SideNotchSelection?,
+        intent: SideNotchSelectionIntent,
+        requested: Bool,
+        reduceMotion: Bool
+    ) -> Bool {
+        guard shouldAnimate(
+            requested: requested,
+            reduceMotion: reduceMotion
+        ) else {
+            return false
+        }
+
+        switch intent {
+        case .hover:
+            return current == nil
+        case .exitPanel:
+            return current?.kind == .hovered
+        case let .commit(target):
+            guard let current else { return true }
+            return current.kind == .pinned && current.target == target
+        case .collapse:
+            return current != nil
+        case let .reconcile(available):
+            guard let current else { return false }
+            return !available.contains(current.target)
+        }
+    }
+}
+
+/// Whether a side-notch selection is a passive pointer preview or an explicit
+/// commitment. Only a pinned selection may activate the panel.
+enum SideNotchSelectionKind: Equatable, Sendable {
+    case hovered
+    case pinned
+}
+
+struct SideNotchSelection: Equatable, Sendable {
+    let target: AccountProviderID
+    let kind: SideNotchSelectionKind
+}
+
+/// Every way the side-notch selection can change. Keeping these as data makes
+/// the transition table testable without AppKit.
+enum SideNotchSelectionIntent: Equatable, Sendable {
+    /// Pointer entered a rail row.
+    case hover(AccountProviderID)
+    /// Pointer left the whole panel, including the detail card and the gap.
+    case exitPanel
+    /// Click, Return, or Space on a rail row.
+    case commit(AccountProviderID)
+    /// Escape or a click outside the panel.
+    case collapse
+    /// Refresh published a new provider set.
+    case reconcile([AccountProviderID])
+}
+
+/// The side effects a selection is allowed to request from the panel. A hover
+/// preview must never make the panel key or arm the outside-click monitor,
+/// because both steal focus from the frontmost application.
+struct SideNotchActivationPlan: Equatable, Sendable {
+    let makesPanelKey: Bool
+    let startsDismissalMonitor: Bool
+    let startsEscapeMonitor: Bool
+    let activatesApplication: Bool
+}
+
+enum SideNotchActivationPolicy {
+    static func plan(
+        for selection: SideNotchSelection?
+    ) -> SideNotchActivationPlan {
+        switch selection?.kind {
+        case .pinned:
+            SideNotchActivationPlan(
+                makesPanelKey: true,
+                startsDismissalMonitor: true,
+                startsEscapeMonitor: true,
+                activatesApplication: true
+            )
+        case .hovered, nil:
+            SideNotchActivationPlan(
+                makesPanelKey: false,
+                startsDismissalMonitor: false,
+                startsEscapeMonitor: false,
+                activatesApplication: false
+            )
+        }
+    }
+
+    /// The single decision the controller acts on. `nil` means "touch nothing":
+    /// when an intent did not change the selection there must be no expansion
+    /// callback, no reposition, and above all no `makeKey`, because a pinned
+    /// panel re-keying itself on an incidental hover would yank focus back from
+    /// whatever application the user switched to.
+    static func plan(
+        for selection: SideNotchSelection?,
+        selectionChanged: Bool
+    ) -> SideNotchActivationPlan? {
+        guard selectionChanged else { return nil }
+        return plan(for: selection)
+    }
+}
+
+enum SideNotchKeyboardFocusPolicy {
+    static func shouldActivate(
+        target: AccountProviderID,
+        available: [AccountProviderID]
+    ) -> Bool {
+        available.contains(target)
+    }
+}
+
+@MainActor
+protocol SideNotchEscapeMonitoring: AnyObject {
+    func addLocalEscapeMonitor(
+        _ handler: @escaping @MainActor () -> Void
+    ) -> Any?
+
+    func removeMonitor(_ token: Any)
+}
+
+@MainActor
+final class AppKitSideNotchEscapeMonitor: SideNotchEscapeMonitoring {
+    func addLocalEscapeMonitor(
+        _ handler: @escaping @MainActor () -> Void
+    ) -> Any? {
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard event.keyCode == 53 else { return event }
+            Task { @MainActor in
+                handler()
+            }
+            return nil
+        }
+    }
+
+    func removeMonitor(_ token: Any) {
+        NSEvent.removeMonitor(token)
+    }
+}
+
+@MainActor
+final class SideNotchEscapeDismissalController {
+    private let monitor: any SideNotchEscapeMonitoring
+    private var token: Any?
+
+    init(monitor: any SideNotchEscapeMonitoring) {
+        self.monitor = monitor
+    }
+
+    var isMonitoring: Bool {
+        token != nil
+    }
+
+    func start(
+        onDismiss: @escaping @MainActor () -> Void
+    ) {
+        guard !isMonitoring else { return }
+        token = monitor.addLocalEscapeMonitor(onDismiss)
+    }
+
+    func stop() {
+        if let token {
+            monitor.removeMonitor(token)
+        }
+        token = nil
+    }
+}
+
+/// AppKit synthesizes `mouseExited` while a window resizes underneath a
+/// stationary cursor, so a panel-exit report is only trusted when the pointer
+/// really is outside the panel. Without this filter the expand animation
+/// reports its own exit, collapses, re-enters, and oscillates.
+enum SideNotchHoverBoundaryPolicy {
+    static func confirmsExit(
+        pointer: NSPoint,
+        panelFrame: NSRect
+    ) -> Bool {
+        !NSMouseInRect(pointer, panelFrame, false)
     }
 }
 
@@ -148,17 +343,34 @@ enum SideNotchPanelMode: Equatable {
 @MainActor
 final class SideNotchPanelState {
     private(set) var mode: SideNotchPanelMode = .hidden
+    private(set) var selection: SideNotchSelection?
 
     var selectedProvider: ProviderID? {
         mode.selectedProvider
     }
 
+    var selectedTarget: AccountProviderID? {
+        selection?.target
+    }
+
+    var isPinned: Bool {
+        selection?.kind == .pinned
+    }
+
     func transition(to mode: SideNotchPanelMode) {
         self.mode = mode
+        if mode == .hidden {
+            selection = nil
+        }
     }
 
     func toggleRevealed() {
-        mode = mode == .hidden ? .revealed : .hidden
+        if mode == .hidden {
+            mode = .revealed
+        } else {
+            mode = .hidden
+            selection = nil
+        }
     }
 
     func select(_ provider: ProviderID?) {
@@ -166,11 +378,13 @@ final class SideNotchPanelState {
             if selectedProvider != nil {
                 mode = .revealed
             }
+            selection = nil
             return
         }
         mode = selectedProvider == provider
             ? .revealed
             : .detail(provider)
+        selection = nil
     }
 
     func reconcile(providers: [ProviderID]) {
@@ -181,6 +395,50 @@ final class SideNotchPanelState {
             return
         }
         mode = .revealed
+        selection = nil
+    }
+
+    /// Applies an intent and reports whether the selection actually changed.
+    @discardableResult
+    func apply(_ intent: SideNotchSelectionIntent) -> Bool {
+        let previous = selection
+        switch intent {
+        case let .hover(target):
+            // A pinned selection is never overwritten by incidental hover.
+            if !isPinned {
+                selection = SideNotchSelection(
+                    target: target,
+                    kind: .hovered
+                )
+            }
+        case .exitPanel:
+            if !isPinned {
+                selection = nil
+            }
+        case let .commit(target):
+            selection =
+                selection == SideNotchSelection(
+                    target: target,
+                    kind: .pinned
+                )
+                ? nil
+                : SideNotchSelection(target: target, kind: .pinned)
+        case .collapse:
+            selection = nil
+        case let .reconcile(available):
+            if
+                let target = selection?.target,
+                !available.contains(target)
+            {
+                selection = nil
+            }
+        }
+        if selection != previous, mode != .hidden {
+            mode = selection.map {
+                .detail($0.target.providerID)
+            } ?? .revealed
+        }
+        return selection != previous
     }
 }
 
@@ -248,6 +506,10 @@ final class SideNotchPanelController: NSObject {
     private let dismissalController = PopoverDismissalController(
         monitor: AppKitPopoverMouseMonitor()
     )
+    private let escapeDismissalController =
+        SideNotchEscapeDismissalController(
+            monitor: AppKitSideNotchEscapeMonitor()
+        )
     private var providerCount = 0
     private var pointerInside = false
     private var pointerAnchorY: CGFloat?
@@ -293,8 +555,11 @@ final class SideNotchPanelController: NSObject {
                 viewModel: viewModel,
                 localization: localization,
                 state: state,
-                onSelectionChange: { [weak self] provider, animated in
-                    self?.select(provider, animated: animated)
+                onSelectionIntent: { [weak self] intent, animated in
+                    self?.apply(intent, animated: animated)
+                },
+                onKeyboardFocusTarget: { [weak self] target in
+                    self?.prepareForKeyboardInteraction(target)
                 },
                 onProviderCountChange: { [weak self] count in
                     self?.providerCount = count
@@ -385,7 +650,12 @@ final class SideNotchPanelController: NSObject {
 
     func collapse(animated: Bool = true) {
         cancelReveal()
-        transition(to: .revealed, animated: animated)
+        cancelAutoHide()
+        if state.selection != nil {
+            apply(.collapse, animated: animated)
+        } else {
+            transition(to: .revealed, animated: animated)
+        }
         if !pointerInside {
             scheduleAutoHide()
         }
@@ -396,6 +666,8 @@ final class SideNotchPanelController: NSObject {
         cancelAutoHide()
         cancelTransitionCompletion()
         dismissalController.stop()
+        escapeDismissalController.stop()
+        state.apply(.collapse)
         state.transition(to: .hidden)
         onExpansionChange(false)
         panel.orderOut(nil)
@@ -431,6 +703,9 @@ final class SideNotchPanelController: NSObject {
     func pointerExited() {
         pointerInside = false
         cancelReveal()
+        if state.selection?.kind == .hovered {
+            apply(.exitPanel, animated: true)
+        }
         if state.mode == .revealed {
             scheduleAutoHide()
         }
@@ -464,19 +739,114 @@ final class SideNotchPanelController: NSObject {
 
         guard case .detail = nextMode else {
             dismissalController.stop()
+            escapeDismissalController.stop()
             if !pointerInside {
                 scheduleAutoHide()
             }
             return
         }
+    }
 
-        panel.makeKey()
+    private func apply(
+        _ intent: SideNotchSelectionIntent,
+        animated: Bool
+    ) {
+        guard confirmsPointerExit(for: intent) else { return }
+        cancelReveal()
+        cancelAutoHide()
+
+        let reduceMotion = SideNotchMotionPolicy.reduceMotionEnabled(
+            systemValue:
+                NSWorkspace.shared
+                .accessibilityDisplayShouldReduceMotion,
+            environment: ProcessInfo.processInfo.environment
+        )
+        let shouldAnimate = SideNotchMotionPolicy.shouldAnimate(
+            requested: animated,
+            reduceMotion: reduceMotion
+        )
+        let shouldAnimateSelection =
+            SideNotchMotionPolicy.shouldAnimateSelectionMutation(
+                current: state.selection,
+                intent: intent,
+                requested: animated,
+                reduceMotion: reduceMotion
+            )
+        var selectionChanged = false
+        withAnimation(
+            shouldAnimateSelection
+                ? .easeOut(duration: SideNotchMotionPolicy.duration)
+                : nil
+        ) {
+            selectionChanged = state.apply(intent)
+        }
+
+        guard
+            let plan = SideNotchActivationPolicy.plan(
+                for: state.selection,
+                selectionChanged: selectionChanged
+            )
+        else {
+            // No selection change: no expansion callback, no reposition, and
+            // no activation. An incidental hover or a synthetic exit must be
+            // completely inert.
+            return
+        }
+
+        cancelTransitionCompletion()
+        onExpansionChange(state.mode.isPresented)
+        reposition(animated: shouldAnimate)
+        activate(plan)
+        if state.selection == nil, !pointerInside {
+            scheduleAutoHide()
+        }
+    }
+
+    /// Drops panel-exit reports that AppKit emits while the panel resizes
+    /// under a stationary cursor.
+    private func confirmsPointerExit(
+        for intent: SideNotchSelectionIntent
+    ) -> Bool {
+        guard intent == .exitPanel else { return true }
+        return SideNotchHoverBoundaryPolicy.confirmsExit(
+            pointer: NSEvent.mouseLocation,
+            panelFrame: panel.frame
+        )
+    }
+
+    /// The single place that turns a selection into panel side effects. A
+    /// hover preview yields a plan with both flags false, so previewing never
+    /// makes the panel key and never arms the outside-click monitor — which is
+    /// what keeps keyboard focus with the frontmost application.
+    private func activate(_ plan: SideNotchActivationPlan) {
+        if plan.activatesApplication {
+            NSApp.activate(ignoringOtherApps: true)
+        }
+        if plan.startsEscapeMonitor {
+            escapeDismissalController.start { [weak self] in
+                self?.apply(.collapse, animated: true)
+            }
+        } else {
+            escapeDismissalController.stop()
+        }
+
+        guard plan.startsDismissalMonitor else {
+            dismissalController.stop()
+            if plan.makesPanelKey {
+                panel.makeKey()
+            }
+            return
+        }
+
+        if plan.makesPanelKey {
+            panel.makeKey()
+        }
         dismissalController.start(
             isLocalClickOutside: { [weak panel] eventWindow in
                 eventWindow !== panel
             },
             onDismiss: { [weak self] in
-                self?.collapse(animated: true)
+                self?.apply(.collapse, animated: true)
             }
         )
     }
@@ -488,9 +858,12 @@ final class SideNotchPanelController: NSObject {
         let previousMode = state.mode
         let shouldAnimate = SideNotchMotionPolicy.shouldAnimate(
             requested: animated,
-            reduceMotion:
-                NSWorkspace.shared
-                .accessibilityDisplayShouldReduceMotion
+            reduceMotion: SideNotchMotionPolicy.reduceMotionEnabled(
+                systemValue:
+                    NSWorkspace.shared
+                    .accessibilityDisplayShouldReduceMotion,
+                environment: ProcessInfo.processInfo.environment
+            )
         )
         cancelTransitionCompletion()
 
@@ -546,6 +919,10 @@ final class SideNotchPanelController: NSObject {
                 : nil
         ) {
             state.transition(to: mode)
+        }
+        if state.selection == nil {
+            dismissalController.stop()
+            escapeDismissalController.stop()
         }
         onExpansionChange(mode.isPresented)
     }
@@ -632,6 +1009,20 @@ final class SideNotchPanelController: NSObject {
         autoHideTask = nil
     }
 
+    private func prepareForKeyboardInteraction(
+        _ target: AccountProviderID
+    ) {
+        let available = viewModel.snapshot.providers.map(\.accountProviderID)
+        guard SideNotchKeyboardFocusPolicy.shouldActivate(
+            target: target,
+            available: available
+        ) else {
+            return
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        panel.makeKey()
+    }
+
     private func reposition(animated: Bool) {
         reposition(on: nil, animated: animated)
     }
@@ -659,7 +1050,7 @@ final class SideNotchPanelController: NSObject {
             mode: mode,
             anchorY: pointerAnchorY,
             presentedContentMinimumHeight:
-                mode.isPresented
+                mode.selectedProvider != nil
                     ? viewModel.snapshot.providers.map {
                         SideNotchPanelLayout.requiredPanelHeight(
                             for: $0

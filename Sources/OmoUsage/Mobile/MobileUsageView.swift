@@ -82,7 +82,11 @@ struct MobileUsageView: View {
     private func usageContent(
         _ snapshot: DashboardSnapshot
     ) -> some View {
-        ScrollView {
+        let providerCounts = Dictionary(
+            grouping: snapshot.providers,
+            by: \.provider
+        ).mapValues(\.count)
+        return ScrollView {
             LazyVStack(spacing: 12) {
                 HStack(spacing: 6) {
                     Image(systemName: "icloud.fill")
@@ -100,7 +104,17 @@ struct MobileUsageView: View {
                 .accessibilityElement(children: .combine)
 
                 ForEach(snapshot.providers) { usage in
-                    MobileProviderCard(usage: usage)
+                    MobileProviderCard(
+                        usage: usage,
+                        showsAccountLabel:
+                            DashboardAccountIdentityRule.showsAlias(
+                                for: usage,
+                                sameProviderCount: providerCounts[
+                                    usage.provider,
+                                    default: 0
+                                ]
+                            )
+                    )
                 }
             }
             .padding(.horizontal, 16)
@@ -114,6 +128,7 @@ struct MobileUsageView: View {
 
 private struct MobileProviderCard: View {
     let usage: ProviderUsage
+    let showsAccountLabel: Bool
     @Environment(\.appLocalization)
     private var localization
 
@@ -137,6 +152,14 @@ private struct MobileProviderCard: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(usage.provider.displayName)
                         .font(.headline)
+
+                    if showsAccountLabel {
+                        Text(AccountLabel.sanitized(usage.accountLabel))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
 
                     if !usage.planName.isEmpty {
                         Text(usage.planName)

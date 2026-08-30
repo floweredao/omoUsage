@@ -1,3 +1,44 @@
+import Foundation
+
+struct AccountID: RawRepresentable, Hashable, Sendable, Codable {
+    static let legacy = AccountID(
+        rawValue: "00000000-0000-0000-0000-000000000001"
+    )!
+
+    let rawValue: String
+
+    init?(rawValue: String) {
+        guard let uuid = UUID(uuidString: rawValue) else { return nil }
+        self.rawValue = uuid.uuidString.lowercased()
+    }
+
+    init(_ uuid: UUID = UUID()) {
+        rawValue = uuid.uuidString.lowercased()
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let rawValue = try container.decode(String.self)
+        guard let value = AccountID(rawValue: rawValue) else {
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "Invalid account UUID"
+            )
+        }
+        self = value
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
+}
+
+struct AccountProviderID: Hashable, Codable, Sendable {
+    let accountID: AccountID
+    let providerID: ProviderID
+}
+
 enum ProviderID: String, CaseIterable, Codable, Sendable {
     case claude
     case codex

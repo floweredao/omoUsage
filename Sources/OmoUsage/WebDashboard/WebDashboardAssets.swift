@@ -35,6 +35,17 @@ enum WebDashboardAssets {
         )
     }()
 
+    static let providerIconSVGs: [ProviderID: Data] = {
+        Dictionary(
+            uniqueKeysWithValues: ProviderID.allCases.compactMap {
+                provider in
+                providerIconSVG(for: provider).map {
+                    (provider, $0)
+                }
+            }
+        )
+    }()
+
     static func indexHTML(mutationNonce: String) -> Data {
         guard
             let template = String(
@@ -70,6 +81,40 @@ enum WebDashboardAssets {
             mainBundle: .main,
             packageBundle: { nil }
         )
+        #endif
+    }
+
+    private static func providerIconSVG(
+        for provider: ProviderID
+    ) -> Data? {
+        let fileName = "\(provider.rawValue).svg"
+        let packaged = Bundle.main.resourceURL?
+            .appending(
+                path: "ProviderIcons",
+                directoryHint: .isDirectory
+            )
+            .appending(path: fileName)
+        if
+            let packaged,
+            FileManager.default.fileExists(atPath: packaged.path)
+        {
+            return try? Data(contentsOf: packaged)
+        }
+        guard Bundle.main.bundleURL.pathExtension != "app" else {
+            return nil
+        }
+        #if SWIFT_PACKAGE
+        guard
+            let url = Bundle.module.url(
+                forResource: provider.rawValue,
+                withExtension: "svg"
+            )
+        else {
+            return nil
+        }
+        return try? Data(contentsOf: url)
+        #else
+        return nil
         #endif
     }
 

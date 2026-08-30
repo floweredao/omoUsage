@@ -57,12 +57,117 @@ enum ProviderAvailability: String, Equatable, Codable, Sendable {
     }
 }
 
+enum AccountLabel {
+    static let defaultValue = "Default Account"
+    static let maximumLength = 128
+
+    static func sanitized(_ rawValue: String?) -> String {
+        guard let rawValue else { return defaultValue }
+        let value = rawValue.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+        guard
+            !value.isEmpty,
+            value.count <= maximumLength,
+            !value.contains("@"),
+            !value.contains("/"),
+            !value.contains("\\"),
+            !value.hasPrefix("~")
+        else {
+            return defaultValue
+        }
+        return value
+    }
+}
+
+enum DashboardAccountIdentityRule {
+    static func showsAlias(
+        for usage: ProviderUsage,
+        sameProviderCount: Int
+    ) -> Bool {
+        usage.accountID != .legacy || sameProviderCount > 1
+    }
+}
+
 struct ProviderUsage: Identifiable, Equatable, Codable, Sendable {
-    var id: ProviderID { provider }
+    var id: AccountProviderID { accountProviderID }
+    var accountProviderID: AccountProviderID {
+        AccountProviderID(accountID: accountID, providerID: provider)
+    }
 
     let provider: ProviderID
+    let accountID: AccountID
+    let accountLabel: String
     let planName: String
     let groups: [UsageGroup]
     let availability: ProviderAvailability
     let updatedAt: Date?
+
+    init(
+        provider: ProviderID,
+        accountID: AccountID = .legacy,
+        accountLabel: String = AccountLabel.defaultValue,
+        planName: String,
+        groups: [UsageGroup],
+        availability: ProviderAvailability,
+        updatedAt: Date?
+    ) {
+        self.provider = provider
+        self.accountID = accountID
+        self.accountLabel = AccountLabel.sanitized(accountLabel)
+        self.planName = planName
+        self.groups = groups
+        self.availability = availability
+        self.updatedAt = updatedAt
+    }
+
+    func assigningAccount(
+        id accountID: AccountID,
+        label accountLabel: String
+    ) -> ProviderUsage {
+        ProviderUsage(
+            provider: provider,
+            accountID: accountID,
+            accountLabel: accountLabel,
+            planName: planName,
+            groups: groups,
+            availability: availability,
+            updatedAt: updatedAt
+        )
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case provider
+        case accountID
+        case accountLabel
+        case planName
+        case groups
+        case availability
+        case updatedAt
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        provider = try container.decode(ProviderID.self, forKey: .provider)
+        accountID = try container.decodeIfPresent(
+            AccountID.self,
+            forKey: .accountID
+        ) ?? .legacy
+        accountLabel = AccountLabel.sanitized(
+            try container.decodeIfPresent(
+                String.self,
+                forKey: .accountLabel
+            )
+        )
+        planName = try container.decode(String.self, forKey: .planName)
+        groups = try container.decode([UsageGroup].self, forKey: .groups)
+        availability = try container.decode(
+            ProviderAvailability.self,
+            forKey: .availability
+        )
+        updatedAt = try container.decodeIfPresent(
+            Date.self,
+            forKey: .updatedAt
+        )
+    }
 }

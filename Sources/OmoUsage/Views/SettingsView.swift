@@ -4,12 +4,19 @@ import SwiftUI
 struct SettingsView: View {
     @Bindable var viewModel: UsageDashboardViewModel
     let localization: LocalizationController
+    @Bindable var accountRegistryController: ProviderAccountRegistryController
+    let onRegistryChange: () -> Void
     let onLanguageChange: () -> Void
     let onPresentationStyleChange: (DashboardPresentationStyle) -> Void
     let onSideNotchHideDelayChange: (SideNotchHideDelay) -> Void
     @State private var keyDrafts: [ProviderID: String] = [:]
+    @State private var newAccountProvider = ProviderID.openrouter
+    @State private var newAccountLabel = ""
+    @State private var newAccountKey = ""
     @State private var feedback: LocalizedText?
     @State private var setupError: ProviderSetupError?
+    @State private var connectionCoordinator =
+        ProviderConnectionCoordinator()
     @State private var launchAtLogin = LaunchAtLoginController()
     @State private var codexPlanMultiplier = CodexPlanMultiplierStore(
         defaults: .standard
@@ -22,6 +29,8 @@ struct SettingsView: View {
         localization: LocalizationController,
         presentationStyle: DashboardPresentationStyle,
         sideNotchHideDelay: SideNotchHideDelay,
+        accountRegistryController: ProviderAccountRegistryController,
+        onRegistryChange: @escaping () -> Void,
         onLanguageChange: @escaping () -> Void,
         onPresentationStyleChange:
             @escaping (DashboardPresentationStyle) -> Void,
@@ -30,6 +39,8 @@ struct SettingsView: View {
     ) {
         self.viewModel = viewModel
         self.localization = localization
+        self.accountRegistryController = accountRegistryController
+        self.onRegistryChange = onRegistryChange
         self.onLanguageChange = onLanguageChange
         self.onPresentationStyleChange = onPresentationStyleChange
         self.onSideNotchHideDelayChange =
@@ -180,6 +191,9 @@ struct SettingsView: View {
                         controller: launchAtLogin
                     )
 
+                    ProviderOrderingView(viewModel: viewModel)
+                        .padding(.top, 4)
+
                     Text(localization.text(.providerAuthentication))
                         .font(.system(size: 14, weight: .bold))
                         .frame(
@@ -188,17 +202,15 @@ struct SettingsView: View {
                         )
                         .padding(.top, 4)
 
-                    ForEach(
-                        Array(viewModel.providerOrder.enumerated()),
-                        id: \.element
-                    ) {
-                        index,
+                    ForEach(viewModel.providerOrder, id: \.self) {
                         provider in
                         ProviderSettingsRow(
                             provider: provider,
                             availability: viewModel.connectionStates[
                                 provider
                             ],
+                            connectionPresentation:
+                                connectionCoordinator.state(for: provider),
                             keyDraft: binding(for: provider),
                             onSetup: {
                                 startConnection(for: provider)
@@ -216,21 +228,22 @@ struct SettingsView: View {
                             onRetry: {
                                 Task { await viewModel.refresh() }
                             },
-                            canMoveUp: index > 0,
-                            canMoveDown:
-                                index < viewModel.providerOrder.count - 1,
                             codexPlanMultiplier:
                                 provider == .codex
                                     ? $codexPlanMultiplier
-                                    : nil,
-                            onMoveUp: {
-                                viewModel.moveProvider(provider, by: -1)
-                            },
-                            onMoveDown: {
-                                viewModel.moveProvider(provider, by: 1)
-                            }
+                                    : nil
                         )
                     }
+
+                    APIKeyAccountsSection(
+                        accounts: accountRegistryController.apiKeyAccounts,
+                        provider: $newAccountProvider,
+                        label: $newAccountLabel,
+                        key: $newAccountKey,
+                        onAdd: addAPIKeyAccount,
+                        onRemove: removeAPIKeyAccount
+                    )
+                    .padding(.top, 4)
                 }
                 .padding(.vertical, 2)
             }
@@ -242,7 +255,7 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button(localization.text(.reconnect)) {
+                Button(localization.text(.refresh)) {
                     Task { await viewModel.refresh() }
                 }
                 .buttonStyle(.borderedProminent)
@@ -267,7 +280,14 @@ struct SettingsView: View {
             )
         ) { _ in
             launchAtLogin.refresh()
-            Task { await viewModel.refresh() }
+            Task {
+                await connectionCoordinator.applicationDidBecomeActive(
+                    refresh: viewModel.refresh,
+                    availability: { provider in
+                        viewModel.connectionStates[provider]
+                    }
+                )
+            }
         }
         .alert(item: $setupError) { error in
             Alert(
@@ -298,18 +318,17 @@ struct SettingsView: View {
     }
 
     private func startConnection(for provider: ProviderID) {
-        switch ProviderSetup.perform(for: provider) {
+        let result = ProviderSetup.perform(for: provider)
+        connectionCoordinator.record(result, for: provider)
+        switch result {
         case .success(.launched):
-            feedback = .formatted(
-                .openedConnection,
-                provider.displayName
-            )
+            feedback = .key(.waitingForCompanionCredentials)
         case .success(.openedFallback):
-            feedback = .formatted(
-                .openedOfficialAuthentication,
-                provider.displayName
-            )
+            feedback = .key(.companionRequired)
         case .failure(let error):
+            if case .companionRequired = error {
+                feedback = .key(.companionRequired)
+            }
             setupError = error
         }
     }
@@ -326,27 +345,22 @@ struct SettingsView: View {
         ProviderConnectionControl.performReconnect(
             provider: provider,
             reenable: viewModel.reconnectProvider,
-            startConnection: startConnection,
-            refresh: viewModel.refresh
-        )
-        feedback = .formatted(
-            .reconnectedProvider,
-            provider.displayName
+            startConnection: startConnection
         )
     }
 
     private func saveKey(for provider: ProviderID) {
-        guard let store = ProviderAPIKeyStore.live(for: provider) else {
-            return
-        }
         do {
-            try store.save(keyDrafts[provider, default: ""])
+            try accountRegistryController.saveLegacyAPIKey(
+                provider: provider,
+                key: keyDrafts[provider, default: ""]
+            )
             keyDrafts[provider] = ""
             feedback = .formatted(
                 .savedKey,
                 provider.displayName
             )
-            Task { await viewModel.refresh() }
+            onRegistryChange()
         } catch {
             feedback = .key(.saveKeyFailed)
         }
@@ -357,16 +371,172 @@ struct SettingsView: View {
             return
         }
         do {
-            try store.remove()
+            try accountRegistryController.removeLegacyAPIKeyReference(
+                for: provider
+            )
+            do {
+                try store.remove()
+            } catch {
+                try? accountRegistryController.ensureLegacyAPIKeyReference(
+                    for: provider
+                )
+                throw error
+            }
             keyDrafts[provider] = ""
             feedback = .formatted(
                 .removedKey,
                 provider.displayName
             )
-            Task { await viewModel.refresh() }
+            onRegistryChange()
         } catch {
             feedback = .key(.removeKeyFailed)
         }
+    }
+
+    private func addAPIKeyAccount() {
+        do {
+            let identity = try accountRegistryController.addAPIKeyAccount(
+                provider: newAccountProvider,
+                label: newAccountLabel,
+                key: newAccountKey
+            )
+            let label = accountRegistryController.apiKeyAccounts.first {
+                $0.id == identity
+            }?.label ?? AccountLabel.defaultValue
+            newAccountLabel = ""
+            newAccountKey = ""
+            feedback = .formatted(.addedAccount, label)
+            onRegistryChange()
+        } catch {
+            feedback = .key(.accountChangeFailed)
+        }
+    }
+
+    private func removeAPIKeyAccount(_ identity: AccountProviderID) {
+        let label = accountRegistryController.apiKeyAccounts.first {
+            $0.id == identity
+        }?.label ?? AccountLabel.defaultValue
+        do {
+            try accountRegistryController.removeAPIKeyAccount(identity)
+            feedback = .formatted(.removedAccount, label)
+            onRegistryChange()
+        } catch {
+            feedback = .key(.accountChangeFailed)
+        }
+    }
+}
+
+private struct APIKeyAccountsSection: View {
+    let accounts: [ProviderAPIKeyAccountMetadata]
+    @Binding var provider: ProviderID
+    @Binding var label: String
+    @Binding var key: String
+    let onAdd: () -> Void
+    let onRemove: (AccountProviderID) -> Void
+    @Environment(\.appLocalization) private var localization
+
+    private let supportedProviders: [ProviderID] = [
+        .opencode, .openrouter, .zai
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(localization.text(.apiKeyAccounts))
+                .font(.system(size: 14, weight: .bold))
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Picker(
+                        localization.text(.accountProvider),
+                        selection: $provider
+                    ) {
+                        ForEach(supportedProviders, id: \.self) {
+                            Text($0.displayName).tag($0)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 132)
+
+                    TextField(
+                        localization.text(.accountAlias),
+                        text: $label
+                    )
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityLabel(
+                        localization.text(.accountAlias)
+                    )
+                }
+
+                HStack(spacing: 8) {
+                    SecureField(
+                        localization.text(.apiKey),
+                        text: $key
+                    )
+                    .textFieldStyle(.roundedBorder)
+                    Button(localization.text(.addAccount), action: onAdd)
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                        .disabled(!canAdd)
+                }
+            }
+            .padding(10)
+            .background(
+                Color(nsColor: .controlBackgroundColor),
+                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(SettingsRowVisualTokens.border, lineWidth: 0.5)
+            }
+
+            ForEach(accounts) { account in
+                HStack(spacing: 10) {
+                    ProviderIcon(provider: account.provider)
+                        .frame(width: 24, height: 24)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(account.provider.displayName)
+                            .font(.system(size: 13.5, weight: .semibold))
+                        Text(account.label)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 8)
+                    Button {
+                        onRemove(account.id)
+                    } label: {
+                        Text(localization.text(.delete))
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .tint(.red)
+                    .accessibilityLabel(
+                        localization.format(.removeAccount, account.label)
+                    )
+                }
+                .padding(10)
+                .background(
+                    Color(nsColor: .controlBackgroundColor),
+                    in: RoundedRectangle(
+                        cornerRadius: 10,
+                        style: .continuous
+                    )
+                )
+                .overlay {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(
+                            SettingsRowVisualTokens.border,
+                            lineWidth: 0.5
+                        )
+                }
+            }
+        }
+    }
+
+    private var canAdd: Bool {
+        !label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 }
 
@@ -460,18 +630,13 @@ enum ProviderConnectionControl: Equatable, Hashable {
     case retry
 
     @MainActor
-    @discardableResult
     static func performReconnect(
         provider: ProviderID,
-        reenable: @escaping (ProviderID) -> Void,
-        startConnection: @escaping (ProviderID) -> Void,
-        refresh: @escaping () async -> Void
-    ) -> Task<Void, Never> {
+        reenable: (ProviderID) -> Void,
+        startConnection: (ProviderID) -> Void
+    ) {
         reenable(provider)
         startConnection(provider)
-        return Task {
-            await refresh()
-        }
     }
 
     static func resolve(
@@ -495,6 +660,7 @@ enum ProviderConnectionControl: Equatable, Hashable {
 private struct ProviderSettingsRow: View {
     let provider: ProviderID
     let availability: ProviderAvailability?
+    let connectionPresentation: ProviderConnectionPresentationState?
     @Binding var keyDraft: String
     let onSetup: () -> Void
     let onSave: () -> Void
@@ -503,11 +669,7 @@ private struct ProviderSettingsRow: View {
     let onDisconnect: () -> Void
     let onReconnect: () -> Void
     let onRetry: () -> Void
-    let canMoveUp: Bool
-    let canMoveDown: Bool
     let codexPlanMultiplier: Binding<CodexPlanMultiplier>?
-    let onMoveUp: () -> Void
-    let onMoveDown: () -> Void
 
     @State private var isHovered = false
     @State private var isHelpPresented = false
@@ -522,27 +684,10 @@ private struct ProviderSettingsRow: View {
                 Text(provider.displayName)
                     .font(.system(size: 13.5, weight: .semibold))
                 Spacer()
-                ConnectionBadge(availability: availability)
-                HStack(spacing: 2) {
-                    moveButton(
-                        symbol: "chevron.up",
-                        label: localization.format(
-                            .moveUp,
-                            provider.displayName
-                        ),
-                        isEnabled: canMoveUp,
-                        action: onMoveUp
-                    )
-                    moveButton(
-                        symbol: "chevron.down",
-                        label: localization.format(
-                            .moveDown,
-                            provider.displayName
-                        ),
-                        isEnabled: canMoveDown,
-                        action: onMoveDown
-                    )
-                }
+                ConnectionBadge(
+                    availability: availability,
+                    presentation: connectionPresentation
+                )
                 Button {
                     isHelpPresented = true
                 } label: {
@@ -677,21 +822,6 @@ private struct ProviderSettingsRow: View {
         ProviderSetup.descriptor(for: provider)!
     }
 
-    private func moveButton(
-        symbol: String,
-        label: String,
-        isEnabled: Bool,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-        }
-        .buttonStyle(.borderless)
-        .controlSize(.small)
-        .disabled(!isEnabled)
-        .accessibilityLabel(label)
-        .help(label)
-    }
 }
 
 private struct ProviderHelpPopover: View {
@@ -748,6 +878,7 @@ private struct ProviderHelpPopover: View {
 
 private struct ConnectionBadge: View {
     let availability: ProviderAvailability?
+    let presentation: ProviderConnectionPresentationState?
     @Environment(\.appLocalization)
     private var localization
 
@@ -763,21 +894,33 @@ private struct ConnectionBadge: View {
     }
 
     private var label: String {
-        switch availability {
-        case .available: localization.text(.connected)
-        case .failed: localization.text(.checkFailed)
-        case .authenticationRequired, .unavailable:
-            localization.text(.notConnected)
-        case nil: localization.text(.checking)
+        switch presentation {
+        case .companionRequired:
+            localization.text(.companionRequired)
+        case .waitingForCredential:
+            localization.text(.waitingForCompanionCredentials)
+        case .authenticated, .failed, nil:
+            switch availability {
+            case .available: localization.text(.connected)
+            case .failed: localization.text(.checkFailed)
+            case .authenticationRequired, .unavailable:
+                localization.text(.notConnected)
+            case nil: localization.text(.checking)
+            }
         }
     }
 
     private var color: Color {
-        switch availability {
-        case .available: .green
-        case .failed: .orange
-        case .authenticationRequired, .unavailable: .secondary
-        case nil: .secondary.opacity(0.6)
+        switch presentation {
+        case .companionRequired, .waitingForCredential:
+            .secondary
+        case .authenticated, .failed, nil:
+            switch availability {
+            case .available: .green
+            case .failed: .orange
+            case .authenticationRequired, .unavailable: .secondary
+            case nil: .secondary.opacity(0.6)
+            }
         }
     }
 }

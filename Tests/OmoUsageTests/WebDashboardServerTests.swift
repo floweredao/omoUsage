@@ -72,6 +72,9 @@ struct WebDashboardServerTests {
             Set(object.keys) == [
                 "providerOrder",
                 "disconnectedProviders",
+                "accountProviderOrder",
+                "accountProviderLabels",
+                "disconnectedAccountProviders",
                 "webLanguage",
                 "isRefreshing",
                 "refreshRevision"
@@ -95,6 +98,100 @@ struct WebDashboardServerTests {
         #expect(!body.localizedCaseInsensitiveContains("credential"))
         #expect(!body.localizedCaseInsensitiveContains("apiKey"))
         #expect(!body.contains("/Users/"))
+    }
+
+    @Test
+    @MainActor
+    func settingsEndpointPublishesTwoSameProviderAccountIdentities() throws {
+        // Given
+        let accountA = AccountID(
+            rawValue: "00000000-0000-0000-0000-00000000000a"
+        )!
+        let accountB = AccountID(
+            rawValue: "00000000-0000-0000-0000-00000000000b"
+        )!
+        var published: [UsageDashboardControlState] = []
+        _ = UsageDashboardViewModel(
+            providers: [
+                FixtureUsageProvider(
+                    id: .openrouter,
+                    accountID: accountA,
+                    accountLabel: "Team A"
+                ),
+                FixtureUsageProvider(
+                    id: .openrouter,
+                    accountID: accountB,
+                    accountLabel: "Team B"
+                )
+            ],
+            publishControlState: { published.append($0) }
+        )
+        let controlState = try #require(published.last)
+        let store = WebDashboardSettingsStore(
+            controlState: controlState,
+            language: .english
+        )
+
+        // When
+        let object = try #require(
+            JSONSerialization.jsonObject(with: store.encoded())
+                as? [String: Any]
+        )
+
+        // Then
+        let accountOrder = try #require(
+            object["accountProviderOrder"] as? [[String: String]]
+        )
+        #expect(accountOrder == [
+            ["accountID": accountA.rawValue, "providerID": "openrouter"],
+            ["accountID": accountB.rawValue, "providerID": "openrouter"]
+        ])
+        #expect(
+            object["disconnectedAccountProviders"] as? [[String: String]]
+                == []
+        )
+    }
+
+    @Test
+    func settingsEndpointKeepsLabelsForHiddenAccounts() throws {
+        let accountA = AccountID(
+            rawValue: "00000000-0000-0000-0000-00000000000a"
+        )!
+        let accountB = AccountID(
+            rawValue: "00000000-0000-0000-0000-00000000000b"
+        )!
+        let identityA = AccountProviderID(
+            accountID: accountA,
+            providerID: .openrouter
+        )
+        let identityB = AccountProviderID(
+            accountID: accountB,
+            providerID: .openrouter
+        )
+        let store = WebDashboardSettingsStore(
+            controlState: UsageDashboardControlState(
+                providerOrder: [.openrouter],
+                disconnectedProviders: [.openrouter],
+                accountProviderOrder: [identityA, identityB],
+                accountProviderLabels: [
+                    identityA: "QA Team",
+                    identityB: "QA Personal"
+                ],
+                disconnectedAccountProviders: [identityA, identityB],
+                isRefreshing: false
+            ),
+            language: .english
+        )
+
+        let object = try #require(
+            JSONSerialization.jsonObject(with: store.encoded())
+                as? [String: Any]
+        )
+
+        #expect(
+            object["accountProviderLabels"] as? [String]
+                == ["QA Team", "QA Personal"]
+        )
     }
 
     @Test
@@ -236,6 +333,205 @@ struct WebDashboardServerTests {
             String(describing: recorder.commands.last)
                 .contains("setWebLanguage")
         )
+    }
+
+    @Test
+    func accountCommandsRequireNonceAndValidateConfiguredRoster() throws {
+        // Given
+        let accountA = AccountID(
+            rawValue: "00000000-0000-0000-0000-00000000000a"
+        )!
+        let accountB = AccountID(
+            rawValue: "00000000-0000-0000-0000-00000000000b"
+        )!
+        let accountAJSON = accountIdentityJSON(accountA)
+        let accountBJSON = accountIdentityJSON(accountB)
+        let recorder = WebDashboardCommandRecorder()
+        let settings = Data(
+            """
+            {
+              "providerOrder": ["openrouter"],
+              "disconnectedProviders": [],
+              "accountProviderOrder": [\(accountAJSON), \(accountBJSON)],
+              "accountProviderLabels": ["QA Team", "QA Personal"],
+              "disconnectedAccountProviders": [],
+              "webLanguage": "english",
+              "isRefreshing": false,
+              "refreshRevision": 0
+            }
+            """.utf8
+        )
+        let router = WebDashboardRouter(
+            snapshotData: { Data() },
+            settingsData: { settings },
+            indexHTML: Data(),
+            appIconSVG: Data(),
+            mutationNonce: "correct-nonce",
+            dispatchCommand: recorder.record
+        )
+        let headers = [
+            "content-type": "application/json",
+            "x-omo-csrf": "correct-nonce"
+        ]
+
+        // When
+        let orderResponse = router.response(
+            request: WebDashboardHTTPRequest(
+                method: "POST",
+                path: "/api/settings",
+                headers: headers,
+                body: Data(
+                    "{\"accountProviderOrder\":[\(accountBJSON),\(accountAJSON)]}"
+                        .utf8
+                )
+            )
+        )
+        let visibilityResponse = router.response(
+            request: WebDashboardHTTPRequest(
+                method: "POST",
+                path: "/api/settings",
+                headers: headers,
+                body: Data(
+                    "{\"accountProvider\":\(accountAJSON),\"visible\":false}"
+                        .utf8
+                )
+            )
+        )
+
+        // Then
+        #expect(orderResponse.statusCode == 202)
+        #expect(visibilityResponse.statusCode == 202)
+        let commands = try #require(
+            recorder.commands.count == 2 ? recorder.commands : nil
+        )
+        #expect(commands == [
+            .setAccountProviderOrder([
+                AccountProviderID(accountID: accountB, providerID: .openrouter),
+                AccountProviderID(accountID: accountA, providerID: .openrouter)
+            ]),
+            .setAccountVisibility(
+                accountProvider: AccountProviderID(
+                    accountID: accountA,
+                    providerID: .openrouter
+                ),
+                isVisible: false
+            )
+        ])
+    }
+
+    @Test
+    func rejectsDuplicateMalformedAndUnknownAccountCommands() {
+        // Given
+        let accountA = AccountID(
+            rawValue: "00000000-0000-0000-0000-00000000000a"
+        )!
+        let accountB = AccountID(
+            rawValue: "00000000-0000-0000-0000-00000000000b"
+        )!
+        let accountAJSON = accountIdentityJSON(accountA)
+        let accountBJSON = accountIdentityJSON(accountB)
+        let recorder = WebDashboardCommandRecorder()
+        let settings = Data(
+            """
+            {
+              "providerOrder": ["openrouter"],
+              "disconnectedProviders": [],
+              "accountProviderOrder": [\(accountAJSON), \(accountBJSON)],
+              "disconnectedAccountProviders": [],
+              "webLanguage": "english",
+              "isRefreshing": false,
+              "refreshRevision": 0
+            }
+            """.utf8
+        )
+        let router = WebDashboardRouter(
+            snapshotData: { Data() },
+            settingsData: { settings },
+            indexHTML: Data(),
+            appIconSVG: Data(),
+            mutationNonce: "correct-nonce",
+            dispatchCommand: recorder.record
+        )
+        let headers = [
+            "content-type": "application/json",
+            "x-omo-csrf": "correct-nonce"
+        ]
+        let payloads = [
+            "{\"accountProviderOrder\":[\(accountAJSON),\(accountAJSON)]}",
+            "{\"accountProviderOrder\":[{\"accountID\":\"bad\",\"providerID\":\"openrouter\"},\(accountBJSON)]}",
+            "{\"accountProviderOrder\":[{\"accountID\":\"00000000-0000-0000-0000-00000000000a\",\"providerID\":\"unknown\"},\(accountBJSON)]}",
+            "{\"accountProvider\":{\"accountID\":\"00000000-0000-0000-0000-00000000000c\",\"providerID\":\"openrouter\"},\"visible\":false}",
+            "{\"accountProvider\":\(accountAJSON),\"visible\":1}"
+        ]
+
+        // When
+        let responses = payloads.map { payload in
+            router.response(
+                request: WebDashboardHTTPRequest(
+                    method: "POST",
+                    path: "/api/settings",
+                    headers: headers,
+                    body: Data(payload.utf8)
+                )
+            )
+        }
+
+        // Then
+        #expect(responses.allSatisfy { $0.statusCode == 400 })
+        #expect(recorder.commands.isEmpty)
+    }
+
+    @Test
+    func snapshotEndpointPreservesSanitizedSameProviderAccountRows() throws {
+        // Given
+        let accountA = AccountID(
+            rawValue: "00000000-0000-0000-0000-00000000000a"
+        )!
+        let accountB = AccountID(
+            rawValue: "00000000-0000-0000-0000-00000000000b"
+        )!
+        let snapshot = DashboardSnapshot(
+            providers: [
+                ProviderUsage(
+                    provider: .openrouter,
+                    accountID: accountA,
+                    accountLabel: "Team A",
+                    planName: "Pro",
+                    groups: [],
+                    availability: .available,
+                    updatedAt: refreshedAt
+                ),
+                ProviderUsage(
+                    provider: .openrouter,
+                    accountID: accountB,
+                    accountLabel: "person@example.com",
+                    planName: "Pro",
+                    groups: [],
+                    availability: .available,
+                    updatedAt: refreshedAt
+                )
+            ],
+            refreshedAt: refreshedAt
+        )
+        let data = try UsageSnapshotCodec.encode(snapshot)
+        let router = WebDashboardRouter(
+            snapshotData: { data },
+            indexHTML: Data()
+        )
+
+        // When
+        let response = router.response(method: "GET", path: "/api/snapshot")
+        let decoded = try UsageSnapshotCodec.decode(response.body)
+
+        // Then
+        #expect(decoded.providers.map(\.accountProviderID) == [
+            AccountProviderID(accountID: accountA, providerID: .openrouter),
+            AccountProviderID(accountID: accountB, providerID: .openrouter)
+        ])
+        #expect(decoded.providers.map(\.accountLabel) == [
+            "Team A",
+            AccountLabel.defaultValue
+        ])
     }
 
     @Test
@@ -500,6 +796,69 @@ struct WebDashboardServerTests {
     }
 
     @Test
+    func providerIconRouteServesBundledArtworkOnly() throws {
+        let iconURL = try #require(
+            Bundle.module.url(
+                forResource: "claude",
+                withExtension: "svg"
+            )
+        )
+        let expectedIcon = try Data(contentsOf: iconURL)
+        let html = WebDashboardAssets.indexHTML(
+            mutationNonce: "test-nonce"
+        )
+        let router = WebDashboardRouter(
+            snapshotData: { Data() },
+            indexHTML: html,
+            providerIconSVGs: [.claude: expectedIcon]
+        )
+
+        let iconResponse = router.response(
+            method: "GET",
+            path: "/provider-icons/claude.svg"
+        )
+        let missingResponse = router.response(
+            method: "GET",
+            path: "/provider-icons/cursor.svg"
+        )
+        let traversalResponse = router.response(
+            method: "GET",
+            path: "/provider-icons/../claude.svg"
+        )
+        let wrongMethod = router.response(
+            method: "POST",
+            path: "/provider-icons/claude.svg"
+        )
+        let page = String(decoding: html, as: UTF8.self)
+
+        #expect(iconResponse.statusCode == 200)
+        #expect(
+            iconResponse.headers["Content-Type"]
+                == "image/svg+xml; charset=utf-8"
+        )
+        #expect(iconResponse.body == expectedIcon)
+        #expect(missingResponse.statusCode == 404)
+        #expect(traversalResponse.statusCode == 404)
+        #expect(wrongMethod.statusCode == 405)
+        #expect(wrongMethod.headers["Allow"] == "GET")
+        #expect(
+            page.contains(
+                "const artworkProviders = new Set("
+            )
+        )
+        #expect(
+            page.contains(
+                "image.src = `/provider-icons/${providerID}.svg`;"
+            )
+        )
+        #expect(
+            page.contains(
+                "icon.dataset.provider = providerID;"
+            )
+        )
+    }
+
+    @Test
     func appleTouchIconRouteServesRenderedLocalAppIconAndPagesReferenceIt()
         throws
     {
@@ -632,6 +991,33 @@ struct WebDashboardServerTests {
     }
 
     @Test
+    func fixtureWebPortOverrideCannotAffectProduction() {
+        #expect(
+            WebDashboardPortPolicy.resolve(environment: [
+                "OMO_USAGE_WEB_PORT": "7828"
+            ]) == 7_827
+        )
+        #expect(
+            WebDashboardPortPolicy.resolve(environment: [
+                "OMO_USAGE_FIXTURE_MODE": "1",
+                "OMO_USAGE_WEB_PORT": "7828"
+            ]) == 7_828
+        )
+        #expect(
+            WebDashboardPortPolicy.resolve(environment: [
+                "OMO_USAGE_FIXTURE_MODE": "1",
+                "OMO_USAGE_WEB_PORT": "0"
+            ]) == 7_827
+        )
+        #expect(
+            WebDashboardPortPolicy.resolve(environment: [
+                "OMO_USAGE_FIXTURE_MODE": "1",
+                "OMO_USAGE_WEB_PORT": "invalid"
+            ]) == 7_827
+        )
+    }
+
+    @Test
     func clearsRunningStateAfterListenerFailure() throws {
         let listener = RecordingWebDashboardListener()
         let router = WebDashboardRouter(
@@ -704,6 +1090,11 @@ struct WebDashboardServerTests {
         #expect(html.contains(#"data-omo-dashboard="v1""#))
         #expect(html.contains(#"name="viewport""#))
         #expect(html.contains(#"fetch("/api/snapshot""#))
+        #expect(
+            html.contains(
+                "accountLabelsByKey.get(identityKey)"
+            )
+        )
         #expect(!html.contains("https://"))
         #expect(!html.contains("http://"))
     }
@@ -784,6 +1175,73 @@ struct WebDashboardServerTests {
     }
 
     @Test
+    func settingsDescriptionsKeepKoreanPhrasesTogether() {
+        let html = String(
+            decoding: WebDashboardAssets.indexHTML(
+                mutationNonce: "test-nonce"
+            ),
+            as: UTF8.self
+        )
+
+        #expect(
+            html.contains(
+                """
+                .settings-description,
+                    .settings-sync {
+                      color: var(--muted);
+                      font-size: 13px;
+                      line-height: 1.5;
+                      text-wrap: balance;
+                      word-break: keep-all;
+                      overflow-wrap: anywhere;
+                    }
+                """
+            )
+        )
+    }
+
+    @Test
+    func optimisticAccountReorderKeepsAliasesBoundToIdentity() {
+        let html = String(
+            decoding: WebDashboardAssets.indexHTML(
+                mutationNonce: "test-nonce"
+            ),
+            as: UTF8.self
+        )
+
+        #expect(
+            html.contains("const accountLabelsByKey = new Map(")
+        )
+        #expect(html.contains("accountLabelsByKey.get(identityKey)"))
+        #expect(
+            !html.contains("presentation.accountProviderLabels[index]")
+        )
+    }
+
+    @Test
+    func snapshotPollingDoesNotReplayCardRevealAnimation() {
+        let html = String(
+            decoding: WebDashboardAssets.indexHTML(
+                mutationNonce: "test-nonce"
+            ),
+            as: UTF8.self
+        )
+
+        #expect(
+            html.contains(
+                #".cards[data-reveal="true"] .provider-card"#
+            )
+        )
+        #expect(html.contains("let hasRevealedProviderCards = false;"))
+        #expect(html.contains("delete cards.dataset.reveal;"))
+        #expect(
+            !html.contains(
+                "\n      .provider-card {\n        animation: reveal"
+            )
+        )
+    }
+
+    @Test
     func settingsMutationsScopeBusyStateToAffectedControl() throws {
         let html = String(
             decoding: WebDashboardAssets.indexHTML(
@@ -810,16 +1268,16 @@ struct WebDashboardServerTests {
         )
         #expect(
             html.contains(
-                #"action.startsWith("move-provider-")"#
+                #"action.startsWith("move-account-")"#
             )
         )
         #expect(
             html.contains(
-                #"? "providerOrder""#
+                #"? "accountProviderOrder""#
             )
         )
         let orderMutationPattern = try NSRegularExpression(
-            pattern: #"mutateSettings\(\s*"providerOrder","#
+            pattern: #"mutateSettings\(\s*"accountProviderOrder","#
         )
         #expect(
             orderMutationPattern.numberOfMatches(
@@ -838,6 +1296,10 @@ struct WebDashboardServerTests {
                 "webLanguageSelect.disabled = settingsMutation"
             )
         )
+    }
+
+    private func accountIdentityJSON(_ accountID: AccountID) -> String {
+        "{\"accountID\":\"\(accountID.rawValue)\",\"providerID\":\"openrouter\"}"
     }
 
     private var dashboardSnapshot: DashboardSnapshot {

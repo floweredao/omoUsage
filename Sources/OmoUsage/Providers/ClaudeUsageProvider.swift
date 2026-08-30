@@ -21,6 +21,8 @@ struct ClaudeUsageProvider: UsageProvider {
     )
 
     let id = ProviderID.claude
+    let accountID: AccountID
+    let accountLabel: String
     let discovery: CredentialDiscovery
     let http: ProviderHTTP
     let desktopUsageURL: URL
@@ -30,6 +32,8 @@ struct ClaudeUsageProvider: UsageProvider {
     let refreshCooldown: ClaudeRefreshCooldown
 
     init(
+        accountID: AccountID = .legacy,
+        accountLabel: String = AccountLabel.defaultValue,
         discovery: CredentialDiscovery = .live(),
         http: ProviderHTTP = ProviderHTTP(),
         desktopUsageURL: URL = FileManager.default
@@ -49,6 +53,8 @@ struct ClaudeUsageProvider: UsageProvider {
         oauthClientID: String = "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
         refreshCooldown: ClaudeRefreshCooldown = .shared
     ) {
+        self.accountID = accountID
+        self.accountLabel = accountLabel
         self.discovery = discovery
         self.http = http
         self.desktopUsageURL = desktopUsageURL
@@ -72,7 +78,10 @@ struct ClaudeUsageProvider: UsageProvider {
         var credential = stored
         var didRefresh = false
         if let expiresAt = credential.expiresAt, expiresAt <= now {
-            guard await refreshCooldown.allowsAttempt(at: now) else {
+            guard await refreshCooldown.allowsAttempt(
+                for: accountProviderID,
+                at: now
+            ) else {
                 return try await fetchDesktopUsage(
                     now: now,
                     cause: ProviderTransportError
@@ -108,7 +117,10 @@ struct ClaudeUsageProvider: UsageProvider {
                 credential.refreshToken != nil,
                 error as? ProviderTransportError
                     == .authenticationRequired(id),
-                await refreshCooldown.allowsAttempt(at: now)
+                await refreshCooldown.allowsAttempt(
+                    for: accountProviderID,
+                    at: now
+                )
             {
                 do {
                     let rotated = try await refreshedCredential(
@@ -204,7 +216,10 @@ struct ClaudeUsageProvider: UsageProvider {
         do {
             data = try await http.data(for: request, provider: id)
         } catch {
-            await refreshCooldown.recordFailure(at: now)
+            await refreshCooldown.recordFailure(
+                for: accountProviderID,
+                at: now
+            )
             // Without this the only surviving log line is the desktop
             // fallback's, which hides why the token refresh gave up.
             let reason = String(describing: error)
@@ -213,7 +228,7 @@ struct ClaudeUsageProvider: UsageProvider {
             )
             throw error
         }
-        await refreshCooldown.recordSuccess()
+        await refreshCooldown.recordSuccess(for: accountProviderID)
         let payload = try ProviderPayload.object(data)
         guard
             let accessToken = ProviderPayload.text(
