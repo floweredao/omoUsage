@@ -180,10 +180,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         let registryLoadResult = ProviderMutationCoordinator(
             store: accountStore
         ).loadOrRecover()
-        if registryLoadResult.state != .ready {
-            NSLog(
-                "OmoUsage account registry recovery state: %@",
-                String(reflecting: registryLoadResult.state)
+        switch registryLoadResult.state {
+        case .ready:
+            break
+        case .recoveredFromBackup:
+            DiagnosticStore.shared.record(
+                DiagnosticEvent(
+                    status: .recovered,
+                    category: .accountRegistry
+                )
+            )
+        case .blocked:
+            DiagnosticStore.shared.record(
+                DiagnosticEvent(
+                    status: .blocked,
+                    category: .accountRegistry
+                )
             )
         }
         let accountRegistryController = ProviderAccountRegistryController(
@@ -235,9 +247,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 do {
                     try accountRegistryController.saveOrder(order)
                 } catch {
-                    NSLog(
-                        "OmoUsage account order persistence failed (%@)",
-                        String(reflecting: type(of: error))
+                    DiagnosticStore.shared.record(
+                        error: error,
+                        category: .accountOrderPersistence
                     )
                 }
             },
@@ -250,9 +262,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                         disconnected
                     )
                 } catch {
-                    NSLog(
-                        "OmoUsage account disconnection persistence failed (%@)",
-                        String(reflecting: type(of: error))
+                    DiagnosticStore.shared.record(
+                        error: error,
+                        category: .accountVisibilityPersistence
                     )
                 }
             },
@@ -261,9 +273,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 do {
                     try snapshotSync.publish(snapshot)
                 } catch {
-                    NSLog(
-                        "OmoUsage iCloud snapshot publish failed: %@",
-                        String(describing: error)
+                    DiagnosticStore.shared.record(
+                        error: error,
+                        category: .snapshotPublish
                     )
                 }
             },
@@ -329,9 +341,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         do {
             try webDashboardServer.start()
         } catch {
-            NSLog(
-                "OmoUsage web dashboard start failed: %@",
-                String(describing: error)
+            DiagnosticStore.shared.record(
+                error: error,
+                category: .webServer
             )
         }
 
@@ -347,7 +359,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 self?.showSelectedPresentation()
             }
         }
-        NSLog("OmoUsage interactive UI ready")
     }
 
     func activateFromSecondaryLaunch() {
@@ -525,6 +536,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                         return NSWorkspace.shared.open(url)
                     } catch {
                         return false
+                    }
+                },
+                onExportDiagnostics: {
+                    let action = DiagnosticExportAction(
+                        store: .shared,
+                        chooseDestination: {
+                            let panel = NSSavePanel()
+                            panel.nameFieldStringValue = "OmoUsage-diagnostics.json"
+                            panel.canCreateDirectories = true
+                            return panel.runModal() == .OK ? panel.url : nil
+                        }
+                    )
+                    switch action.perform() {
+                    case .success(.some):
+                        return .exported
+                    case .success(.none):
+                        return .cancelled
+                    case .failure:
+                        return .failed
                     }
                 }
             )

@@ -1,5 +1,4 @@
 import Foundation
-import OSLog
 
 struct ClaudeDesktopSession: Equatable, Sendable {
     let organizationID: String
@@ -15,11 +14,6 @@ struct ClaudeDesktopSessionDiscovery: Sendable {
 }
 
 struct ClaudeUsageProvider: UsageProvider {
-    private static let logger = Logger(
-        subsystem: "com.omo.usage",
-        category: "ClaudeUsage"
-    )
-
     let id = ProviderID.claude
     let accountID: AccountID
     let accountLabel: String
@@ -228,11 +222,10 @@ struct ClaudeUsageProvider: UsageProvider {
                 for: accountProviderID,
                 at: now
             )
-            // Without this the only surviving log line is the desktop
-            // fallback's, which hides why the token refresh gave up.
-            let reason = String(describing: error)
-            Self.logger.error(
-                "Claude token refresh failed: \(reason, privacy: .public)"
+            DiagnosticStore.shared.record(
+                error: error,
+                provider: id,
+                category: .providerRefresh
             )
             throw error
         }
@@ -263,13 +256,10 @@ struct ClaudeUsageProvider: UsageProvider {
                 source: credential.source
             )
         } catch {
-            // The fetch can still finish on the in-memory token, but the
-            // rotation is now only known here: say so loudly.
-            Self.logger.error(
-                """
-                Claude credential rotation could not be stored; \
-                Claude Code may require a new login
-                """
+            DiagnosticStore.shared.record(
+                error: error,
+                provider: id,
+                category: .credentialPersistence
             )
         }
         return DiscoveredCredential(
@@ -380,35 +370,10 @@ struct ClaudeUsageProvider: UsageProvider {
     }
 
     private func logDesktopFailure(_ error: Error) {
-        if let transportError = error as? ProviderTransportError {
-            switch transportError {
-            case .authenticationRequired:
-                Self.logger.error(
-                    "Claude Desktop usage authentication required"
-                )
-            case let .requestFailed(_, statusCode):
-                Self.logger.error(
-                    "Claude Desktop usage request failed: \(statusCode)"
-                )
-            case .invalidResponse, .invalidContentType, .responseTooLarge,
-                 .invalidJSON:
-                Self.logger.error(
-                    "Claude Desktop usage response was invalid"
-                )
-            case let .transientTransport(_, code):
-                Self.logger.error(
-                    "Claude Desktop usage transport failed: \(code.rawValue)"
-                )
-            case .operationTimedOut:
-                Self.logger.error(
-                    "Claude Desktop usage operation timed out"
-                )
-            }
-            return
-        }
-        let reason = String(describing: error)
-        Self.logger.error(
-            "Claude Desktop session discovery failed: \(reason, privacy: .public)"
+        DiagnosticStore.shared.record(
+            error: error,
+            provider: id,
+            category: .desktopSession
         )
     }
 }

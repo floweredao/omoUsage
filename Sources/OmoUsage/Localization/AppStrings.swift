@@ -40,6 +40,11 @@ enum AppStringKey: String, CaseIterable, Sendable {
     case webDashboardDescription
     case openWebDashboard
     case webDashboardOpenFailed
+    case diagnostics
+    case diagnosticsDescription
+    case exportDiagnostics
+    case diagnosticsExportSucceeded
+    case diagnosticsExportFailed
     case connected
     case checkFailed
     case notConnected
@@ -168,6 +173,12 @@ struct AppStrings: Sendable {
             "일회용 보안 링크로 이 Mac의 대시보드를 엽니다.",
         .openWebDashboard: "대시보드 열기",
         .webDashboardOpenFailed: "웹 대시보드를 열지 못했습니다.",
+        .diagnostics: "진단 정보",
+        .diagnosticsDescription:
+            "민감한 내용을 제외한 기계 판독용 진단 정보를 내보냅니다.",
+        .exportDiagnostics: "진단 정보 내보내기",
+        .diagnosticsExportSucceeded: "진단 정보를 내보냈습니다.",
+        .diagnosticsExportFailed: "진단 정보를 내보내지 못했습니다.",
         .connected: "연결됨",
         .checkFailed: "확인 실패",
         .notConnected: "연결 안 됨",
@@ -286,6 +297,12 @@ struct AppStrings: Sendable {
             "Open this Mac's dashboard with a one-use secure link.",
         .openWebDashboard: "Open Dashboard",
         .webDashboardOpenFailed: "Could not open the web dashboard.",
+        .diagnostics: "Diagnostics",
+        .diagnosticsDescription:
+            "Export machine-readable diagnostics with sensitive data excluded.",
+        .exportDiagnostics: "Export Diagnostics",
+        .diagnosticsExportSucceeded: "Exported diagnostics.",
+        .diagnosticsExportFailed: "Could not export diagnostics.",
         .connected: "Connected",
         .checkFailed: "Check Failed",
         .notConnected: "Not Connected",
