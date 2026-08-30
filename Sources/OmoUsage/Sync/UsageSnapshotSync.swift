@@ -32,6 +32,8 @@ private struct CloudProviderUsage: Codable {
     let groups: [CloudUsageGroup]
     let availability: ProviderAvailability
     let lastSuccessfulAt: Date?
+    let lastRefreshAttemptAt: Date?
+    let refreshFailure: ProviderRefreshFailure?
 
     init(_ usage: ProviderUsage, accountOrdinal: Int) {
         provider = usage.provider
@@ -40,6 +42,8 @@ private struct CloudProviderUsage: Codable {
         groups = usage.groups.map(CloudUsageGroup.init)
         availability = usage.availability
         lastSuccessfulAt = usage.lastSuccessfulAt
+        lastRefreshAttemptAt = usage.lastRefreshAttemptAt
+        refreshFailure = usage.refreshFailure
     }
 
     func usage(sameProviderCount: Int) -> ProviderUsage {
@@ -58,7 +62,9 @@ private struct CloudProviderUsage: Codable {
             planName: planName,
             groups: groups.map(\.usage),
             availability: availability,
-            lastSuccessfulAt: lastSuccessfulAt
+            lastSuccessfulAt: lastSuccessfulAt,
+            lastRefreshAttemptAt: lastRefreshAttemptAt,
+            refreshFailure: refreshFailure
         )
     }
 }

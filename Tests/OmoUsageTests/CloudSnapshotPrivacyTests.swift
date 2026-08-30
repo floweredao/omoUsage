@@ -97,20 +97,40 @@ struct CloudSnapshotPrivacyTests {
         let attemptAt = generatedAt.addingTimeInterval(-5)
         let successAt = generatedAt.addingTimeInterval(-60)
         let snapshot = DashboardSnapshot(
-            providers: [usage(lastSuccessfulAt: successAt)],
+            providers: [
+                usage(
+                    lastSuccessfulAt: successAt,
+                    lastRefreshAttemptAt: attemptAt,
+                    refreshFailure: .network
+                )
+            ],
             generatedAt: generatedAt,
             lastRefreshAttemptAt: attemptAt,
             oldestDisplayedSuccessAt: successAt
         )
 
-        let decoded = try UsageSnapshotCodec.decode(
-            UsageSnapshotCodec.encode(snapshot)
+        let encoded = try UsageSnapshotCodec.encode(snapshot)
+        let object = try #require(
+            JSONSerialization.jsonObject(with: encoded) as? [String: Any]
         )
+        let provider = try #require(
+            (object["providers"] as? [[String: Any]])?.first
+        )
+        let decoded = try UsageSnapshotCodec.decode(encoded)
 
+        #expect(provider["accountOrdinal"] as? Int == 1)
+        #expect(provider["accountID"] == nil)
+        #expect(provider["accountLabel"] == nil)
+        #expect(provider["lastSuccessfulAt"] != nil)
+        #expect(provider["lastRefreshAttemptAt"] != nil)
+        #expect(provider["refreshFailure"] as? String == "network")
         #expect(decoded.generatedAt == generatedAt)
         #expect(decoded.lastRefreshAttemptAt == attemptAt)
         #expect(decoded.oldestDisplayedSuccessAt == successAt)
         #expect(decoded.providers.first?.lastSuccessfulAt == successAt)
+        #expect(decoded.providers.first?.lastRefreshAttemptAt == attemptAt)
+        #expect(decoded.providers.first?.refreshFailure == .network)
+        #expect(decoded.providers.first?.freshness == .stale)
     }
 
     @Test
@@ -173,7 +193,9 @@ struct CloudSnapshotPrivacyTests {
         provider: ProviderID = .codex,
         accountID: AccountID = .legacy,
         accountLabel: String = AccountLabel.defaultValue,
-        lastSuccessfulAt: Date? = nil
+        lastSuccessfulAt: Date? = nil,
+        lastRefreshAttemptAt: Date? = nil,
+        refreshFailure: ProviderRefreshFailure? = nil
     ) -> ProviderUsage {
         ProviderUsage(
             provider: provider,
@@ -196,7 +218,9 @@ struct CloudSnapshotPrivacyTests {
                 )
             ],
             availability: .available,
-            lastSuccessfulAt: lastSuccessfulAt
+            lastSuccessfulAt: lastSuccessfulAt,
+            lastRefreshAttemptAt: lastRefreshAttemptAt,
+            refreshFailure: refreshFailure
         )
     }
 }
