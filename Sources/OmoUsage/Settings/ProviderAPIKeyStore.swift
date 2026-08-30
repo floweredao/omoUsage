@@ -1,5 +1,6 @@
-import Foundation
+import CryptoKit
 import Darwin
+import Foundation
 
 struct ProviderAPIKeyStore: Sendable {
     let configURL: URL
@@ -36,42 +37,71 @@ struct ProviderAPIKeyStore: Sendable {
         guard let key = key.trimmedNonEmpty else {
             throw ProviderAPIKeyStoreError.empty
         }
-        let directory = configURL.deletingLastPathComponent()
-        try FileManager.default.createDirectory(
-            at: directory,
-            withIntermediateDirectories: true
-        )
-        try FileManager.default.setAttributes(
-            [.posixPermissions: 0o700],
-            ofItemAtPath: directory.path
-        )
         let data = try JSONSerialization.data(
             withJSONObject: ["apiKey": key],
             options: [.prettyPrinted, .sortedKeys]
         )
-        let temporaryURL = directory.appending(
-            path: ".\(configURL.lastPathComponent).\(UUID().uuidString)"
+        try ProviderFileDurability.atomicWrite(
+            data,
+            to: configURL,
+            permissions: 0o600
         )
-        guard FileManager.default.createFile(
-            atPath: temporaryURL.path,
-            contents: data,
-            attributes: [.posixPermissions: 0o600]
-        ) else {
-            throw CocoaError(.fileWriteUnknown)
-        }
-        defer { try? FileManager.default.removeItem(at: temporaryURL) }
-        guard rename(temporaryURL.path, configURL.path) == 0 else {
-            throw POSIXError(
-                POSIXErrorCode(rawValue: errno) ?? .EIO
-            )
-        }
     }
 
     func remove() throws {
-        guard FileManager.default.fileExists(atPath: configURL.path) else {
-            return
+        try ProviderFileDurability.removeIfPresent(configURL)
+    }
+
+    func stage(_ key: String, transactionID: UUID) throws {
+        try stagedStore(transactionID: transactionID).save(key)
+    }
+
+    func promoteStagedSecret(transactionID: UUID) throws {
+        let stagedURL = stagedURL(transactionID: transactionID)
+        guard rename(stagedURL.path, configURL.path) == 0 else {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
         }
-        try FileManager.default.removeItem(at: configURL)
+        try ProviderFileDurability.syncDirectory(
+            configURL.deletingLastPathComponent()
+        )
+    }
+
+    func removeStagedSecret(transactionID: UUID) throws {
+        try ProviderFileDurability.removeIfPresent(
+            stagedURL(transactionID: transactionID)
+        )
+    }
+
+    func stagedSecretExists(transactionID: UUID) -> Bool {
+        FileManager.default.fileExists(
+            atPath: stagedURL(transactionID: transactionID).path
+        )
+    }
+
+    func stagedSecretDigest(transactionID: UUID) -> String? {
+        stagedStore(transactionID: transactionID).load().map(apiKeyDigest)
+    }
+
+    func persistedSecretDigest() -> String? {
+        ProviderAPIKeyStore(
+            configURL: configURL,
+            environment: [:],
+            environmentNames: []
+        ).load().map(apiKeyDigest)
+    }
+
+    private func stagedStore(transactionID: UUID) -> ProviderAPIKeyStore {
+        ProviderAPIKeyStore(
+            configURL: stagedURL(transactionID: transactionID),
+            environment: [:],
+            environmentNames: []
+        )
+    }
+
+    private func stagedURL(transactionID: UUID) -> URL {
+        configURL.deletingLastPathComponent().appending(
+            path: ".\(configURL.lastPathComponent).mutation-\(transactionID.uuidString.lowercased())"
+        )
     }
 
     static func live(
@@ -157,6 +187,12 @@ struct ProviderAPIKeyStore: Sendable {
 
 enum ProviderAPIKeyStoreError: Error, Equatable {
     case empty
+}
+
+private func apiKeyDigest(_ value: String) -> String {
+    SHA256.hash(data: Data(value.utf8))
+        .map { String(format: "%02x", $0) }
+        .joined()
 }
 
 private extension String {

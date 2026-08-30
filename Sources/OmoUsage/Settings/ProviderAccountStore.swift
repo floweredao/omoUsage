@@ -96,6 +96,18 @@ struct ProviderAccountStore {
         URL(filePath: registryURL.path + ".bak")
     }
 
+    var mutationJournalURL: URL {
+        URL(filePath: registryURL.path + ".mutation-journal")
+    }
+
+    var mutationLockURL: URL {
+        URL(filePath: registryURL.path + ".mutation-lock")
+    }
+
+    var existingQuarantineURLsForMutation: [URL] {
+        existingQuarantineURLs()
+    }
+
     init(
         registryURL: URL,
         defaults: UserDefaults,
@@ -503,19 +515,16 @@ struct ProviderAccountStore {
     }
 
     private func prepareDirectory() throws {
-        let directory = registryURL.deletingLastPathComponent()
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        try FileManager.default.setAttributes(
-            [.posixPermissions: 0o700],
-            ofItemAtPath: directory.path
+        try ProviderFileDurability.preparePrivateDirectory(
+            registryURL.deletingLastPathComponent()
         )
     }
 
     private func write(_ data: Data, to url: URL) throws {
-        try data.write(to: url, options: .atomic)
-        try FileManager.default.setAttributes(
-            [.posixPermissions: 0o600],
-            ofItemAtPath: url.path
+        try ProviderFileDurability.atomicWrite(
+            data,
+            to: url,
+            permissions: 0o600
         )
     }
 
@@ -527,6 +536,9 @@ struct ProviderAccountStore {
         try FileManager.default.setAttributes(
             [.posixPermissions: 0o600],
             ofItemAtPath: quarantineURL.path
+        )
+        try ProviderFileDurability.syncDirectory(
+            quarantineURL.deletingLastPathComponent()
         )
         return quarantineURL
     }
