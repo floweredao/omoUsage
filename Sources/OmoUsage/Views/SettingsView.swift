@@ -16,6 +16,7 @@ struct SettingsView: View {
     @State private var newAccountKey = ""
     @State private var feedback: LocalizedText?
     @State private var setupError: ProviderSetupError?
+    @State private var showsRegistryResetConfirmation = false
     @State private var connectionCoordinator =
         ProviderConnectionCoordinator()
     @State private var launchAtLogin = LaunchAtLoginController()
@@ -64,6 +65,16 @@ struct SettingsView: View {
 
             ScrollView {
                 LazyVStack(spacing: 8) {
+                    if accountRegistryController.recoveryState != .ready {
+                        AccountRegistryRecoveryBanner(
+                            state: accountRegistryController.recoveryState,
+                            onRestore: restoreRegistryBackup,
+                            onReset: {
+                                showsRegistryResetConfirmation = true
+                            }
+                        )
+                    }
+
                     HStack {
                         Text(localization.text(.language))
                             .font(.system(size: 13.5, weight: .semibold))
@@ -200,59 +211,61 @@ struct SettingsView: View {
                         }
                     }
 
-                    ProviderOrderingView(viewModel: viewModel)
-                        .padding(.top, 4)
+                    if accountRegistryController.registry != nil {
+                        ProviderOrderingView(viewModel: viewModel)
+                            .padding(.top, 4)
 
-                    Text(localization.text(.providerAuthentication))
-                        .font(.system(size: 14, weight: .bold))
-                        .frame(
-                            maxWidth: .infinity,
-                            alignment: .leading
+                        Text(localization.text(.providerAuthentication))
+                            .font(.system(size: 14, weight: .bold))
+                            .frame(
+                                maxWidth: .infinity,
+                                alignment: .leading
+                            )
+                            .padding(.top, 4)
+
+                        ForEach(viewModel.providerOrder, id: \.self) {
+                            provider in
+                            ProviderSettingsRow(
+                                provider: provider,
+                                availability: viewModel.connectionStates[
+                                    provider
+                                ],
+                                connectionPresentation:
+                                    connectionCoordinator.state(for: provider),
+                                keyDraft: binding(for: provider),
+                                onSetup: {
+                                    startConnection(for: provider)
+                                },
+                                onSave: { saveKey(for: provider) },
+                                onRemove: { removeKey(for: provider) },
+                                isDisconnected:
+                                    viewModel.isDisconnected(provider),
+                                onDisconnect: {
+                                    disconnectProvider(provider)
+                                },
+                                onReconnect: {
+                                    reconnectProvider(provider)
+                                },
+                                onRetry: {
+                                    Task { await viewModel.refresh() }
+                                },
+                                codexPlanMultiplier:
+                                    provider == .codex
+                                        ? $codexPlanMultiplier
+                                        : nil
+                            )
+                        }
+
+                        APIKeyAccountsSection(
+                            accounts: accountRegistryController.apiKeyAccounts,
+                            provider: $newAccountProvider,
+                            label: $newAccountLabel,
+                            key: $newAccountKey,
+                            onAdd: addAPIKeyAccount,
+                            onRemove: removeAPIKeyAccount
                         )
                         .padding(.top, 4)
-
-                    ForEach(viewModel.providerOrder, id: \.self) {
-                        provider in
-                        ProviderSettingsRow(
-                            provider: provider,
-                            availability: viewModel.connectionStates[
-                                provider
-                            ],
-                            connectionPresentation:
-                                connectionCoordinator.state(for: provider),
-                            keyDraft: binding(for: provider),
-                            onSetup: {
-                                startConnection(for: provider)
-                            },
-                            onSave: { saveKey(for: provider) },
-                            onRemove: { removeKey(for: provider) },
-                            isDisconnected:
-                                viewModel.isDisconnected(provider),
-                            onDisconnect: {
-                                disconnectProvider(provider)
-                            },
-                            onReconnect: {
-                                reconnectProvider(provider)
-                            },
-                            onRetry: {
-                                Task { await viewModel.refresh() }
-                            },
-                            codexPlanMultiplier:
-                                provider == .codex
-                                    ? $codexPlanMultiplier
-                                    : nil
-                        )
                     }
-
-                    APIKeyAccountsSection(
-                        accounts: accountRegistryController.apiKeyAccounts,
-                        provider: $newAccountProvider,
-                        label: $newAccountLabel,
-                        key: $newAccountKey,
-                        onAdd: addAPIKeyAccount,
-                        onRemove: removeAPIKeyAccount
-                    )
-                    .padding(.top, 4)
                 }
                 .padding(.vertical, 2)
             }
@@ -298,6 +311,20 @@ struct SettingsView: View {
                 )
             }
         }
+        .confirmationDialog(
+            localization.text(.registryResetTitle),
+            isPresented: $showsRegistryResetConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button(
+                localization.text(.resetRegistry),
+                role: .destructive,
+                action: resetRegistry
+            )
+            Button(localization.text(.cancel), role: .cancel) {}
+        } message: {
+            Text(localization.text(.registryResetDescription))
+        }
         .alert(item: $setupError) { error in
             Alert(
                 title: Text(
@@ -314,6 +341,26 @@ struct SettingsView: View {
             CodexPlanMultiplierStore(defaults: .standard)
                 .save(multiplier)
             Task { await viewModel.refresh() }
+        }
+    }
+
+    private func restoreRegistryBackup() {
+        do {
+            try accountRegistryController.restoreBackup()
+            feedback = .key(.registryRestoreSucceeded)
+            onRegistryChange()
+        } catch {
+            feedback = .key(.registryRecoveryFailed)
+        }
+    }
+
+    private func resetRegistry() {
+        do {
+            try accountRegistryController.resetRegistry()
+            feedback = .key(.registryResetSucceeded)
+            onRegistryChange()
+        } catch {
+            feedback = .key(.registryRecoveryFailed)
         }
     }
 
@@ -432,6 +479,62 @@ struct SettingsView: View {
         } catch {
             feedback = .key(.accountChangeFailed)
         }
+    }
+}
+
+private struct AccountRegistryRecoveryBanner: View {
+    let state: ProviderAccountRecoveryState
+    let onRestore: () -> Void
+    let onReset: () -> Void
+    @Environment(\.appLocalization) private var localization
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(
+                localization.text(
+                    state.isRecoveredFromBackup
+                        ? .registryRecoveredTitle
+                        : .registryBlockedTitle
+                ),
+                systemImage: "exclamationmark.triangle.fill"
+            )
+            .font(.system(size: 13.5, weight: .bold))
+            .foregroundStyle(.orange)
+
+            Text(
+                localization.text(
+                    state.isRecoveredFromBackup
+                        ? .registryRecoveredDescription
+                        : .registryBlockedDescription
+                )
+            )
+            .font(.system(size: 12))
+            .foregroundStyle(.secondary)
+
+            HStack {
+                if state.isRecoveredFromBackup {
+                    Button(
+                        localization.text(.restoreRegistryBackup),
+                        action: onRestore
+                    )
+                    .buttonStyle(.borderedProminent)
+                }
+                Button(
+                    localization.text(.resetRegistry),
+                    role: .destructive,
+                    action: onReset
+                )
+                .buttonStyle(.bordered)
+            }
+            .controlSize(.small)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(
+            Color.orange.opacity(0.1),
+            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+        )
+        .accessibilityIdentifier("account-registry-recovery")
     }
 }
 

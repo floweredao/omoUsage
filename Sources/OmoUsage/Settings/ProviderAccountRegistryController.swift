@@ -9,6 +9,7 @@ enum ProviderAccountRegistryControllerError: Error, Equatable {
     case cannotRemoveLegacy
     case persistenceUnavailable
     case keyStoreUnavailable
+    case registryUnavailable
 }
 
 struct ProviderAPIKeyAccountMetadata: Identifiable, Equatable, Sendable {
@@ -26,52 +27,22 @@ struct AppAccountComposition {
 
 enum AppAccountCompositionFactory {
     static func make(
-        registry: ProviderAccountRegistry,
+        registry: ProviderAccountRegistry?,
         providerFactory: (ProviderAccountRegistry) -> [any UsageProvider] = {
             ProviderFactory.current(registry: $0)
         }
     ) -> AppAccountComposition {
-        AppAccountComposition(
+        guard let registry else {
+            return AppAccountComposition(
+                providers: [],
+                accountProviderOrder: [],
+                disconnected: []
+            )
+        }
+        return AppAccountComposition(
             providers: providerFactory(registry),
             accountProviderOrder: registry.displayOrder,
             disconnected: Set(registry.disconnected)
-        )
-    }
-
-    static func deterministicLegacyRegistry(
-        providerOrder: [ProviderID],
-        disconnectedProviders: Set<ProviderID>
-    ) -> ProviderAccountRegistry {
-        let legacyIdentities = providerOrder.map {
-            AccountProviderID(accountID: .legacy, providerID: $0)
-        }
-        return ProviderAccountRegistry(
-            version: ProviderAccountStore.currentVersion,
-            migrationVersion: ProviderAccountStore.currentMigrationVersion,
-            accounts: [
-                ProviderAccount(
-                    id: .legacy,
-                    label: AccountLabel.defaultValue
-                )
-            ],
-            displayOrder: legacyIdentities,
-            disconnected: legacyIdentities.filter {
-                disconnectedProviders.contains($0.providerID)
-            },
-            apiKeyReferences: [
-                AccountProviderID(
-                    accountID: .legacy,
-                    providerID: .opencode
-                ),
-                AccountProviderID(
-                    accountID: .legacy,
-                    providerID: .openrouter
-                ),
-                AccountProviderID(
-                    accountID: .legacy,
-                    providerID: .zai
-                )
-            ]
         )
     }
 }
@@ -88,7 +59,8 @@ final class ProviderAccountRegistryController {
     @ObservationIgnored
     private let persistenceEnabled: Bool
 
-    private(set) var registry: ProviderAccountRegistry
+    private(set) var registry: ProviderAccountRegistry?
+    private(set) var recoveryState: ProviderAccountRecoveryState
 
     init(
         store: ProviderAccountStore,
@@ -101,12 +73,30 @@ final class ProviderAccountRegistryController {
     ) {
         self.store = store
         self.registry = registry
+        self.recoveryState = .ready
         self.persistenceEnabled = persistenceEnabled
         self.keyStore = keyStore
         self.makeAccountID = makeAccountID
     }
 
+    init(
+        store: ProviderAccountStore,
+        loadResult: ProviderAccountLoadResult,
+        keyStore: @escaping (ProviderID, AccountID) -> ProviderAPIKeyStore? = {
+            ProviderAPIKeyStore.live(for: $0, accountID: $1)
+        },
+        makeAccountID: @escaping () -> AccountID = { AccountID() }
+    ) {
+        self.store = store
+        self.registry = loadResult.registry
+        self.recoveryState = loadResult.state
+        self.persistenceEnabled = true
+        self.keyStore = keyStore
+        self.makeAccountID = makeAccountID
+    }
+
     var apiKeyAccounts: [ProviderAPIKeyAccountMetadata] {
+        guard let registry else { return [] }
         let accounts = Dictionary(
             uniqueKeysWithValues: registry.accounts.map { ($0.id, $0) }
         )
@@ -126,6 +116,7 @@ final class ProviderAccountRegistryController {
     }
 
     func saveOrder(_ order: [AccountProviderID]) throws {
+        let registry = try requireRegistry()
         let repaired = AccountProviderDisplayOrder.repaired(
             order,
             configured: registry.displayOrder
@@ -143,6 +134,7 @@ final class ProviderAccountRegistryController {
     }
 
     func saveDisconnected(_ disconnected: Set<AccountProviderID>) throws {
+        let registry = try requireRegistry()
         let valid = Set(registry.displayOrder)
         let ordered = registry.displayOrder.filter {
             disconnected.contains($0) && valid.contains($0)
@@ -160,6 +152,7 @@ final class ProviderAccountRegistryController {
     }
 
     func ensureLegacyAPIKeyReference(for provider: ProviderID) throws {
+        let registry = try requireRegistry()
         try requireAPIKeyProvider(provider)
         let identity = AccountProviderID(
             accountID: .legacy,
@@ -189,6 +182,7 @@ final class ProviderAccountRegistryController {
         provider: ProviderID,
         key: String
     ) throws {
+        _ = try requireRegistry()
         try requireAPIKeyProvider(provider)
         guard let secretStore = keyStore(provider, .legacy) else {
             throw ProviderAccountRegistryControllerError.keyStoreUnavailable
@@ -213,6 +207,7 @@ final class ProviderAccountRegistryController {
     }
 
     func removeLegacyAPIKeyReference(for provider: ProviderID) throws {
+        let registry = try requireRegistry()
         try requireAPIKeyProvider(provider)
         let identity = AccountProviderID(
             accountID: .legacy,
@@ -238,6 +233,7 @@ final class ProviderAccountRegistryController {
         label rawLabel: String,
         key rawKey: String
     ) throws -> AccountProviderID {
+        let registry = try requireRegistry()
         try requireAPIKeyProvider(provider)
         let trimmedLabel = rawLabel.trimmingCharacters(
             in: .whitespacesAndNewlines
@@ -302,6 +298,7 @@ final class ProviderAccountRegistryController {
     }
 
     func removeAPIKeyAccount(_ identity: AccountProviderID) throws {
+        let registry = try requireRegistry()
         guard identity.accountID != .legacy else {
             throw ProviderAccountRegistryControllerError.cannotRemoveLegacy
         }
@@ -337,9 +334,19 @@ final class ProviderAccountRegistryController {
             try secretStore.remove()
         } catch {
             _ = try store.save(previous)
-            registry = previous
+            self.registry = previous
             throw error
         }
+    }
+
+    func restoreBackup() throws {
+        registry = try store.restoreBackup()
+        recoveryState = .ready
+    }
+
+    func resetRegistry() throws {
+        registry = try store.resetToLegacy()
+        recoveryState = .ready
     }
 
     private func replaceRegistry(
@@ -349,6 +356,14 @@ final class ProviderAccountRegistryController {
             throw ProviderAccountRegistryControllerError.persistenceUnavailable
         }
         registry = try store.save(updated)
+        recoveryState = .ready
+    }
+
+    private func requireRegistry() throws -> ProviderAccountRegistry {
+        guard let registry else {
+            throw ProviderAccountRegistryControllerError.registryUnavailable
+        }
+        return registry
     }
 
     private func requireAPIKeyProvider(_ provider: ProviderID) throws {
