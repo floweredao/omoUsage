@@ -196,7 +196,95 @@ struct SideNotchPanelLayoutTests {
     }
 
     @Test
-    func revealedRailUsesPointerAnchorInsteadOfScreenCenter() {
+    func hiddenActivationFrameIsEightBy144AtMidpointFallback() {
+        let visibleFrame = NSRect(
+            x: 0,
+            y: 25,
+            width: 1_920,
+            height: 1_000
+        )
+
+        let hiddenTrigger = SideNotchPanelLayout.frame(
+            in: visibleFrame,
+            providerCount: 2,
+            mode: .hidden
+        )
+
+        #expect(hiddenTrigger.size == NSSize(width: 8, height: 144))
+        #expect(SideNotchPanelLayout.hiddenTrackingHeight == 144)
+        #expect(hiddenTrigger.maxX == visibleFrame.maxX)
+        #expect(hiddenTrigger.midY == visibleFrame.midY)
+        #expect(SideNotchPanelLayout.hiddenWidth == 6)
+        #expect(SideNotchPanelLayout.hiddenTrackingWidth == 8)
+    }
+
+    @Test
+    func hiddenActivationExcludesNormalTopAndBottomEdgeInput() {
+        let visibleFrame = NSRect(
+            x: 100,
+            y: 50,
+            width: 1_400,
+            height: 900
+        )
+        let hiddenTrigger = SideNotchPanelLayout.frame(
+            in: visibleFrame,
+            providerCount: 2,
+            mode: .hidden
+        )
+
+        #expect(
+            !hiddenTrigger.contains(
+                NSPoint(x: visibleFrame.maxX - 1, y: visibleFrame.minY + 40)
+            )
+        )
+        #expect(
+            !hiddenTrigger.contains(
+                NSPoint(x: visibleFrame.maxX - 1, y: visibleFrame.maxY - 40)
+            )
+        )
+        #expect(
+            hiddenTrigger.contains(
+                NSPoint(x: visibleFrame.maxX - 1, y: visibleFrame.midY)
+            )
+        )
+    }
+
+    @Test
+    func hiddenActivationAnchorFollowsPointerAndClampsPerScreen() {
+        let visibleFrame = NSRect(
+            x: -1_600,
+            y: 50,
+            width: 1_600,
+            height: 900
+        )
+
+        let anchored = SideNotchPanelLayout.frame(
+            in: visibleFrame,
+            providerCount: 2,
+            mode: .hidden,
+            anchorY: 640
+        )
+        let clampedBottom = SideNotchPanelLayout.frame(
+            in: visibleFrame,
+            providerCount: 2,
+            mode: .hidden,
+            anchorY: 60
+        )
+        let clampedTop = SideNotchPanelLayout.frame(
+            in: visibleFrame,
+            providerCount: 2,
+            mode: .hidden,
+            anchorY: 940
+        )
+
+        #expect(anchored.midY == 640)
+        #expect(anchored.maxX == visibleFrame.maxX)
+        #expect(clampedBottom.minY == visibleFrame.minY)
+        #expect(clampedTop.maxY == visibleFrame.maxY)
+    }
+
+    @Test
+    func revealedRailUsesPointerAnchorWithoutChangingPresentedGeometry() {
         let visibleFrame = NSRect(
             x: 0,
             y: 25,
@@ -211,23 +299,19 @@ struct SideNotchPanelLayoutTests {
             mode: .revealed,
             anchorY: pointerY
         )
-        let hiddenTrigger = SideNotchPanelLayout.frame(
+        let detail = SideNotchPanelLayout.frame(
             in: visibleFrame,
             providerCount: 2,
-            mode: .hidden,
+            mode: .detail(.claude),
             anchorY: pointerY
         )
 
         #expect(rail.midY == pointerY)
-        #expect(hiddenTrigger.minY == visibleFrame.minY)
-        #expect(hiddenTrigger.height == visibleFrame.height)
-        #expect(
-            hiddenTrigger.width
-                == SideNotchPanelLayout.hiddenTrackingWidth
-        )
-        #expect(hiddenTrigger.maxX == visibleFrame.maxX)
-        #expect(SideNotchPanelLayout.hiddenWidth == 6)
-        #expect(SideNotchPanelLayout.hiddenTrackingWidth == 8)
+        #expect(rail.width == SideNotchPanelLayout.collapsedWidth)
+        #expect(detail.width == SideNotchPanelLayout.expandedWidth)
+        #expect(detail.height == rail.height)
+        #expect(detail.minY == rail.minY)
+        #expect(detail.maxX == rail.maxX)
     }
 
     @Test

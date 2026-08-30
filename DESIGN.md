@@ -288,9 +288,12 @@ launches, and other privileged controls remain native-only.
 - Entering the 6 pt edge handle for 0.18 seconds reveals the rail and cancels
   a pending hide. Brief crossings cancel the reveal task before it fires.
   The stationary pointer that triggered the reveal is not treated as a
-  provider-row hover; the visible handle stays 6 pt wide, its transparent
-  tracking strip is 8 pt wide, and a preview begins only after the pointer
-  moves inward past that tracking strip.
+  provider-row hover; the visible handle stays 6 pt wide inside one bounded
+  8×144 pt transparent tracking region, and a preview begins only after the
+  pointer moves inward past that tracking strip. The hidden region is centered
+  on the latest edge-entry anchor, falls back to the screen midpoint, and
+  clamps wholly inside that screen's visible frame. Right-edge app and
+  scrollbar input above and below it remains owned by the foreground app.
   Leaving the revealed rail schedules one cancellable hide using the selected
   0.4, 0.8, 1.2, or 2.0 second delay. Background refresh and controller-driven
   frame changes never reveal the rail.
