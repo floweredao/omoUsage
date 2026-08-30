@@ -60,10 +60,11 @@ struct CopilotUsageProvider: UsageProvider {
             guard
                 let entry = UsageJSON.object(snapshots[key]),
                 entry["unlimited"] as? Bool != true,
-                let remaining = UsageJSON.number(
+                let value = UsageJSON.number(
                     entry["percent_remaining"]
                         ?? entry["percentRemaining"]
-                )
+                ),
+                let remaining = ProviderPayload.percent(value)
             else {
                 return nil
             }
@@ -74,7 +75,7 @@ struct CopilotUsageProvider: UsageProvider {
                 id: "copilot-\(key)",
                 title: title,
                 period: key == "chat" ? .session : .extra,
-                percentRemaining: Int(remaining.rounded()),
+                percentRemaining: remaining,
                 resetsAt: entryReset,
                 resetText: ProviderPayload.resetText(
                     entryReset,
@@ -135,13 +136,12 @@ struct CopilotUsageProvider: UsageProvider {
             guard
                 let current = UsageJSON.number(used[key]),
                 let limit = UsageJSON.number(limits[key]),
-                limit > 0
+                let remaining = ProviderPayload.percent(
+                    current / limit * 100
+                )
             else {
                 return nil
             }
-            let remaining = Int(
-                (current / limit * 100).rounded()
-            )
             return UsageMeter(
                 id: "copilot-\(key)",
                 title: title,

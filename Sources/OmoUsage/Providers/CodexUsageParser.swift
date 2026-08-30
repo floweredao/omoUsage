@@ -18,12 +18,12 @@ enum CodexUsageParser {
 
         let credits = UsageJSON.object(object["credits"])
             .flatMap { UsageJSON.number($0["balance"]) }
-            .map { max(0, Int($0.rounded(.down))) }
+            .flatMap(ProviderPayload.nonnegativeInteger)
         let resetTickets = UsageJSON.object(
             object["rate_limit_reset_credits"]
         )
             .flatMap { UsageJSON.number($0["available_count"]) }
-            .map { max(0, Int($0.rounded(.down))) }
+            .flatMap(ProviderPayload.nonnegativeInteger)
         let creditText = [
             credits.map { "크레딧 \($0)" },
             resetTickets.map { "풀 리셋 티켓 \($0)" }
@@ -68,20 +68,32 @@ enum CodexUsageParser {
 
         return windows.enumerated().compactMap { index, candidate in
             let (window, seconds) = candidate
-            guard let used = UsageJSON.number(window["used_percent"]) else {
+            guard
+                let used = UsageJSON.number(window["used_percent"]),
+                let remaining = ProviderPayload.remainingPercent(
+                    usedPercent: used
+                )
+            else {
                 return nil
             }
+            let resetValue = window["reset_at"]
+            let resetsAt = resetValue.flatMap(UsageJSON.date)
+            guard resetValue == nil || resetsAt != nil else { return nil }
             let isWeekly = seconds >= Double(weeklySeconds)
             let period: UsagePeriod = isWeekly ? .week : .session
+            let sessionHours = ProviderPayload.nonnegativeInteger(
+                seconds / 3_600
+            )
+            guard isWeekly || sessionHours != nil else { return nil }
             let title = isWeekly
                 ? "주간"
-                : "세션 (\(max(1, Int(seconds / 3_600)))시간)"
+                : "세션 (\(max(1, sessionHours ?? 0))시간)"
             return UsageMeter(
                 id: isWeekly ? "codex.week" : "codex.session",
                 title: title,
                 period: period,
-                percentRemaining: Int((100 - used).rounded()),
-                resetsAt: UsageJSON.date(window["reset_at"]),
+                percentRemaining: remaining,
+                resetsAt: resetsAt,
                 resetText: window["reset_text"] as? String,
                 showsMenuBarBadge: index == 0
             )

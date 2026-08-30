@@ -93,10 +93,14 @@ enum AntigravityUsageParser {
                 let quota = UsageJSON.object(model["quotaInfo"]),
                 let fraction = UsageJSON.number(
                     quota["remainingFraction"]
-                )
+                ),
+                let remaining = ProviderPayload.percent(fraction * 100)
             else {
                 continue
             }
+            let resetValue = quota["resetTime"]
+            let resetsAt = resetValue.flatMap(UsageJSON.date)
+            guard resetValue == nil || resetsAt != nil else { continue }
             let title = (model["displayName"] as? String)?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             let meterTitle = title.flatMap {
@@ -106,8 +110,8 @@ enum AntigravityUsageParser {
                 id: "antigravity.model.\(key)",
                 title: meterTitle,
                 period: .session,
-                percentRemaining: Int((fraction * 100).rounded()),
-                resetsAt: UsageJSON.date(quota["resetTime"]),
+                percentRemaining: remaining,
+                resetsAt: resetsAt,
                 showsMenuBarBadge: true
             )
             let modelName = (
@@ -163,10 +167,14 @@ enum AntigravityUsageParser {
         guard
             let bucketID = bucket["bucketId"] as? String,
             let spec = specs[bucketID],
-            let fraction = UsageJSON.number(bucket["remainingFraction"])
+            let fraction = UsageJSON.number(bucket["remainingFraction"]),
+            let remaining = ProviderPayload.percent(fraction * 100)
         else {
             return nil
         }
+        let resetValue = bucket["resetTime"]
+        let resetsAt = resetValue.flatMap(UsageJSON.date)
+        guard resetValue == nil || resetsAt != nil else { return nil }
         let order = spec.period == .session ? 0 : 1
         return (
             spec.groupID,
@@ -175,8 +183,8 @@ enum AntigravityUsageParser {
                 id: spec.meterID,
                 title: spec.title,
                 period: spec.period,
-                percentRemaining: Int((fraction * 100).rounded()),
-                resetsAt: UsageJSON.date(bucket["resetTime"]),
+                percentRemaining: remaining,
+                resetsAt: resetsAt,
                 resetText: bucket["resetText"] as? String,
                 showsMenuBarBadge: spec.menuBarBadge
             )
@@ -202,11 +210,13 @@ enum AntigravityUsageParser {
         guard
             let object,
             let prompt = UsageJSON.number(object["prompt"]),
-            let flow = UsageJSON.number(object["flow"])
+            let promptCount = ProviderPayload.nonnegativeInteger(prompt),
+            let flow = UsageJSON.number(object["flow"]),
+            let flowCount = ProviderPayload.nonnegativeInteger(flow)
         else {
             return nil
         }
-        return "프롬프트 크레딧 \(Int(prompt))    플로우 크레딧 \(Int(flow))"
+        return "프롬프트 크레딧 \(promptCount)    플로우 크레딧 \(flowCount)"
     }
 
     private static func planName(_ value: Any?) -> String {

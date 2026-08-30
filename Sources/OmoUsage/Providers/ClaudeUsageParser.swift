@@ -63,47 +63,62 @@ enum ClaudeUsageParser {
                     < (UsageJSON.number($1["t"]) ?? 0)
             }),
             let milliseconds = UsageJSON.number(sample["t"]),
+            let updatedAt = UsageJSON.date(
+                timeIntervalSince1970: milliseconds / 1_000
+            ),
             let utilization = UsageJSON.object(sample["u"])
         else {
             throw UsageParsingError.invalidPayload
         }
 
-        let updatedAt = Date(
-            timeIntervalSince1970: milliseconds / 1_000
-        )
         guard updatedAt <= now else {
             throw UsageParsingError.invalidPayload
         }
 
         var meters: [UsageMeter] = []
-        if let used = UsageJSON.number(utilization["fh"]) {
+        if
+            let used = UsageJSON.number(utilization["fh"]),
+            let remaining = ProviderPayload.remainingPercent(
+                usedPercent: used
+            )
+        {
             meters.append(
                 UsageMeter(
                     id: "claude.session",
                     title: "세션 (5시간)",
                     period: .session,
-                    percentRemaining: Int((100 - used).rounded()),
+                    percentRemaining: remaining,
                     showsMenuBarBadge: true
                 )
             )
         }
-        if let used = UsageJSON.number(utilization["sd"]) {
+        if
+            let used = UsageJSON.number(utilization["sd"]),
+            let remaining = ProviderPayload.remainingPercent(
+                usedPercent: used
+            )
+        {
             meters.append(
                 UsageMeter(
                     id: "claude.week",
                     title: "주간",
                     period: .week,
-                    percentRemaining: Int((100 - used).rounded())
+                    percentRemaining: remaining
                 )
             )
         }
-        if let used = UsageJSON.number(utilization["xu"]) {
+        if
+            let used = UsageJSON.number(utilization["xu"]),
+            let remaining = ProviderPayload.remainingPercent(
+                usedPercent: used
+            )
+        {
             meters.append(
                 UsageMeter(
                     id: "claude.extra",
                     title: "추가 사용량",
                     period: .extra,
-                    percentRemaining: Int((100 - used).rounded())
+                    percentRemaining: remaining
                 )
             )
         }
@@ -135,16 +150,22 @@ enum ClaudeUsageParser {
     ) -> UsageMeter? {
         guard
             let object = UsageJSON.object(value),
-            let utilization = UsageJSON.number(object["utilization"])
+            let utilization = UsageJSON.number(object["utilization"]),
+            let remaining = ProviderPayload.remainingPercent(
+                usedPercent: utilization
+            )
         else {
             return nil
         }
+        let resetValue = object["resets_at"]
+        let resetsAt = resetValue.flatMap(UsageJSON.date)
+        guard resetValue == nil || resetsAt != nil else { return nil }
         return UsageMeter(
             id: id,
             title: title,
             period: period,
-            percentRemaining: Int((100 - utilization).rounded()),
-            resetsAt: UsageJSON.date(object["resets_at"]),
+            percentRemaining: remaining,
+            resetsAt: resetsAt,
             resetText: object["reset_text"] as? String,
             showsMenuBarBadge: showsMenuBarBadge
         )
@@ -156,7 +177,10 @@ enum ClaudeUsageParser {
             object["is_enabled"] as? Bool == true,
             let used = UsageJSON.number(object["used_credits"]),
             let limit = UsageJSON.number(object["monthly_limit"]),
-            limit > 0
+            let remaining = ProviderPayload.remainingPercent(
+                used: used,
+                limit: limit
+            )
         else {
             return nil
         }
@@ -164,7 +188,7 @@ enum ClaudeUsageParser {
             id: "claude.extra",
             title: "추가 사용량",
             period: .extra,
-            percentRemaining: Int(((limit - used) / limit * 100).rounded()),
+            percentRemaining: remaining,
             resetText: object["reset_text"] as? String
         )
     }
@@ -186,10 +210,16 @@ enum ClaudeUsageParser {
                 let title = displayName ?? modelID,
                 let percent = UsageJSON.number(
                     limit["percent"] ?? limit["utilization"]
+                ),
+                let remaining = ProviderPayload.remainingPercent(
+                    usedPercent: percent
                 )
             else {
                 return nil
             }
+            let resetValue = limit["resets_at"]
+            let resetsAt = resetValue.flatMap(UsageJSON.date)
+            guard resetValue == nil || resetsAt != nil else { return nil }
             let stableID = modelID
                 ?? title
                     .lowercased()
@@ -198,8 +228,8 @@ enum ClaudeUsageParser {
                 id: "claude.week.model.\(stableID)",
                 title: "\(title) 주간",
                 period: .week,
-                percentRemaining: Int((100 - percent).rounded()),
-                resetsAt: UsageJSON.date(limit["resets_at"])
+                percentRemaining: remaining,
+                resetsAt: resetsAt
             )
         }
     }

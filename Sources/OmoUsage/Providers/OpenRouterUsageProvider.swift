@@ -113,16 +113,20 @@ struct OpenRouterUsageProvider: UsageProvider {
             )
         }
         var meters: [UsageMeter] = []
-        if let total, let usage {
+        if
+            let total,
+            let usage,
+            let remaining = ProviderPayload.remainingPercent(
+                used: usage,
+                limit: total
+            )
+        {
             meters.append(
                 UsageMeter(
                     id: "openrouter-credits",
                     title: "크레딧",
                     period: .extra,
-                    percentRemaining: ProviderPayload.remainingPercent(
-                        used: usage,
-                        limit: total
-                    ) ?? 0,
+                    percentRemaining: remaining,
                     resetText: "\(ProviderPayload.money(usage)) 사용"
                 )
             )
@@ -134,15 +138,18 @@ struct OpenRouterUsageProvider: UsageProvider {
                     paths: [["limit_remaining"], ["limitRemaining"]]
                 )
             } ?? keyUsage.map { max(0, keyLimit - $0) }
-            if let remaining {
+            if
+                let remaining,
+                let percentRemaining = ProviderPayload.percent(
+                    remaining / keyLimit * 100
+                )
+            {
                 meters.append(
                     UsageMeter(
                         id: "openrouter-key",
                         title: "키 한도",
                         period: .extra,
-                        percentRemaining: Int(
-                            (remaining / keyLimit * 100).rounded()
-                        )
+                        percentRemaining: percentRemaining
                     )
                 )
             }

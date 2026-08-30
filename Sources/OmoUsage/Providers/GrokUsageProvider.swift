@@ -206,7 +206,11 @@ struct GrokUsageProvider: UsageProvider {
                 ["weeklyRemainingPercent"]
             ]
         )
-        guard used != nil || remaining != nil else {
+        let percentRemaining = remaining.flatMap(ProviderPayload.percent)
+            ?? used.flatMap {
+                ProviderPayload.remainingPercent(usedPercent: $0)
+            }
+        guard let percentRemaining else {
             throw ProviderTransportError.invalidResponse(id)
         }
         let reset = ProviderPayload.date(
@@ -254,13 +258,7 @@ struct GrokUsageProvider: UsageProvider {
                             id: "grok-week",
                             title: "주간",
                             period: .week,
-                            percentRemaining: Int(
-                                (remaining
-                                    ?? ProviderPayload.remainingPercent(
-                                        usedPercent: used ?? 0
-                                    ).double
-                                ).rounded()
-                            ),
+                            percentRemaining: percentRemaining,
                             resetsAt: reset,
                             resetText: ProviderPayload.resetText(
                                 reset,
@@ -268,17 +266,13 @@ struct GrokUsageProvider: UsageProvider {
                             )
                         )
                     ],
-                    creditText: cap.map {
-                        "추가 사용량 \(Int($0)) 한도"
-                    }
+                    creditText: cap
+                        .flatMap(ProviderPayload.nonnegativeInteger)
+                        .map { "추가 사용량 \($0) 한도" }
                 )
             ],
             availability: .available,
             updatedAt: now
         )
     }
-}
-
-private extension Int {
-    var double: Double { Double(self) }
 }

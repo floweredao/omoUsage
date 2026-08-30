@@ -27,7 +27,7 @@ struct UsageMeter: Identifiable, Equatable, Codable, Sendable {
         self.id = id
         self.title = title
         self.period = period
-        self.percentRemaining = min(100, max(0, percentRemaining))
+        self.percentRemaining = percentRemaining
         self.resetsAt = resetsAt
         self.resetText = resetText
         self.showsMenuBarBadge = showsMenuBarBadge
