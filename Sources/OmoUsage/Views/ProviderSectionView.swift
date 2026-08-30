@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ProviderSectionView: View {
     let usage: ProviderUsage
+    var showsAccountLabel = false
     @Environment(\.appLocalization)
     private var localization
 
@@ -11,9 +12,17 @@ struct ProviderSectionView: View {
                 ProviderIcon(provider: usage.provider)
                     .frame(width: 20, height: 20)
 
-                Text(usage.provider.displayName)
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(.primary)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(usage.provider.displayName)
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(.primary)
+                    if showsAccountLabel {
+                        Text(AccountLabel.sanitized(usage.accountLabel))
+                            .font(.system(size: 10.5, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
 
                 if !usage.planName.isEmpty {
                     Text(usage.planName)

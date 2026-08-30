@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import Observation
 
 struct ProviderHelpContent: Equatable, Sendable {
     let title: String
@@ -53,6 +54,7 @@ enum ProviderSetupOutcome: Equatable, Sendable {
 }
 
 enum ProviderSetupError: LocalizedError, Identifiable, Equatable {
+    case companionRequired(ProviderID, [String])
     case unavailable(ProviderID)
     case unableToLaunch(String)
     case unableToOpen(URL)
@@ -60,6 +62,8 @@ enum ProviderSetupError: LocalizedError, Identifiable, Equatable {
 
     var id: String {
         switch self {
+        case .companionRequired(let provider, let companions):
+            "companion-\(provider.rawValue)-\(companions.joined(separator: ","))"
         case .unavailable(let provider):
             "unavailable-\(provider.rawValue)"
         case .unableToLaunch(let target):
@@ -73,6 +77,8 @@ enum ProviderSetupError: LocalizedError, Identifiable, Equatable {
 
     var errorDescription: String? {
         switch self {
+        case .companionRequired(_, let companions):
+            "\(companions.joined(separator: " 또는 ")) 설치가 필요합니다."
         case .unavailable(let provider):
             "\(provider.displayName) 연결 방법을 찾지 못했습니다."
         case .unableToLaunch(let target):
@@ -82,6 +88,109 @@ enum ProviderSetupError: LocalizedError, Identifiable, Equatable {
         case .requiredExecutableMissing(let executables):
             "\(executables.joined(separator: " 또는 ")) 설치가 필요합니다."
         }
+    }
+}
+
+enum ProviderConnectionPresentationState: Equatable, Sendable {
+    case companionRequired
+    case waitingForCredential
+    case authenticated
+    case failed
+}
+
+@Observable
+@MainActor
+final class ProviderConnectionCoordinator {
+    private(set) var states: [
+        AccountProviderID: ProviderConnectionPresentationState
+    ] = [:]
+    private var awaitingActivation: Set<AccountProviderID> = []
+    private var isCheckingCompletion = false
+
+    func record(
+        _ result: Result<ProviderSetupOutcome, ProviderSetupError>,
+        for accountProvider: AccountProviderID
+    ) {
+        switch result {
+        case .success(.launched):
+            states[accountProvider] = .waitingForCredential
+            awaitingActivation.insert(accountProvider)
+        case .success(.openedFallback):
+            states[accountProvider] = .failed
+            awaitingActivation.remove(accountProvider)
+        case .failure(.companionRequired):
+            states[accountProvider] = .companionRequired
+            awaitingActivation.remove(accountProvider)
+        case .failure:
+            states[accountProvider] = .failed
+            awaitingActivation.remove(accountProvider)
+        }
+    }
+
+    func record(
+        _ result: Result<ProviderSetupOutcome, ProviderSetupError>,
+        for provider: ProviderID
+    ) {
+        record(
+            result,
+            for: AccountProviderID(
+                accountID: .legacy,
+                providerID: provider
+            )
+        )
+    }
+
+    func applicationDidBecomeActive(
+        refresh: () async -> Void,
+        availability: (AccountProviderID) -> ProviderAvailability?
+    ) async {
+        guard !isCheckingCompletion else { return }
+        let accounts = awaitingActivation
+        guard !accounts.isEmpty else { return }
+        isCheckingCompletion = true
+        defer { isCheckingCompletion = false }
+        await refresh()
+        for accountProvider in accounts {
+            switch availability(accountProvider) {
+            case .available:
+                states[accountProvider] = .authenticated
+                awaitingActivation.remove(accountProvider)
+            case .failed:
+                states[accountProvider] = .failed
+                awaitingActivation.remove(accountProvider)
+            case .authenticationRequired, .unavailable, nil:
+                states[accountProvider] = .waitingForCredential
+            }
+        }
+    }
+
+    func applicationDidBecomeActive(
+        refresh: () async -> Void,
+        availability: (ProviderID) -> ProviderAvailability?
+    ) async {
+        await applicationDidBecomeActive(
+            refresh: refresh,
+            availability: { accountProvider in
+                availability(accountProvider.providerID)
+            }
+        )
+    }
+
+    func state(
+        for accountProvider: AccountProviderID
+    ) -> ProviderConnectionPresentationState? {
+        states[accountProvider]
+    }
+
+    func state(
+        for provider: ProviderID
+    ) -> ProviderConnectionPresentationState? {
+        state(
+            for: AccountProviderID(
+                accountID: .legacy,
+                providerID: provider
+            )
+        )
     }
 }
 
@@ -111,6 +220,7 @@ enum ProviderSetup {
                 instruction: "codex 실행 후 ChatGPT로 로그인",
                 executable: "codex",
                 arguments: ["login"],
+                opensFallback: false,
                 help: help(
                     provider,
                     [
@@ -174,7 +284,7 @@ enum ProviderSetup {
                     [
                         "Copilot CLI가 있으면 브라우저 OAuth 로그인을 엽니다.",
                         "없으면 설치된 GitHub CLI 인증을 엽니다.",
-                        "또는 사용하는 편집기에서 GitHub Copilot에 로그인하세요."
+                        "일반 GitHub OAuth 로그인만으로는 Copilot quota 접근이 확인되지 않으며 OmoUsage가 endpoint에서 확인합니다."
                     ],
                     "https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up/install-copilot-cli"
                 )
@@ -210,19 +320,14 @@ enum ProviderSetup {
                 )
             )
         case .opencode:
-            terminal(
-                instruction: "OpenCode Go 연결 또는 로컬 사용",
-                executable: "opencode",
-                arguments: [
-                    "auth", "login", "--provider", "opencode-go"
-                ],
-                opensFallback: false,
+            apiKey(
+                instruction: "OpenCode Go API 키 입력",
                 help: help(
                     provider,
                     [
-                        "연결 시작을 누르면 OpenCode의 공식 인증 흐름을 엽니다.",
-                        "OmoUsage는 OpenCode의 auth.json과 로컬 사용 기록을 자동으로 찾습니다.",
-                        "OpenCode가 없으면 CLI 설치가 필요하다고 안내합니다."
+                        "OpenCode Go에서 API 키를 생성하세요.",
+                        "생성한 키를 API 키 입력란에 붙여 넣고 저장을 누르세요.",
+                        "OmoUsage는 저장된 키를 공식 auth.json과 로컬 사용 기록보다 먼저 사용합니다."
                     ],
                     "https://opencode.ai/docs/cli/#auth"
                 )
@@ -267,7 +372,8 @@ enum ProviderSetup {
         case .terminal(let specification, let fallbackURL):
             return performTerminal(
                 specification,
-                fallbackURL: fallbackURL
+                fallbackURL: fallbackURL,
+                companionProvider: provider
             )
         case .terminalAlternatives(
             let specifications,
@@ -275,10 +381,14 @@ enum ProviderSetup {
         ):
             return performTerminalAlternatives(
                 specifications,
-                fallbackURL: fallbackURL
+                fallbackURL: fallbackURL,
+                companionProvider: provider
             )
         case .application(let specification):
-            return performApplication(specification)
+            return performApplication(
+                specification,
+                companionProvider: provider
+            )
         case .applicationOrTerminal(
             let application,
             let specifications,
@@ -287,7 +397,8 @@ enum ProviderSetup {
             return performApplicationOrTerminal(
                 application,
                 specifications: specifications,
-                fallbackURL: fallbackURL
+                fallbackURL: fallbackURL,
+                companionProvider: provider
             )
         case .web(let url):
             if NSWorkspace.shared.open(url) {
@@ -303,6 +414,7 @@ enum ProviderSetup {
     static func performTerminal(
         _ specification: TerminalLaunchSpecification,
         fallbackURL: URL?,
+        companionProvider: ProviderID? = nil,
         environment: [String: String] = ProcessInfo.processInfo.environment,
         homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser,
         isExecutable: (String) -> Bool = {
@@ -314,6 +426,7 @@ enum ProviderSetup {
         performTerminalAlternatives(
             [specification],
             fallbackURL: fallbackURL,
+            companionProvider: companionProvider,
             environment: environment,
             homeDirectory: homeDirectory,
             isExecutable: isExecutable,
@@ -325,6 +438,7 @@ enum ProviderSetup {
     static func performTerminalAlternatives(
         _ specifications: [TerminalLaunchSpecification],
         fallbackURL: URL?,
+        companionProvider: ProviderID? = nil,
         environment: [String: String] = ProcessInfo.processInfo.environment,
         homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser,
         isExecutable: (String) -> Bool = {
@@ -364,11 +478,13 @@ enum ProviderSetup {
         if let failedExecutable {
             return .failure(.unableToLaunch(failedExecutable))
         }
-        return .failure(
-            .requiredExecutableMissing(
-                specifications.map(\.executable)
+        let companions = specifications.map(\.executable)
+        if let companionProvider {
+            return .failure(
+                .companionRequired(companionProvider, companions)
             )
-        )
+        }
+        return .failure(.requiredExecutableMissing(companions))
     }
 
     static func resolvedExecutablePath(
@@ -511,8 +627,9 @@ enum ProviderSetup {
         """
     }
 
-    private static func performApplication(
+    static func performApplication(
         _ specification: ApplicationLaunchSpecification,
+        companionProvider: ProviderID,
         resolveApplication: (String) -> URL? = {
             NSWorkspace.shared.urlForApplication(
                 withBundleIdentifier: $0
@@ -525,26 +642,29 @@ enum ProviderSetup {
             NSWorkspace.shared.open($0)
         }
     ) -> Result<ProviderSetupOutcome, ProviderSetupError> {
-        if
+        guard
             let applicationURL = resolveApplication(
                 specification.bundleIdentifier
-            ),
-            openApplication(applicationURL)
-        {
-            return .success(.launched)
-        }
-        if openURL(specification.fallbackURL) {
-            return .success(
-                .openedFallback(specification.fallbackURL)
+            )
+        else {
+            return .failure(
+                .companionRequired(
+                    companionProvider,
+                    [specification.name]
+                )
             )
         }
-        return .failure(.unableToOpen(specification.fallbackURL))
+        guard openApplication(applicationURL) else {
+            return .failure(.unableToLaunch(specification.name))
+        }
+        return .success(.launched)
     }
 
     static func performApplicationOrTerminal(
         _ application: ApplicationLaunchSpecification,
         specifications: [TerminalLaunchSpecification],
         fallbackURL: URL?,
+        companionProvider: ProviderID? = nil,
         environment: [String: String] = ProcessInfo.processInfo.environment,
         homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser,
         isExecutable: (String) -> Bool = {
@@ -576,6 +696,7 @@ enum ProviderSetup {
         return performTerminalAlternatives(
             specifications,
             fallbackURL: fallbackURL,
+            companionProvider: companionProvider,
             environment: environment,
             homeDirectory: homeDirectory,
             isExecutable: isExecutable,

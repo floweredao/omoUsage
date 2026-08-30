@@ -232,14 +232,57 @@
       padding: var(--space-4);
     }
 
-    .provider-title {
+    .provider-identity,
+    .provider-setting-identity {
+      display: flex;
+      flex: 1;
+      align-items: center;
+      gap: var(--space-3);
+      min-width: 0;
+    }
+
+    .provider-icon {
+      display: grid;
+      width: var(--space-8);
+      height: var(--space-8);
+      flex: 0 0 var(--space-8);
+      place-items: center;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-control);
+      color: var(--standard-text);
+      background: color-mix(
+        in srgb,
+        var(--standard) 10%,
+        var(--surface-strong)
+      );
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .provider-name-stack {
+      display: grid;
+      gap: var(--space-1);
+      min-width: 0;
+    }
+
+    .provider-title,
+    .account-alias {
       min-width: 0;
       overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .provider-title {
       font-size: 17px;
       font-weight: 650;
       letter-spacing: -0.018em;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+    }
+
+    .account-alias {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
     }
 
     .plan {
@@ -559,6 +602,12 @@
       white-space: nowrap;
     }
 
+    .provider-setting-identity .provider-icon {
+      width: var(--space-7);
+      height: var(--space-7);
+      flex-basis: var(--space-7);
+    }
+
     .provider-setting-state {
       flex: 0 0 auto;
       color: var(--muted);
@@ -649,7 +698,7 @@
     }
 
     @media (prefers-reduced-motion: no-preference) {
-      .provider-card {
+      .cards[data-reveal="true"] .provider-card {
         animation: reveal 180ms ease-out both;
       }
 
@@ -790,6 +839,19 @@
       openrouter: "OpenRouter",
       zai: "Z.ai"
     };
+    const providerMonograms = {
+      claude: "CL",
+      codex: "CX",
+      cursor: "CU",
+      antigravity: "AG",
+      copilot: "CP",
+      devin: "DV",
+      grok: "GK",
+      opencode: "OC",
+      openrouter: "OR",
+      zai: "ZA"
+    };
+    const legacyAccountID = "00000000-0000-0000-0000-000000000001";
     const localizedCopy = {
       english: {
         privateDashboard: "Private dashboard",
@@ -847,6 +909,7 @@
         show: "Show",
         hideProvider: "Hide {provider}",
         showProvider: "Show {provider}",
+        account: "Account {position}",
         refresh: "Refresh",
         refreshDidNotComplete: "The local refresh did not complete."
       },
@@ -905,6 +968,7 @@
         show: "표시하기",
         hideProvider: "{provider} 숨기기",
         showProvider: "{provider} 표시하기",
+        account: "계정 {position}",
         refresh: "새로고침",
         refreshDidNotComplete: "로컬 새로고침이 완료되지 않았습니다."
       }
@@ -930,9 +994,8 @@
       cards.setAttribute("aria-label", localized("providerUsage"));
     }
 
-    const providerOrder = new Map(
-      Object.keys(providerNames).map((provider, index) => [provider, index])
-    );
+    const accountProviderOrder = new Map();
+    const latestProvidersByAccount = new Map();
     const availabilityLabels = {
       available: "available",
       authenticationRequired: "authenticationRequired",
@@ -945,12 +1008,44 @@
     const statusText = document.querySelector("#status-text");
     const refreshedAt = document.querySelector("#refreshed-at");
     const stateCard = document.querySelector("#state-card");
+    let hasRevealedProviderCards = false;
 
     function element(tag, className, text) {
       const node = document.createElement(tag);
       if (className) node.className = className;
       if (text !== undefined) node.textContent = text;
       return node;
+    }
+
+    function accountKey(identity) {
+      return `${encodeURIComponent(identity.accountID)}`
+        + `::${encodeURIComponent(identity.providerID)}`;
+    }
+
+    function providerIdentity(provider) {
+      return {
+        accountID: provider.accountID || legacyAccountID,
+        providerID: provider.provider
+      };
+    }
+
+    function providerIcon(providerID) {
+      const icon = element(
+        "span",
+        "provider-icon",
+        providerMonograms[providerID] || providerID.slice(0, 1).toUpperCase()
+      );
+      icon.setAttribute("aria-hidden", "true");
+      return icon;
+    }
+
+    function accountAlias(provider, sameProviderCount) {
+      const label = provider.accountLabel || "Default Account";
+      return provider.accountID !== legacyAccountID
+        || label !== "Default Account"
+        || sameProviderCount > 1
+        ? label
+        : null;
     }
 
     function formatDate(milliseconds) {
@@ -1009,15 +1104,27 @@
       return wrapper;
     }
 
-    function providerNode(provider) {
+    function providerNode(provider, sameProviderCount) {
+      const identity = providerIdentity(provider);
       const article = element("article", "provider-card");
+      article.dataset.accountKey = accountKey(identity);
       const heading = element("header", "provider-heading");
+      const providerCopy = element("div", "provider-name-stack");
+      const name = providerNames[provider.provider] || provider.provider;
+      providerCopy.append(element("h2", "provider-title", name));
+      const alias = accountAlias(provider, sameProviderCount);
+      if (alias) {
+        const aliasNode = element("p", "account-alias", alias);
+        aliasNode.title = alias;
+        providerCopy.append(aliasNode);
+      }
+      const providerIdentityNode = element("div", "provider-identity");
+      providerIdentityNode.append(
+        providerIcon(provider.provider),
+        providerCopy
+      );
       heading.append(
-        element(
-          "h2",
-          "provider-title",
-          providerNames[provider.provider] || provider.provider
-        ),
+        providerIdentityNode,
         element("span", "plan", provider.planName)
       );
       article.append(heading);
@@ -1067,15 +1174,30 @@
         });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const snapshot = await response.json();
-        const providers = (
-          Array.isArray(snapshot.providers)
-            ? [...snapshot.providers]
-            : []
-        ).sort(
-          (left, right) =>
-            (providerOrder.get(left.provider) ?? Number.MAX_SAFE_INTEGER)
-            - (providerOrder.get(right.provider) ?? Number.MAX_SAFE_INTEGER)
-        );
+        const providers = Array.isArray(snapshot.providers)
+          ? [...snapshot.providers]
+          : [];
+        const sameProviderCounts = new Map();
+        latestProvidersByAccount.clear();
+        for (const provider of providers) {
+          sameProviderCounts.set(
+            provider.provider,
+            (sameProviderCounts.get(provider.provider) || 0) + 1
+          );
+          latestProvidersByAccount.set(
+            accountKey(providerIdentity(provider)),
+            provider
+          );
+        }
+        providers.sort((left, right) => {
+          const leftOrder = accountProviderOrder.get(
+            accountKey(providerIdentity(left))
+          ) ?? Number.MAX_SAFE_INTEGER;
+          const rightOrder = accountProviderOrder.get(
+            accountKey(providerIdentity(right))
+          ) ?? Number.MAX_SAFE_INTEGER;
+          return leftOrder - rightOrder;
+        });
 
         if (providers.length === 0) {
           showState(
@@ -1083,7 +1205,18 @@
             localized("noUsageDescription")
           );
         } else {
-          cards.replaceChildren(...providers.map(providerNode));
+          if (hasRevealedProviderCards) {
+            delete cards.dataset.reveal;
+          } else {
+            cards.dataset.reveal = "true";
+            hasRevealedProviderCards = true;
+          }
+          cards.replaceChildren(...providers.map((provider) =>
+            providerNode(
+              provider,
+              sameProviderCounts.get(provider.provider) || 1
+            )
+          ));
         }
         statusDot.dataset.state = "current";
         statusText.textContent = localized("privateCurrent");
@@ -1159,8 +1292,8 @@
     }
 
     function settingsOrderKey(state) {
-      return Array.isArray(state?.providerOrder)
-        ? state.providerOrder.join(",")
+      return Array.isArray(state?.accountProviderOrder)
+        ? state.accountProviderOrder.map(accountKey).join(",")
         : "";
     }
 
@@ -1168,26 +1301,37 @@
       if (!localSettingsState) return null;
       const presentation = {
         ...localSettingsState,
-        providerOrder: [...localSettingsState.providerOrder],
-        disconnectedProviders: [
-          ...localSettingsState.disconnectedProviders
-        ]
+        accountProviderOrder: localSettingsState.accountProviderOrder.map(
+          (identity) => ({ ...identity })
+        ),
+        disconnectedAccountProviders:
+          localSettingsState.disconnectedAccountProviders.map(
+            (identity) => ({ ...identity })
+          )
       };
       for (const expected of settingsMutationsInFlight.values()) {
-        if (expected.providerOrder) {
-          presentation.providerOrder = [...expected.providerOrder];
+        if (expected.accountProviderOrder) {
+          presentation.accountProviderOrder =
+            expected.accountProviderOrder.map(
+              (identity) => ({ ...identity })
+            );
         } else if (expected.webLanguage) {
           presentation.webLanguage = expected.webLanguage;
-        } else if (expected.provider) {
-          const disconnected = new Set(
-            presentation.disconnectedProviders
+        } else if (expected.accountProvider) {
+          const disconnected = new Map(
+            presentation.disconnectedAccountProviders.map(
+              (identity) => [accountKey(identity), identity]
+            )
           );
+          const key = accountKey(expected.accountProvider);
           if (expected.visible) {
-            disconnected.delete(expected.provider);
+            disconnected.delete(key);
           } else {
-            disconnected.add(expected.provider);
+            disconnected.set(key, { ...expected.accountProvider });
           }
-          presentation.disconnectedProviders = [...disconnected];
+          presentation.disconnectedAccountProviders = [
+            ...disconnected.values()
+          ];
         }
       }
       return presentation;
@@ -1197,8 +1341,9 @@
       if (!state) return "";
       return JSON.stringify({
         webLanguage: state.webLanguage,
-        providerOrder: state.providerOrder,
-        disconnectedProviders: [...state.disconnectedProviders].sort()
+        accountProviderOrder: state.accountProviderOrder.map(accountKey),
+        disconnectedAccountProviders:
+          state.disconnectedAccountProviders.map(accountKey).sort()
       });
     }
 
@@ -1214,9 +1359,9 @@
       localSettingsState = next;
       applyLanguage(next.webLanguage);
 
-      providerOrder.clear();
-      for (const [index, provider] of next.providerOrder.entries()) {
-        providerOrder.set(provider, index);
+      accountProviderOrder.clear();
+      for (const [index, identity] of next.accountProviderOrder.entries()) {
+        accountProviderOrder.set(accountKey(identity), index);
       }
       updateRefreshButton();
       if (
@@ -1281,18 +1426,19 @@
 
     function settingsMatch(expected) {
       if (!localSettingsState) return false;
-      if (expected.providerOrder) {
+      if (expected.accountProviderOrder) {
         return settingsOrderKey(localSettingsState)
-          === expected.providerOrder.join(",");
+          === expected.accountProviderOrder.map(accountKey).join(",");
       }
       if (expected.webLanguage) {
         return localSettingsState.webLanguage === expected.webLanguage;
       }
-      if (expected.provider) {
+      if (expected.accountProvider) {
         const disconnected = new Set(
-          localSettingsState.disconnectedProviders
+          localSettingsState.disconnectedAccountProviders.map(accountKey)
         );
-        return disconnected.has(expected.provider) !== expected.visible;
+        return disconnected.has(accountKey(expected.accountProvider))
+          !== expected.visible;
       }
       return false;
     }
@@ -1327,15 +1473,16 @@
       }
     }
 
-    function settingsButton(label, action, provider, disabled) {
+    function settingsButton(label, action, identity, disabled) {
       const button = element("button", "", label);
-      const mutationKey = action.startsWith("move-provider-")
-        ? "providerOrder"
-        : `${action}:${provider}`;
+      const identityKey = accountKey(identity);
+      const mutationKey = action.startsWith("move-account-")
+        ? "accountProviderOrder"
+        : `${action}:${identityKey}`;
       const isPending = settingsMutationsInFlight.has(mutationKey);
       button.type = "button";
       button.dataset.action = action;
-      button.dataset.provider = provider;
+      button.dataset.accountKey = identityKey;
       button.disabled = disabled || isPending;
       if (isPending) {
         button.setAttribute("aria-busy", "true");
@@ -1348,7 +1495,7 @@
       const activeControl = providerSettings.contains(document.activeElement)
         ? {
             action: document.activeElement.dataset.action,
-            provider: document.activeElement.dataset.provider
+            accountKey: document.activeElement.dataset.accountKey
           }
         : null;
       const presentation = presentationSettingsState();
@@ -1363,19 +1510,55 @@
         webLanguageSelect.removeAttribute("aria-busy");
       }
       const disconnected = new Set(
-        presentation.disconnectedProviders
+        presentation.disconnectedAccountProviders.map(accountKey)
       );
-      const rows = presentation.providerOrder.map(
-        (provider, index, order) => {
-          const isVisible = !disconnected.has(provider);
+      const accountLabelsByKey = new Map(
+        localSettingsState.accountProviderOrder.map(
+          (identity, index) => [
+            accountKey(identity),
+            localSettingsState.accountProviderLabels[index]
+          ]
+        )
+      );
+      const providerCounts = new Map();
+      for (const identity of presentation.accountProviderOrder) {
+        providerCounts.set(
+          identity.providerID,
+          (providerCounts.get(identity.providerID) || 0) + 1
+        );
+      }
+      const rows = presentation.accountProviderOrder.map(
+        (identity, index, order) => {
+          const identityKey = accountKey(identity);
+          const isVisible = !disconnected.has(identityKey);
+          const provider = identity.providerID;
+          const name = providerNames[provider] || provider;
+          const snapshotProvider = latestProvidersByAccount.get(identityKey);
+          const alias = accountLabelsByKey.get(identityKey)
+            || snapshotProvider?.accountLabel
+            || localized("account", { position: index + 1 });
+          const showsAlias = identity.accountID !== legacyAccountID
+            || (providerCounts.get(provider) || 0) > 1;
+          const accessibleName = showsAlias ? `${name}, ${alias}` : name;
           const row = element("article", "provider-setting");
+          row.dataset.accountKey = identityKey;
           const copy = element("div", "provider-setting-copy");
+          const nameStack = element("div", "provider-name-stack");
+          nameStack.append(
+            element("h3", "provider-setting-name", name)
+          );
+          if (showsAlias) {
+            const aliasNode = element("p", "account-alias", alias);
+            aliasNode.title = alias;
+            nameStack.append(aliasNode);
+          }
+          const identityNode = element(
+            "div",
+            "provider-setting-identity"
+          );
+          identityNode.append(providerIcon(provider), nameStack);
           copy.append(
-            element(
-              "h3",
-              "provider-setting-name",
-              providerNames[provider] || provider
-            ),
+            identityNode,
             element(
               "span",
               "provider-setting-state",
@@ -1386,60 +1569,54 @@
           const actions = element("div", "provider-setting-actions");
           const up = settingsButton(
             localized("moveUp"),
-            "move-provider-up",
-            provider,
+            "move-account-up",
+            identity,
             index === 0
           );
           up.setAttribute(
             "aria-label",
-            localized(
-              "moveProviderUp",
-              { provider: providerNames[provider] || provider }
-            )
+            localized("moveProviderUp", { provider: accessibleName })
           );
           up.addEventListener("click", () => {
-            const next = [...order];
+            const next = order.map((item) => ({ ...item }));
             [next[index - 1], next[index]] = [
               next[index],
               next[index - 1]
             ];
             mutateSettings(
-              "providerOrder",
-              { providerOrder: next },
-              { providerOrder: next }
+              "accountProviderOrder",
+              { accountProviderOrder: next },
+              { accountProviderOrder: next }
             );
           });
 
           const down = settingsButton(
             localized("moveDown"),
-            "move-provider-down",
-            provider,
+            "move-account-down",
+            identity,
             index === order.length - 1
           );
           down.setAttribute(
             "aria-label",
-            localized(
-              "moveProviderDown",
-              { provider: providerNames[provider] || provider }
-            )
+            localized("moveProviderDown", { provider: accessibleName })
           );
           down.addEventListener("click", () => {
-            const next = [...order];
+            const next = order.map((item) => ({ ...item }));
             [next[index], next[index + 1]] = [
               next[index + 1],
               next[index]
             ];
             mutateSettings(
-              "providerOrder",
-              { providerOrder: next },
-              { providerOrder: next }
+              "accountProviderOrder",
+              { accountProviderOrder: next },
+              { accountProviderOrder: next }
             );
           });
 
           const toggle = settingsButton(
             isVisible ? localized("hide") : localized("show"),
-            "toggle-provider",
-            provider,
+            "toggle-account",
+            identity,
             false
           );
           toggle.classList.add("visibility-button");
@@ -1448,14 +1625,14 @@
             "aria-label",
             localized(
               isVisible ? "hideProvider" : "showProvider",
-              { provider: providerNames[provider] || provider }
+              { provider: accessibleName }
             )
           );
           toggle.addEventListener("click", () => {
             mutateSettings(
-              `toggle-provider:${provider}`,
-              { provider, visible: !isVisible },
-              { provider, visible: !isVisible }
+              `toggle-account:${identityKey}`,
+              { accountProvider: identity, visible: !isVisible },
+              { accountProvider: identity, visible: !isVisible }
             );
           });
           actions.append(up, down, toggle);
@@ -1464,16 +1641,17 @@
         }
       );
       providerSettings.replaceChildren(...rows);
-      if (activeControl?.action && activeControl?.provider) {
+      if (activeControl?.action && activeControl?.accountKey) {
         const selector = `[data-action="${activeControl.action}"]`
-          + `[data-provider="${activeControl.provider}"]`;
+          + `[data-account-key="${activeControl.accountKey}"]`;
         const replacement = providerSettings.querySelector(selector);
         if (replacement && !replacement.disabled) {
           replacement.focus();
         } else {
           providerSettings
             .querySelector(
-              `[data-provider="${activeControl.provider}"]:not(:disabled)`
+              `[data-account-key="${activeControl.accountKey}"]`
+                + ":not(:disabled)"
             )
             ?.focus();
         }

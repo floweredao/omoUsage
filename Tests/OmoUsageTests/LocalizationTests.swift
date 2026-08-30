@@ -229,6 +229,11 @@ struct LocalizationTests {
             providers: [
                 ProviderUsage(
                     provider: .codex,
+                    accountID: AccountID(
+                        rawValue:
+                            "11111111-1111-4111-8111-111111111111"
+                    )!,
+                    accountLabel: "QA Team",
                     planName: "Plus",
                     groups: [
                         UsageGroup(
@@ -258,6 +263,11 @@ struct LocalizationTests {
             using: LocalizationContext(language: .english)
         )
 
+        #expect(
+            localized.providers[0].accountProviderID
+                == snapshot.providers[0].accountProviderID
+        )
+        #expect(localized.providers[0].accountLabel == "QA Team")
         #expect(localized.providers[0].groups[0].title == "Weekly by model")
         #expect(
             localized.providers[0].groups[0].meters[0].title

@@ -10,7 +10,11 @@ enum AppStringKey: String, CaseIterable, Sendable {
     case sideNotchPresentation
     case sideNotchShowDetails
     case providerAuthentication
-    case reconnect
+    case dashboardOrder
+    case resetToDefault
+    case orderPosition
+    case hiddenFromDashboard
+    case dragToReorder
     case launchAtLogin
     case launchDisabled
     case launchEnabled
@@ -22,6 +26,8 @@ enum AppStringKey: String, CaseIterable, Sendable {
     case checkFailed
     case notConnected
     case checking
+    case companionRequired
+    case waitingForCompanionCredentials
     case moveUp
     case moveDown
     case setupHelp
@@ -30,6 +36,14 @@ enum AppStringKey: String, CaseIterable, Sendable {
     case reconnectProvider
     case codexUsageTier
     case apiKey
+    case apiKeyAccounts
+    case accountProvider
+    case accountAlias
+    case addAccount
+    case removeAccount
+    case addedAccount
+    case removedAccount
+    case accountChangeFailed
     case save
     case delete
     case openOfficialGuide
@@ -102,7 +116,11 @@ struct AppStrings: Sendable {
         .sideNotchPresentation: "사이드 노치",
         .sideNotchShowDetails: "사용량 상세 보기",
         .providerAuthentication: "프로바이더 인증",
-        .reconnect: "연결 다시 확인",
+        .dashboardOrder: "대시보드 순서",
+        .resetToDefault: "기본 순서로 재설정",
+        .orderPosition: "%d / %d",
+        .hiddenFromDashboard: "대시보드에서 숨김",
+        .dragToReorder: "드래그하여 순서 변경",
         .launchAtLogin: "로그인 시 실행",
         .launchDisabled: "로그인할 때 자동으로 실행하지 않습니다.",
         .launchEnabled: "로그인할 때 자동으로 실행됩니다.",
@@ -114,6 +132,8 @@ struct AppStrings: Sendable {
         .checkFailed: "확인 실패",
         .notConnected: "연결 안 됨",
         .checking: "확인 중",
+        .companionRequired: "컴패니언 필요",
+        .waitingForCompanionCredentials: "컴패니언 인증 대기 중",
         .moveUp: "%@ 위로 이동",
         .moveDown: "%@ 아래로 이동",
         .setupHelp: "설정 도움말",
@@ -122,6 +142,14 @@ struct AppStrings: Sendable {
         .reconnectProvider: "다시 연결",
         .codexUsageTier: "Codex 사용량 등급",
         .apiKey: "API 키",
+        .apiKeyAccounts: "API 키 계정",
+        .accountProvider: "프로바이더",
+        .accountAlias: "계정 별칭",
+        .addAccount: "계정 추가",
+        .removeAccount: "%@ 계정 삭제",
+        .addedAccount: "%@ 계정을 추가했습니다.",
+        .removedAccount: "%@ 계정을 삭제했습니다.",
+        .accountChangeFailed: "API 키 계정을 변경하지 못했습니다.",
         .save: "저장",
         .delete: "삭제",
         .openOfficialGuide: "공식 안내 열기",
@@ -184,7 +212,11 @@ struct AppStrings: Sendable {
         .sideNotchPresentation: "Side Notch",
         .sideNotchShowDetails: "Show usage details",
         .providerAuthentication: "Provider Authentication",
-        .reconnect: "Check Connections",
+        .dashboardOrder: "Dashboard Order",
+        .resetToDefault: "Reset to Default",
+        .orderPosition: "%d of %d",
+        .hiddenFromDashboard: "Hidden from dashboard",
+        .dragToReorder: "Drag to reorder",
         .launchAtLogin: "Launch at Login",
         .launchDisabled: "Does not launch automatically when you log in.",
         .launchEnabled: "Launches automatically when you log in.",
@@ -196,6 +228,8 @@ struct AppStrings: Sendable {
         .checkFailed: "Check Failed",
         .notConnected: "Not Connected",
         .checking: "Checking",
+        .companionRequired: "Companion required",
+        .waitingForCompanionCredentials: "Waiting for companion credentials",
         .moveUp: "Move %@ up",
         .moveDown: "Move %@ down",
         .setupHelp: "Setup Help",
@@ -204,6 +238,14 @@ struct AppStrings: Sendable {
         .reconnectProvider: "Reconnect",
         .codexUsageTier: "Codex Usage Tier",
         .apiKey: "API Key",
+        .apiKeyAccounts: "API Key Accounts",
+        .accountProvider: "Provider",
+        .accountAlias: "Account Alias",
+        .addAccount: "Add Account",
+        .removeAccount: "Remove %@ account",
+        .addedAccount: "Added the %@ account.",
+        .removedAccount: "Removed the %@ account.",
+        .accountChangeFailed: "Could not update API key accounts.",
         .save: "Save",
         .delete: "Delete",
         .openOfficialGuide: "Open Official Guide",

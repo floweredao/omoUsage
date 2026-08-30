@@ -80,6 +80,70 @@ struct ProviderAPIKeyStoreTests {
     }
 
     @Test
+    func accountQualifiedStoresUseDistinctPrivateFiles() throws {
+        let home = FileManager.default.temporaryDirectory.appending(
+            path: "ProviderAPIKeyAccounts-\(UUID().uuidString)",
+            directoryHint: .isDirectory
+        )
+        defer { try? FileManager.default.removeItem(at: home) }
+        let firstID = try #require(AccountID(
+            rawValue: "00000000-0000-0000-0000-000000000002"
+        ))
+        let secondID = try #require(AccountID(
+            rawValue: "00000000-0000-0000-0000-000000000003"
+        ))
+        let first = try #require(ProviderAPIKeyStore.live(
+            for: .openrouter,
+            accountID: firstID,
+            home: home,
+            environment: [:]
+        ))
+        let second = try #require(ProviderAPIKeyStore.live(
+            for: .openrouter,
+            accountID: secondID,
+            home: home,
+            environment: [:]
+        ))
+
+        try first.save("first-secret")
+        try second.save("second-secret")
+
+        #expect(first.configURL != second.configURL)
+        #expect(first.load() == "first-secret")
+        #expect(second.load() == "second-secret")
+        #expect(
+            first.configURL.path.contains(
+                "/accounts/\(firstID.rawValue)/"
+            )
+        )
+    }
+
+    @Test
+    func nonLegacyStoreIgnoresGlobalEnvironmentKey() throws {
+        let home = FileManager.default.temporaryDirectory.appending(
+            path: "ProviderAPIKeyEnvironmentIsolation-\(UUID().uuidString)",
+            directoryHint: .isDirectory
+        )
+        defer { try? FileManager.default.removeItem(at: home) }
+        let accountID = AccountID()
+        let saved = try #require(ProviderAPIKeyStore.live(
+            for: .openrouter,
+            accountID: accountID,
+            home: home,
+            environment: [:]
+        ))
+        try saved.save("account-key")
+        let resolved = try #require(ProviderAPIKeyStore.live(
+            for: .openrouter,
+            accountID: accountID,
+            home: home,
+            environment: ["OPENROUTER_API_KEY": "global-key"]
+        ))
+
+        #expect(resolved.load() == "account-key")
+    }
+
+    @Test
     func liveStoreIgnoresRelativeXDGConfigHome() throws {
         let home = FileManager.default.temporaryDirectory.appending(
             path: "ProviderAPIKeyRelative-\(UUID().uuidString)",

@@ -51,6 +51,31 @@ struct SideNotchPanelLayoutTests {
     }
 
     @Test
+    func footerClearanceSeparatesControlsFromTheLastUsageLabel() {
+        let visibleFrame = NSRect(
+            x: 0,
+            y: 0,
+            width: 1_920,
+            height: 1_080
+        )
+
+        let frame = SideNotchPanelLayout.frame(
+            in: visibleFrame,
+            providerCount: 9,
+            isExpanded: false
+        )
+
+        #expect(SideNotchPanelLayout.footerClearance >= 8)
+        #expect(
+            frame.height
+                == SideNotchPanelLayout.verticalPadding
+                    + 9 * SideNotchPanelLayout.providerRowHeight
+                    + SideNotchPanelLayout.footerClearance
+                    + SideNotchPanelLayout.footerHeight
+        )
+    }
+
+    @Test
     func clampsTheRailInsideShortVisibleFrames() {
         let visibleFrame = NSRect(
             x: 0,
