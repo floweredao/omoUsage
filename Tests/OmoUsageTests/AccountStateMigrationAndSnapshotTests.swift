@@ -24,9 +24,9 @@ struct AccountStateMigrationAndSnapshotTests {
         )
 
         #expect(object["version"] as? Int == 3)
-        #expect(
-            providers.first?["accountID"] as? String == legacyAccountID
-        )
+        #expect(providers.first?["accountOrdinal"] as? Int == 1)
+        #expect(providers.first?["accountID"] == nil)
+        #expect(providers.first?["accountLabel"] == nil)
     }
 
     @Test

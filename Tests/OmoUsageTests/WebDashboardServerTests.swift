@@ -482,7 +482,7 @@ struct WebDashboardServerTests {
     }
 
     @Test
-    func snapshotEndpointPreservesSanitizedSameProviderAccountRows() throws {
+    func snapshotEndpointUsesGenericSameProviderAccountRows() throws {
         // Given
         let accountA = AccountID(
             rawValue: "00000000-0000-0000-0000-00000000000a"
@@ -524,13 +524,11 @@ struct WebDashboardServerTests {
         let decoded = try UsageSnapshotCodec.decode(response.body)
 
         // Then
-        #expect(decoded.providers.map(\.accountProviderID) == [
-            AccountProviderID(accountID: accountA, providerID: .openrouter),
-            AccountProviderID(accountID: accountB, providerID: .openrouter)
-        ])
+        #expect(Set(decoded.providers.map(\.accountProviderID)).count == 2)
+        #expect(decoded.providers.allSatisfy { $0.provider == .openrouter })
         #expect(decoded.providers.map(\.accountLabel) == [
-            "Team A",
-            AccountLabel.defaultValue
+            "Account 1",
+            "Account 2"
         ])
     }
 

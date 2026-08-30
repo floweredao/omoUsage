@@ -7,13 +7,115 @@ enum UsageSnapshotCodecError: Error, Equatable {
     case invalidPayload
 }
 
-private struct UsageSnapshotPayload: Codable {
+private struct UsageSnapshotVersion: Decodable {
+    let version: Int
+}
+
+private struct LegacyUsageSnapshotPayload: Decodable {
     let version: Int
     let providers: [ProviderUsage]
-    let generatedAt: Date?
+    let refreshedAt: Date
+}
+
+private struct CloudSnapshotV3: Codable {
+    let version: Int
+    let providers: [CloudProviderUsage]
+    let generatedAt: Date
     let lastRefreshAttemptAt: Date?
     let oldestDisplayedSuccessAt: Date?
-    let refreshedAt: Date?
+}
+
+private struct CloudProviderUsage: Codable {
+    let provider: ProviderID
+    let accountOrdinal: Int
+    let planName: String
+    let groups: [CloudUsageGroup]
+    let availability: ProviderAvailability
+    let lastSuccessfulAt: Date?
+
+    init(_ usage: ProviderUsage, accountOrdinal: Int) {
+        provider = usage.provider
+        self.accountOrdinal = accountOrdinal
+        planName = usage.planName
+        groups = usage.groups.map(CloudUsageGroup.init)
+        availability = usage.availability
+        lastSuccessfulAt = usage.lastSuccessfulAt
+    }
+
+    func usage(sameProviderCount: Int) -> ProviderUsage {
+        let accountID = AccountID(
+            rawValue: String(
+                format: "00000000-0000-0000-0000-%012d",
+                accountOrdinal
+            )
+        )!
+        return ProviderUsage(
+            provider: provider,
+            accountID: accountID,
+            accountLabel: sameProviderCount > 1
+                ? "Account \(accountOrdinal)"
+                : AccountLabel.defaultValue,
+            planName: planName,
+            groups: groups.map(\.usage),
+            availability: availability,
+            lastSuccessfulAt: lastSuccessfulAt
+        )
+    }
+}
+
+private struct CloudUsageGroup: Codable {
+    let id: String
+    let title: String?
+    let meters: [CloudUsageMeter]
+    let creditText: String?
+
+    init(_ group: UsageGroup) {
+        id = group.id
+        title = group.title
+        meters = group.meters.map(CloudUsageMeter.init)
+        creditText = group.creditText
+    }
+
+    var usage: UsageGroup {
+        UsageGroup(
+            id: id,
+            title: title,
+            meters: meters.map(\.usage),
+            creditText: creditText
+        )
+    }
+}
+
+private struct CloudUsageMeter: Codable {
+    let id: String
+    let title: String
+    let period: UsagePeriod
+    let percentRemaining: Int
+    let resetsAt: Date?
+    let resetText: String?
+    let showsMenuBarBadge: Bool
+
+    init(_ meter: UsageMeter) {
+        id = meter.id
+        title = meter.title
+        period = meter.period
+        percentRemaining = meter.percentRemaining
+        resetsAt = meter.resetsAt
+        resetText = meter.resetText
+        showsMenuBarBadge = meter.showsMenuBarBadge
+    }
+
+    var usage: UsageMeter {
+        UsageMeter(
+            id: id,
+            title: title,
+            period: period,
+            percentRemaining: percentRemaining,
+            resetsAt: resetsAt,
+            resetText: resetText,
+            showsMenuBarBadge: showsMenuBarBadge
+        )
+    }
 }
 
 enum UsageSnapshotCodec {
@@ -23,17 +125,23 @@ enum UsageSnapshotCodec {
     private static let maximumTimestamp = 4_102_444_800.0
 
     static func encode(_ snapshot: DashboardSnapshot) throws -> Data {
-        let payload = UsageSnapshotPayload(
+        try validate(snapshot)
+        var ordinals: [ProviderID: Int] = [:]
+        let providers = snapshot.providers.map { usage in
+            let ordinal = ordinals[usage.provider, default: 0] + 1
+            ordinals[usage.provider] = ordinal
+            return CloudProviderUsage(usage, accountOrdinal: ordinal)
+        }
+        let payload = CloudSnapshotV3(
             version: currentVersion,
-            providers: snapshot.providers,
+            providers: providers,
             generatedAt: snapshot.generatedAt,
             lastRefreshAttemptAt: snapshot.lastRefreshAttemptAt,
-            oldestDisplayedSuccessAt: snapshot.oldestDisplayedSuccessAt,
-            refreshedAt: nil
+            oldestDisplayedSuccessAt: snapshot.oldestDisplayedSuccessAt
         )
-        try validate(snapshot)
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .millisecondsSince1970
+        encoder.outputFormatting = [.sortedKeys]
         let data = try encoder.encode(payload)
         guard data.count <= maximumPayloadBytes else {
             throw UsageSnapshotCodecError.payloadTooLarge(data.count)
@@ -47,47 +155,65 @@ enum UsageSnapshotCodec {
         }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .millisecondsSince1970
-        let payload = try decoder.decode(
-            UsageSnapshotPayload.self,
+        let version = try decoder.decode(
+            UsageSnapshotVersion.self,
             from: data
-        )
-        guard (1...currentVersion).contains(payload.version) else {
-            throw UsageSnapshotCodecError.unsupportedVersion(
-                payload.version
-            )
-        }
+        ).version
         let snapshot: DashboardSnapshot
-        switch payload.version {
+        switch version {
         case 1, 2:
-            guard let refreshedAt = payload.refreshedAt else {
-                throw UsageSnapshotCodecError.invalidPayload
-            }
+            let payload = try decoder.decode(
+                LegacyUsageSnapshotPayload.self,
+                from: data
+            )
             snapshot = DashboardSnapshot(
                 providers: payload.providers,
-                generatedAt: refreshedAt,
-                lastRefreshAttemptAt: refreshedAt,
+                generatedAt: payload.refreshedAt,
+                lastRefreshAttemptAt: payload.refreshedAt,
                 oldestDisplayedSuccessAt: payload.providers
                     .compactMap(\.lastSuccessfulAt)
                     .min()
             )
         case currentVersion:
-            guard let generatedAt = payload.generatedAt else {
+            let payload = try decoder.decode(
+                CloudSnapshotV3.self,
+                from: data
+            )
+            guard hasValidOrdinals(payload.providers) else {
                 throw UsageSnapshotCodecError.invalidPayload
             }
+            let counts = Dictionary(
+                grouping: payload.providers,
+                by: \.provider
+            ).mapValues(\.count)
             snapshot = DashboardSnapshot(
-                providers: payload.providers,
-                generatedAt: generatedAt,
+                providers: payload.providers.map {
+                    $0.usage(
+                        sameProviderCount: counts[$0.provider, default: 0]
+                    )
+                },
+                generatedAt: payload.generatedAt,
                 lastRefreshAttemptAt: payload.lastRefreshAttemptAt,
                 oldestDisplayedSuccessAt:
                     payload.oldestDisplayedSuccessAt
             )
         default:
-            throw UsageSnapshotCodecError.unsupportedVersion(
-                payload.version
-            )
+            throw UsageSnapshotCodecError.unsupportedVersion(version)
         }
         try validate(snapshot)
         return snapshot
+    }
+
+    private static func hasValidOrdinals(
+        _ providers: [CloudProviderUsage]
+    ) -> Bool {
+        var nextOrdinals: [ProviderID: Int] = [:]
+        for provider in providers {
+            let expected = nextOrdinals[provider.provider, default: 0] + 1
+            guard provider.accountOrdinal == expected else { return false }
+            nextOrdinals[provider.provider] = expected
+        }
+        return true
     }
 
     private static func validate(
@@ -219,10 +345,11 @@ final class UbiquitousUsageSnapshotStore {
     }
 
     func publish(_ snapshot: DashboardSnapshot) throws {
-        store.set(
-            try UsageSnapshotCodec.encode(snapshot),
-            forKey: Self.snapshotKey
-        )
+        let data = try UsageSnapshotCodec.encode(snapshot)
+        guard store.data(forKey: Self.snapshotKey) != data else {
+            return
+        }
+        store.set(data, forKey: Self.snapshotKey)
         guard store.synchronize() else {
             throw UsageSnapshotStoreError.synchronizationFailed
         }
