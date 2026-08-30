@@ -963,9 +963,9 @@ final class NWWebDashboardListener:
             case .ready:
                 stateChanged(.ready)
             case .failed(let error):
-                NSLog(
-                    "OmoUsage web dashboard listener failed: %@",
-                    String(describing: error)
+                DiagnosticStore.shared.record(
+                    error: error,
+                    category: .webListener
                 )
                 let shouldNotify = lock.withLock {
                     guard self.listener === listener else {

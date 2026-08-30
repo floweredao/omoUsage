@@ -17,32 +17,40 @@ enum OmoUsageApp {
             runProviderMutationFixture()
             return
         }
+        if ProcessInfo.processInfo.environment[
+            "OMO_USAGE_DIAGNOSTIC_FIXTURE"
+        ] == "1" {
+            runDiagnosticFixture()
+            return
+        }
 
         let singleInstance: SingleInstanceController
         do {
             singleInstance = try SingleInstanceController.live()
             guard try singleInstance.claim() == .owner else {
-                NSLog("OmoUsage activation handoff sent")
                 return
             }
-            NSLog("OmoUsage interactive instance owner acquired")
         } catch {
-            NSLog(
-                "OmoUsage single-instance ownership failed (%@)",
-                String(reflecting: type(of: error))
+            DiagnosticStore.shared.record(
+                error: error,
+                category: .singleInstance
             )
             return
         }
 
         let application = NSApplication.shared
         if !application.setActivationPolicy(.accessory) {
-            NSLog("OmoUsage failed to set accessory activation policy at startup")
+            DiagnosticStore.shared.record(
+                DiagnosticEvent(
+                    status: .failed,
+                    category: .activationPolicy
+                )
+            )
         }
 
         let delegate = AppDelegate()
         singleInstance.installActivationHandler { [weak delegate] in
             delegate?.activateFromSecondaryLaunch()
-            NSLog("OmoUsage activation handoff received")
         }
         application.delegate = delegate
         application.run()
@@ -71,6 +79,10 @@ enum OmoUsageApp {
                 writeFixtureEvent("contender")
             }
         } catch {
+            DiagnosticStore.shared.record(
+                error: error,
+                category: .fixture
+            )
             writeFixtureEvent("error")
             Darwin.exit(EXIT_FAILURE)
         }
@@ -174,11 +186,56 @@ enum OmoUsageApp {
                 writeFixtureEvent("completed")
             }
         } catch {
+            DiagnosticStore.shared.record(
+                error: error,
+                provider: provider,
+                category: .fixture
+            )
             Darwin.exit(EXIT_FAILURE)
         }
+    }
+
+    private static func runDiagnosticFixture() {
+        let environment = ProcessInfo.processInfo.environment
+        guard
+            let destination = environment[
+                "OMO_USAGE_DIAGNOSTIC_EXPORT_PATH"
+            ],
+            let seed = environment["OMO_USAGE_DIAGNOSTIC_SEED"]
+        else {
+            Darwin.exit(EXIT_FAILURE)
+        }
+        let error = DiagnosticFixtureFailure(value: seed)
+        DiagnosticStore.shared.record(
+            error: error,
+            category: .accountRegistry
+        )
+        DiagnosticStore.shared.record(
+            error: error,
+            provider: .claude,
+            category: .providerRefresh,
+            accountOrdinal: 1
+        )
+        DiagnosticStore.shared.record(
+            error: error,
+            category: .webListener
+        )
+        let action = DiagnosticExportAction(
+            store: .shared,
+            chooseDestination: { URL(filePath: destination) }
+        )
+        guard case .success(.some) = action.perform() else {
+            Darwin.exit(EXIT_FAILURE)
+        }
+        writeFixtureEvent("exported")
     }
 
     private static func writeFixtureEvent(_ event: String) {
         FileHandle.standardOutput.write(Data("\(event)\n".utf8))
     }
+}
+
+private struct DiagnosticFixtureFailure: Error, CustomStringConvertible {
+    let value: String
+    var description: String { value }
 }

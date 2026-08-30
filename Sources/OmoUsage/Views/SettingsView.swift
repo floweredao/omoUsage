@@ -10,6 +10,7 @@ struct SettingsView: View {
     let onPresentationStyleChange: (DashboardPresentationStyle) -> Void
     let onSideNotchHideDelayChange: (SideNotchHideDelay) -> Void
     let onOpenWebDashboard: () -> Bool
+    let onExportDiagnostics: () -> DiagnosticExportOutcome
     @State private var keyDrafts: [ProviderID: String] = [:]
     @State private var newAccountProvider = ProviderID.openrouter
     @State private var newAccountLabel = ""
@@ -38,7 +39,8 @@ struct SettingsView: View {
             @escaping (DashboardPresentationStyle) -> Void,
         onSideNotchHideDelayChange:
             @escaping (SideNotchHideDelay) -> Void,
-        onOpenWebDashboard: @escaping () -> Bool
+        onOpenWebDashboard: @escaping () -> Bool,
+        onExportDiagnostics: @escaping () -> DiagnosticExportOutcome
     ) {
         self.viewModel = viewModel
         self.localization = localization
@@ -49,6 +51,7 @@ struct SettingsView: View {
         self.onSideNotchHideDelayChange =
             onSideNotchHideDelayChange
         self.onOpenWebDashboard = onOpenWebDashboard
+        self.onExportDiagnostics = onExportDiagnostics
         _presentationStyle = State(initialValue: presentationStyle)
         _sideNotchHideDelay = State(initialValue: sideNotchHideDelay)
     }
@@ -208,6 +211,17 @@ struct SettingsView: View {
                     WebDashboardSettingsRow {
                         if !onOpenWebDashboard() {
                             feedback = .key(.webDashboardOpenFailed)
+                        }
+                    }
+
+                    DiagnosticsSettingsRow {
+                        switch onExportDiagnostics() {
+                        case .exported:
+                            feedback = .key(.diagnosticsExportSucceeded)
+                        case .cancelled:
+                            break
+                        case .failed:
+                            feedback = .key(.diagnosticsExportFailed)
                         }
                     }
 
@@ -677,6 +691,56 @@ private struct WebDashboardSettingsRow: View {
             Button(
                 localization.text(.openWebDashboard),
                 action: onOpen
+            )
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+        }
+        .padding(10)
+        .background(
+            Color(nsColor: .controlBackgroundColor),
+            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(
+                    Color(nsColor: .separatorColor),
+                    lineWidth: 0.5
+                )
+        }
+    }
+}
+
+enum DiagnosticExportOutcome {
+    case exported
+    case cancelled
+    case failed
+}
+
+private struct DiagnosticsSettingsRow: View {
+    let onExport: () -> Void
+    @Environment(\.appLocalization) private var localization
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "stethoscope")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 24, height: 24)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(localization.text(.diagnostics))
+                    .font(.system(size: 13.5, weight: .semibold))
+                Text(localization.text(.diagnosticsDescription))
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 8)
+
+            Button(
+                localization.text(.exportDiagnostics),
+                action: onExport
             )
                 .buttonStyle(.bordered)
                 .controlSize(.small)
