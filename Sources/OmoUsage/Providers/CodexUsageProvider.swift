@@ -31,7 +31,11 @@ struct CodexUsageProvider: UsageProvider {
                 forHTTPHeaderField: "ChatGPT-Account-Id"
             )
         }
-        let data = try await http.data(for: request, provider: id)
+        let data = try await http.data(
+            for: request,
+            provider: id,
+            operation: .safe
+        )
         return try CodexUsageParser.parse(data, now: now)
     }
 }

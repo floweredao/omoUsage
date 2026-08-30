@@ -171,7 +171,11 @@ struct ClaudeUsageProvider: UsageProvider {
             "claude-code/2.1.69",
             forHTTPHeaderField: "User-Agent"
         )
-        let data = try await http.data(for: request, provider: id)
+        let data = try await http.data(
+            for: request,
+            provider: id,
+            operation: .safe
+        )
         return try ClaudeUsageParser.parse(
             data,
             planName: credential.planName ?? "",
@@ -214,7 +218,11 @@ struct ClaudeUsageProvider: UsageProvider {
         )
         let data: Data
         do {
-            data = try await http.data(for: request, provider: id)
+            data = try await http.data(
+                for: request,
+                provider: id,
+                operation: .unsafe
+            )
         } catch {
             await refreshCooldown.recordFailure(
                 for: accountProviderID,
@@ -343,7 +351,11 @@ struct ClaudeUsageProvider: UsageProvider {
                 + "Chrome/140.0 Safari/537.36",
             forHTTPHeaderField: "User-Agent"
         )
-        let data = try await http.data(for: request, provider: id)
+        let data = try await http.data(
+            for: request,
+            provider: id,
+            operation: .safe
+        )
         return try ClaudeUsageParser.parse(
             data,
             planName: "Claude.ai",
@@ -378,9 +390,18 @@ struct ClaudeUsageProvider: UsageProvider {
                 Self.logger.error(
                     "Claude Desktop usage request failed: \(statusCode)"
                 )
-            case .invalidResponse:
+            case .invalidResponse, .invalidContentType, .responseTooLarge,
+                 .invalidJSON:
                 Self.logger.error(
                     "Claude Desktop usage response was invalid"
+                )
+            case let .transientTransport(_, code):
+                Self.logger.error(
+                    "Claude Desktop usage transport failed: \(code.rawValue)"
+                )
+            case .operationTimedOut:
+                Self.logger.error(
+                    "Claude Desktop usage operation timed out"
                 )
             }
             return

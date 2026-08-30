@@ -73,7 +73,10 @@ struct AntigravityReliabilityTests {
         )
         let provider = AntigravityUsageProvider(
             discovery: discovery,
-            http: ProviderHTTP(session: session)
+            http: providerHTTPTestClient(
+                session: session,
+                retryPolicy: ProviderRetryPolicy(maximumAttempts: 1)
+            )
         )
 
         let usage = try? await provider.fetch(now: agReliabilityNow)

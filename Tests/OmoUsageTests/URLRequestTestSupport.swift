@@ -1,4 +1,17 @@
 import Foundation
+@testable import OmoUsage
+
+func providerHTTPTestClient(
+    session: URLSession,
+    retryPolicy: ProviderRetryPolicy = ProviderRetryPolicy()
+) -> ProviderHTTP {
+    ProviderHTTP(
+        session: session,
+        retryPolicy: retryPolicy,
+        sleep: { _ in },
+        random: { 0 }
+    )
+}
 
 func requestBodyData(_ request: URLRequest) -> Data? {
     if let body = request.httpBody {

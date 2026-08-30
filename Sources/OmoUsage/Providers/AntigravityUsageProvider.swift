@@ -40,7 +40,11 @@ struct AntigravityUsageProvider: UsageProvider {
             )
             request.setValue("antigravity", forHTTPHeaderField: "User-Agent")
             do {
-                let data = try await http.data(for: request, provider: id)
+                let data = try await http.data(
+                    for: request,
+                    provider: id,
+                    operation: .safe
+                )
                 return try AntigravityUsageParser.parse(data, now: now)
             } catch ProviderTransportError.authenticationRequired {
                 throw ProviderTransportError.authenticationRequired(id)

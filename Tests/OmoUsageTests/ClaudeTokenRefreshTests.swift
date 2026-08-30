@@ -369,7 +369,7 @@ private final class ClaudeRefreshURLProtocol: URLProtocol, @unchecked Sendable {
             url: request.url!,
             statusCode: statusCode,
             httpVersion: nil,
-            headerFields: nil
+            headerFields: ["Content-Type": "application/json"]
         )!
         client?.urlProtocol(
             self,
