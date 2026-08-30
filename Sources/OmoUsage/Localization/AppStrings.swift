@@ -2,6 +2,18 @@ enum AppStringKey: String, CaseIterable, Sendable {
     case aiUsage
     case settingsTitle
     case settingsSubtitle
+    case registryRecoveredTitle
+    case registryRecoveredDescription
+    case registryBlockedTitle
+    case registryBlockedDescription
+    case restoreRegistryBackup
+    case resetRegistry
+    case registryResetTitle
+    case registryResetDescription
+    case registryRestoreSucceeded
+    case registryResetSucceeded
+    case registryRecoveryFailed
+    case cancel
     case language
     case korean
     case english
@@ -114,6 +126,21 @@ struct AppStrings: Sendable {
         .aiUsage: "AI 사용량",
         .settingsTitle: "설정",
         .settingsSubtitle: "로그인 실행과 프로바이더 인증을 관리합니다.",
+        .registryRecoveredTitle: "계정 레지스트리를 백업에서 불러왔습니다",
+        .registryRecoveredDescription:
+            "손상된 원본은 격리했습니다. 백업을 복원하거나 새 레지스트리로 재설정하세요.",
+        .registryBlockedTitle: "계정 레지스트리를 사용할 수 없습니다",
+        .registryBlockedDescription:
+            "유효한 레지스트리가 없어 프로바이더와 계정 변경을 차단했습니다. 손상된 파일은 격리되어 있습니다.",
+        .restoreRegistryBackup: "백업 복원",
+        .resetRegistry: "레지스트리 재설정",
+        .registryResetTitle: "계정 레지스트리를 재설정할까요?",
+        .registryResetDescription:
+            "현재 계정 구성을 새 기본 구성으로 바꿉니다. 격리된 파일은 보존됩니다.",
+        .registryRestoreSucceeded: "계정 레지스트리 백업을 복원했습니다.",
+        .registryResetSucceeded: "새 계정 레지스트리를 만들었습니다.",
+        .registryRecoveryFailed: "계정 레지스트리를 복구하지 못했습니다.",
+        .cancel: "취소",
         .language: "언어",
         .korean: "한국어",
         .english: "English",
@@ -217,6 +244,21 @@ struct AppStrings: Sendable {
         .aiUsage: "AI Usage",
         .settingsTitle: "Settings",
         .settingsSubtitle: "Manage launch at login and provider authentication.",
+        .registryRecoveredTitle: "Account registry loaded from backup",
+        .registryRecoveredDescription:
+            "The damaged original was quarantined. Restore the backup or reset to a new registry.",
+        .registryBlockedTitle: "Account registry unavailable",
+        .registryBlockedDescription:
+            "No valid registry exists, so providers and account changes are blocked. Damaged files remain quarantined.",
+        .restoreRegistryBackup: "Restore Backup",
+        .resetRegistry: "Reset Registry",
+        .registryResetTitle: "Reset the account registry?",
+        .registryResetDescription:
+            "This replaces the account configuration with a new default registry. Quarantined files are preserved.",
+        .registryRestoreSucceeded: "Restored the account registry backup.",
+        .registryResetSucceeded: "Created a new account registry.",
+        .registryRecoveryFailed: "Could not recover the account registry.",
+        .cancel: "Cancel",
         .language: "Language",
         .korean: "한국어",
         .english: "English",

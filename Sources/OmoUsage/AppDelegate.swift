@@ -177,30 +177,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         let providerOrder = orderStore.load()
         let disconnectedProviders = disconnectionStore.load()
         let accountStore = ProviderAccountStore.live(defaults: .standard)
-        let registry: ProviderAccountRegistry
-        let registryPersistenceEnabled: Bool
-        do {
-            registry = try accountStore.loadOrMigrate()
-            registryPersistenceEnabled = true
-        } catch {
+        let registryLoadResult = accountStore.loadOrRecover()
+        if registryLoadResult.state != .ready {
             NSLog(
-                "OmoUsage account registry unavailable (%@)",
-                String(reflecting: type(of: error))
+                "OmoUsage account registry recovery state: %@",
+                String(reflecting: registryLoadResult.state)
             )
-            registry = AppAccountCompositionFactory
-                .deterministicLegacyRegistry(
-                    providerOrder: providerOrder,
-                    disconnectedProviders: disconnectedProviders
-                )
-            registryPersistenceEnabled = false
         }
         let accountRegistryController = ProviderAccountRegistryController(
             store: accountStore,
-            registry: registry,
-            persistenceEnabled: registryPersistenceEnabled
+            loadResult: registryLoadResult
         )
         let accountComposition = AppAccountCompositionFactory.make(
-            registry: registry
+            registry: registryLoadResult.registry
         )
         let webDashboardSnapshotStore = WebDashboardSnapshotStore(
             DashboardSnapshot(
