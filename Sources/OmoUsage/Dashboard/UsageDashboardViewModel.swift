@@ -64,7 +64,10 @@ final class UsageDashboardViewModel {
     @ObservationIgnored
     private let providerDeadline: TimeInterval
     @ObservationIgnored
-    private let sleep: @Sendable (TimeInterval) async throws -> Void
+    private let sleep: @Sendable (
+        AccountProviderID,
+        TimeInterval
+    ) async throws -> Void
     @ObservationIgnored
     private let persistProviderOrder: ([ProviderID]) -> Void
     @ObservationIgnored
@@ -144,8 +147,11 @@ final class UsageDashboardViewModel {
         ) -> Void = { _ in },
         diagnosticStore: DiagnosticStore = .shared,
         providerDeadline: TimeInterval = 30,
-        sleep: @escaping @Sendable (TimeInterval) async throws -> Void = {
-            try await Task.sleep(for: .seconds($0))
+        sleep: @escaping @Sendable (
+            AccountProviderID,
+            TimeInterval
+        ) async throws -> Void = { _, duration in
+            try await Task.sleep(for: .seconds(duration))
         },
         now: @escaping @Sendable () -> Date = Date.init
     ) {
@@ -626,7 +632,10 @@ final class UsageDashboardViewModel {
         _ provider: any UsageProvider,
         now: Date,
         deadline: TimeInterval,
-        sleep: @escaping @Sendable (TimeInterval) async throws -> Void
+        sleep: @escaping @Sendable (
+            AccountProviderID,
+            TimeInterval
+        ) async throws -> Void
     ) async -> ProviderFetchResult {
         let race = ProviderDeadlineRace()
         return await withTaskCancellationHandler {
@@ -680,7 +689,10 @@ final class UsageDashboardViewModel {
                 }
                 let deadlineTask = Task {
                     do {
-                        try await sleep(max(0, deadline))
+                        try await sleep(
+                            provider.accountProviderID,
+                            max(0, deadline)
+                        )
                         race.resolve(ProviderFetchResult(
                             id: provider.accountProviderID,
                             usage: nil,

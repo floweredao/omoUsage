@@ -31,8 +31,12 @@ struct ProviderDeadlineTests {
         await peer.setUsage(makeUsage(.codex, plan: "Updated"))
         let refresh = Task { @MainActor in await viewModel.refresh() }
         await provider.waitUntilSecondFetchStarts()
-        await deadline.waitUntilSleepStarts()
-        deadline.fire()
+        let timedOutIdentity = AccountProviderID(
+            accountID: .legacy,
+            providerID: .claude
+        )
+        await deadline.waitUntilSleepStarts(for: timedOutIdentity)
+        deadline.fire(timedOutIdentity)
         await refresh.value
 
         let claude = try #require(
@@ -64,7 +68,12 @@ struct ProviderDeadlineTests {
         )
         let refresh = Task { @MainActor in await viewModel.refresh() }
         await provider.waitUntilFetchStarts()
-        await deadline.waitUntilSleepStarts()
+        await deadline.waitUntilSleepStarts(
+            for: AccountProviderID(
+                accountID: .legacy,
+                providerID: .claude
+            )
+        )
 
         refresh.cancel()
         await refresh.value
@@ -91,54 +100,73 @@ struct ProviderDeadlineTests {
 }
 
 private final class ProviderDeadlineTestGate: @unchecked Sendable {
+    private struct SleepKey: Hashable {
+        let identity: AccountProviderID
+        let id: UUID
+    }
+
     private let lock = NSLock()
     private var sleepContinuations: [
-        UUID: CheckedContinuation<Void, any Error>
+        SleepKey: CheckedContinuation<Void, any Error>
     ] = [:]
-    private var sleepWaiters: [CheckedContinuation<Void, Never>] = []
+    private var sleepWaiters: [
+        AccountProviderID: [CheckedContinuation<Void, Never>]
+    ] = [:]
     private var completionCount = 0
     private var completionWaiters: [
         (target: Int, continuation: CheckedContinuation<Void, Never>)
     ] = []
 
-    func sleep(_ duration: TimeInterval) async throws {
-        let id = UUID()
+    func sleep(
+        _ identity: AccountProviderID,
+        _ duration: TimeInterval
+    ) async throws {
+        let key = SleepKey(identity: identity, id: UUID())
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 let waiters = lock.withLock { () -> [
                     CheckedContinuation<Void, Never>
                 ] in
-                    sleepContinuations[id] = continuation
-                    let waiters = sleepWaiters
-                    sleepWaiters.removeAll()
+                    sleepContinuations[key] = continuation
+                    let waiters = sleepWaiters.removeValue(
+                        forKey: identity
+                    ) ?? []
                     return waiters
                 }
                 waiters.forEach { $0.resume() }
-                if Task.isCancelled { cancelSleep(id: id) }
+                if Task.isCancelled { cancelSleep(key: key) }
             }
         } onCancel: {
-            self.cancelSleep(id: id)
+            self.cancelSleep(key: key)
         }
     }
 
-    func waitUntilSleepStarts() async {
+    func waitUntilSleepStarts(for identity: AccountProviderID) async {
         await withCheckedContinuation { continuation in
             let alreadyStarted = lock.withLock {
-                guard sleepContinuations.isEmpty else { return true }
-                sleepWaiters.append(continuation)
+                guard !sleepContinuations.keys.contains(
+                    where: { $0.identity == identity }
+                ) else {
+                    return true
+                }
+                sleepWaiters[identity, default: []].append(continuation)
                 return false
             }
             if alreadyStarted { continuation.resume() }
         }
     }
 
-    func fire() {
+    func fire(_ identity: AccountProviderID) {
         let result: (
             [CheckedContinuation<Void, any Error>],
             [CheckedContinuation<Void, Never>]
         ) = lock.withLock {
-            let values = Array(sleepContinuations.values)
-            sleepContinuations.removeAll()
+            let keys = sleepContinuations.keys.filter {
+                $0.identity == identity
+            }
+            let values = keys.compactMap {
+                sleepContinuations.removeValue(forKey: $0)
+            }
             return (values, completed(values.count))
         }
         result.0.forEach { $0.resume() }
@@ -156,12 +184,12 @@ private final class ProviderDeadlineTestGate: @unchecked Sendable {
         }
     }
 
-    private func cancelSleep(id: UUID) {
+    private func cancelSleep(key: SleepKey) {
         let result: (
             CheckedContinuation<Void, any Error>?,
             [CheckedContinuation<Void, Never>]
         ) = lock.withLock {
-            guard let value = sleepContinuations.removeValue(forKey: id) else {
+            guard let value = sleepContinuations.removeValue(forKey: key) else {
                 return (nil, [])
             }
             return (value, completed(1))
