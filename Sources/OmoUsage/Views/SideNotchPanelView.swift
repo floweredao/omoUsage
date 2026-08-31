@@ -546,7 +546,7 @@ private struct SideNotchProviderButton: View {
                     height: SideNotchPanelLayout.ringDiameter
                 )
 
-                Text(localization.metricValue(summaryMeter.metric))
+                Text(compactMetricValue)
                     .font(.system(size: 10.5, weight: .semibold))
                     .monospacedDigit()
                     .lineLimit(2)
@@ -644,6 +644,13 @@ private struct SideNotchProviderButton: View {
         .accessibilityHint(localization.text(.sideNotchShowDetails))
     }
 
+    private var compactMetricValue: String {
+        SideNotchMetricPresentation.compactValue(
+            for: summaryMeter.metric,
+            localizedValue: localization.metricValue(summaryMeter.metric)
+        )
+    }
+
     private var summaryMeter: UsageMeter {
         let meters = usage.groups.flatMap(\.meters)
         return meters.first {
@@ -664,6 +671,20 @@ private struct SideNotchProviderButton: View {
             + localization.metricValue(summaryMeter.metric)
         guard usage.freshness == .stale else { return value }
         return "\(value), \(localization.staleBadgeText())"
+    }
+}
+
+enum SideNotchMetricPresentation {
+    static func compactValue(
+        for metric: UsageMetric,
+        localizedValue: String
+    ) -> String {
+        switch metric {
+        case .quotaRemaining(let percent):
+            "\(percent)%"
+        case .spend, .credit, .count, .informational:
+            localizedValue
+        }
     }
 }
 

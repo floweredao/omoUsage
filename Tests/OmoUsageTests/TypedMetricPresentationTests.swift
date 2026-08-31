@@ -63,6 +63,22 @@ struct TypedMetricPresentationTests {
     }
 
     @Test
+    func sideNotchRailKeepsQuotaCompactWithoutChangingOtherSemantics() {
+        #expect(
+            SideNotchMetricPresentation.compactValue(
+                for: .quotaRemaining(percent: 72),
+                localizedValue: "72% remaining"
+            ) == "72%"
+        )
+        #expect(
+            SideNotchMetricPresentation.compactValue(
+                for: .credit(balance: 12, unit: .credits),
+                localizedValue: "12 credits balance"
+            ) == "12 credits balance"
+        )
+    }
+
+    @Test
     func everyShippedSurfaceBranchesOnMetricKind() throws {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
