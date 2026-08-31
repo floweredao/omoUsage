@@ -82,6 +82,46 @@ struct WebDashboardAuthenticationTests {
     }
 
     @Test
+    func fixtureBootstrapExportIsExplicitPrivateAndNeverProduction() throws {
+        let directory = FileManager.default.temporaryDirectory.appending(
+            path: "WebBootstrapExport-\(UUID().uuidString)"
+        )
+        let fixtureURL = directory.appending(path: "bootstrap-url.txt")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        let store = makeStore()
+
+        try FixtureWebBootstrapExporter.exportIfRequested(
+            accessStore: store,
+            environment: [
+                "OMO_USAGE_FIXTURE_MODE": "1",
+                "OMO_USAGE_BOOTSTRAP_URL_FILE": fixtureURL.path
+            ]
+        )
+
+        let value = try String(contentsOf: fixtureURL, encoding: .utf8)
+        let permissions = try #require(
+            try FileManager.default.attributesOfItem(
+                atPath: fixtureURL.path
+            )[.posixPermissions] as? NSNumber
+        )
+        #expect(value.hasPrefix("http://127.0.0.1:7827/bootstrap?token=b_"))
+        #expect(permissions.intValue == 0o600)
+
+        try FileManager.default.removeItem(at: fixtureURL)
+        try FixtureWebBootstrapExporter.exportIfRequested(
+            accessStore: store,
+            environment: [
+                "OMO_USAGE_BOOTSTRAP_URL_FILE": fixtureURL.path
+            ]
+        )
+        #expect(!FileManager.default.fileExists(atPath: fixtureURL.path))
+    }
+
+    @Test
     func validSessionAuthenticatesHTMLAndAPIReads() throws {
         let authenticated = try authenticatedGateway()
 

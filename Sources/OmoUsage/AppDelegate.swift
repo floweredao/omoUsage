@@ -346,6 +346,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         refreshScheduler.start()
         do {
             try webDashboardServer.start()
+            try FixtureWebBootstrapExporter.exportIfRequested(
+                accessStore: webDashboardAccessStore
+            )
         } catch {
             DiagnosticStore.shared.record(
                 error: error,
