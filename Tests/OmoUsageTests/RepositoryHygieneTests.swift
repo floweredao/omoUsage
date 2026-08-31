@@ -47,7 +47,9 @@ struct RepositoryHygieneTests {
     private let executableScripts: Set<String> = [
         "Scripts/check-repository-hygiene.sh",
         "Scripts/package-app.sh",
-        "Scripts/qa-dev-six-fixes.sh"
+        "Scripts/qa-dev-six-fixes.sh",
+        "Scripts/release-app.sh",
+        "Scripts/with-signing-keychain.sh"
     ]
 
     private var repositoryRoot: URL {

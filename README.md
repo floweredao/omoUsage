@@ -41,8 +41,8 @@ swift test                  # full test suite
 sh Scripts/package-app.sh   # → dist/OmoUsage.app
 ```
 
-`package-app.sh` produces a signed-for-local-use `.app`. Copy it wherever you
-keep apps:
+`package-app.sh` produces an explicitly ad-hoc, signed-for-local-use `.app`.
+Copy it wherever you keep apps:
 
 ```sh
 cp -R dist/OmoUsage.app /Applications/
@@ -84,8 +84,9 @@ Two details that are easy to get wrong:
 `OmoUsageMobile` is a read-only companion. The Mac stays the only credential
 owner and publishes a usage snapshot — totals, plan labels, reset times — to
 your private iCloud key-value store. Credentials, cookies, API keys, and file
-paths never leave the Mac. Both targets must share a development team and
-ubiquity key-value identifier.
+paths never leave the Mac. Both targets must share a development team and team-prefixed iCloud key-value
+identifier. See [`RELEASE.md`](RELEASE.md) for provisioning and trusted macOS
+distribution requirements.
 
 ## Private web dashboard
 
@@ -131,4 +132,6 @@ The UI ships in Korean by default; English is selectable in Settings.
 
 - [`DESIGN.md`](DESIGN.md) — the design contract: visual tokens, layout,
   motion, accessibility, and the constraints the implementation must honour.
+- [`RELEASE.md`](RELEASE.md) — trusted macOS signing, notarization, and iCloud
+  team setup.
 - [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)

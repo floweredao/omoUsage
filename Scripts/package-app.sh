@@ -5,12 +5,14 @@ ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 APP="$ROOT/dist/OmoUsage.app"
 CONTENTS="$APP/Contents"
 ICONSET="$ROOT/.build/OmoUsage.iconset"
-IDENTITY="${OMO_USAGE_CODESIGN_IDENTITY:--}"
+REQUESTED_IDENTITY="${OMO_USAGE_CODESIGN_IDENTITY:--}"
 TEAM_IDENTIFIER="${OMO_USAGE_TEAM_IDENTIFIER:-}"
 ENTITLEMENTS_TEMPLATE="$ROOT/Config/OmoUsage.entitlements"
 VERSION_CONFIGURATION="$ROOT/Config/Version.xcconfig"
 TEMP_ENTITLEMENTS=""
 EXTRACTED_ENTITLEMENTS=""
+PLAN=no
+MODE_WAS_EXPLICIT=no
 
 version_setting() {
     value="$(awk -F ' = ' -v key="$1" '$1 == key { print $2; exit }' "$VERSION_CONFIGURATION")"
@@ -21,23 +23,37 @@ version_setting() {
     printf '%s\n' "$value"
 }
 
-MARKETING_VERSION="$(version_setting MARKETING_VERSION)"
-CURRENT_PROJECT_VERSION="$(version_setting CURRENT_PROJECT_VERSION)"
-SOURCE_COMMIT="$(git -C "$ROOT" rev-parse HEAD)"
-
 usage() {
-    printf '%s\n' "usage: $0 [--print-signing-plan]" >&2
+    printf '%s\n' "usage: $0 [--adhoc|--developer-id] [--print-signing-plan]" >&2
     exit 64
 }
 
-case "$#" in
-    0) MODE=package ;;
-    1)
-        [ "$1" = "--print-signing-plan" ] || usage
-        MODE=plan
-        ;;
-    *) usage ;;
-esac
+# No mode remains the documented local ad-hoc path. For compatibility,
+# --print-signing-plan infers Developer ID only when an identity was supplied.
+SIGNING_MODE=adhoc
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --adhoc)
+            [ "$MODE_WAS_EXPLICIT" = no ] || usage
+            SIGNING_MODE=adhoc
+            MODE_WAS_EXPLICIT=yes
+            ;;
+        --developer-id)
+            [ "$MODE_WAS_EXPLICIT" = no ] || usage
+            SIGNING_MODE=developer-id
+            MODE_WAS_EXPLICIT=yes
+            ;;
+        --print-signing-plan)
+            [ "$PLAN" = no ] || usage
+            PLAN=yes
+            ;;
+        *) usage ;;
+    esac
+    shift
+done
+if [ "$MODE_WAS_EXPLICIT" = no ] && [ "$PLAN" = yes ] && [ "$REQUESTED_IDENTITY" != "-" ]; then
+    SIGNING_MODE=developer-id
+fi
 
 case "$TEAM_IDENTIFIER" in
     *[!A-Za-z0-9]*)
@@ -46,31 +62,42 @@ case "$TEAM_IDENTIFIER" in
         ;;
 esac
 
-if [ "$IDENTITY" = "-" ] && [ -n "$TEAM_IDENTIFIER" ]; then
-    printf '%s\n' "error: OMO_USAGE_TEAM_IDENTIFIER requires a non-ad-hoc signing identity" >&2
-    exit 64
+if [ "$SIGNING_MODE" = developer-id ]; then
+    IDENTITY="$REQUESTED_IDENTITY"
+    if [ -z "$IDENTITY" ] || [ "$IDENTITY" = "-" ]; then
+        printf '%s\n' "error: Developer ID packaging requires OMO_USAGE_CODESIGN_IDENTITY" >&2
+        exit 64
+    fi
+    if [ -z "$TEAM_IDENTIFIER" ]; then
+        printf '%s\n' "error: Developer ID packaging requires OMO_USAGE_TEAM_IDENTIFIER" >&2
+        exit 64
+    fi
+else
+    IDENTITY=-
+    if [ -n "$TEAM_IDENTIFIER" ]; then
+        printf '%s\n' "error: OMO_USAGE_TEAM_IDENTIFIER is not accepted for ad-hoc packaging" >&2
+        exit 64
+    fi
 fi
 
-if [ "$IDENTITY" != "-" ] && [ -z "$TEAM_IDENTIFIER" ]; then
-    printf '%s\n' "error: OMO_USAGE_TEAM_IDENTIFIER is required for non-ad-hoc signing" >&2
-    exit 64
-fi
+MARKETING_VERSION="$(version_setting MARKETING_VERSION)"
+CURRENT_PROJECT_VERSION="$(version_setting CURRENT_PROJECT_VERSION)"
+SOURCE_COMMIT="$(git -C "$ROOT" rev-parse HEAD)"
 
-if [ "$MODE" = "plan" ]; then
+if [ "$PLAN" = yes ]; then
     printf 'MARKETING_VERSION=%s\n' "$MARKETING_VERSION"
     printf 'CURRENT_PROJECT_VERSION=%s\n' "$CURRENT_PROJECT_VERSION"
     printf 'SOURCE_COMMIT=%s\n' "$SOURCE_COMMIT"
+    printf 'SIGNING_MODE=%s\n' "$SIGNING_MODE"
     printf 'SIGNING_IDENTITY=%s\n' "$IDENTITY"
-    if [ -n "$TEAM_IDENTIFIER" ]; then
+    if [ "$SIGNING_MODE" = developer-id ]; then
         printf 'TEAM_IDENTIFIER=%s\n' "$TEAM_IDENTIFIER"
         printf 'ENTITLEMENTS=%s\n' "$ENTITLEMENTS_TEMPLATE"
         printf 'KVS_IDENTIFIER=%s.com.omo.usage\n' "$TEAM_IDENTIFIER"
-        printf 'CLOUD_KVS_AVAILABLE=yes\n'
+        printf 'HARDENED_RUNTIME=yes\nSECURE_TIMESTAMP=yes\nCLOUD_KVS_AVAILABLE=yes\n'
     else
-        printf 'TEAM_IDENTIFIER=\n'
-        printf 'ENTITLEMENTS=\n'
-        printf 'KVS_IDENTIFIER=\n'
-        printf 'CLOUD_KVS_AVAILABLE=no\n'
+        printf 'TEAM_IDENTIFIER=\nENTITLEMENTS=\nKVS_IDENTIFIER=\n'
+        printf 'HARDENED_RUNTIME=no\nSECURE_TIMESTAMP=no\nCLOUD_KVS_AVAILABLE=no\n'
     fi
     exit 0
 fi
@@ -85,13 +112,10 @@ cd "$ROOT"
 swift build -c release
 
 rm -rf "$APP"
-mkdir -p "$CONTENTS/MacOS"
-mkdir -p "$CONTENTS/Resources/ProviderIcons"
+mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources/ProviderIcons"
 cp ".build/release/OmoUsage" "$CONTENTS/MacOS/OmoUsage"
 cp "Config/Info.plist" "$CONTENTS/Info.plist"
-# Config/Info.plist is written for xcodebuild, which expands these build
-# settings. This script copies the file verbatim, so substitute them here or
-# LaunchServices cannot find the executable and refuses to open the bundle.
+# SwiftPM does not expand Xcode build settings in the copied plist.
 /usr/libexec/PlistBuddy \
     -c "Set :CFBundleDevelopmentRegion en" \
     -c "Set :CFBundleExecutable OmoUsage" \
@@ -101,27 +125,25 @@ cp "Config/Info.plist" "$CONTENTS/Info.plist"
     -c "Set :CFBundleVersion $CURRENT_PROJECT_VERSION" \
     -c "Set :OmoUsageSourceCommit $SOURCE_COMMIT" \
     "$CONTENTS/Info.plist"
-cp Sources/OmoUsage/Resources/ProviderIcons/*.svg \
-    "$CONTENTS/Resources/ProviderIcons/"
+cp Sources/OmoUsage/Resources/ProviderIcons/*.svg "$CONTENTS/Resources/ProviderIcons/"
 cp Sources/OmoUsage/Resources/AppIcon.svg "$CONTENTS/Resources/AppIcon.svg"
-cp Sources/OmoUsage/Resources/WebDashboard/index.html \
-    "$CONTENTS/Resources/index.html"
+cp Sources/OmoUsage/Resources/WebDashboard/index.html "$CONTENTS/Resources/index.html"
 
 rm -rf "$ICONSET"
-swift Scripts/generate-app-icon.swift \
-    Sources/OmoUsage/Resources/AppIcon.svg "$ICONSET"
+swift Scripts/generate-app-icon.swift Sources/OmoUsage/Resources/AppIcon.svg "$ICONSET"
 iconutil -c icns "$ICONSET" -o "$CONTENTS/Resources/OmoUsage.icns"
 rm -rf "$ICONSET"
 
-if [ -n "$TEAM_IDENTIFIER" ]; then
+if [ "$SIGNING_MODE" = developer-id ]; then
     TEMP_ENTITLEMENTS="$(mktemp "${TMPDIR:-/tmp}/OmoUsage-entitlements.XXXXXX.plist")"
     EXTRACTED_ENTITLEMENTS="$(mktemp "${TMPDIR:-/tmp}/OmoUsage-signed-entitlements.XXXXXX.plist")"
     cp "$ENTITLEMENTS_TEMPLATE" "$TEMP_ENTITLEMENTS"
     /usr/libexec/PlistBuddy \
         -c "Set :com.apple.developer.ubiquity-kvstore-identifier ${TEAM_IDENTIFIER}.com.omo.usage" \
         "$TEMP_ENTITLEMENTS"
-    codesign --force --deep --sign "$IDENTITY" \
+    codesign --force --deep --sign "$IDENTITY" --options runtime --timestamp \
         --entitlements "$TEMP_ENTITLEMENTS" "$APP"
+    codesign --verify --deep --strict --verbose=2 "$APP"
     codesign -d --entitlements :- "$APP" > "$EXTRACTED_ENTITLEMENTS"
     ACTUAL_KVS_IDENTIFIER="$(/usr/libexec/PlistBuddy \
         -c 'Print :com.apple.developer.ubiquity-kvstore-identifier' \
@@ -133,5 +155,6 @@ if [ -n "$TEAM_IDENTIFIER" ]; then
 else
     printf '%s\n' "warning: ad-hoc package has no team identifier; cloud KVS is unavailable" >&2
     codesign --force --deep --sign - "$APP"
+    codesign --verify --deep --strict --verbose=2 "$APP"
 fi
 printf '%s\n' "$APP"
