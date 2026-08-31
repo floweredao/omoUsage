@@ -2,8 +2,11 @@
 import Foundation
 import PackageDescription
 
+let packageRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
 let versionConfiguration = try String(
-    contentsOfFile: "Config/Version.xcconfig",
+    contentsOf: packageRoot.appending(
+        path: "Config/Version.xcconfig"
+    ),
     encoding: .utf8
 )
 let versionSettings: [String: String] = Dictionary(
