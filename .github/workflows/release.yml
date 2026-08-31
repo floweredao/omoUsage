@@ -1,0 +1,55 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-15
+    timeout-minutes: 60
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build, sign, notarize, and verify
+        env:
+          CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          NOTARY_APPLE_ID: ${{ secrets.MACOS_NOTARY_APPLE_ID }}
+          NOTARY_PASSWORD: ${{ secrets.MACOS_NOTARY_PASSWORD }}
+          OMO_USAGE_CODESIGN_IDENTITY: ${{ secrets.MACOS_CODESIGN_IDENTITY }}
+          OMO_USAGE_TEAM_IDENTIFIER: ${{ secrets.APPLE_TEAM_IDENTIFIER }}
+          OMO_USAGE_NOTARY_PROFILE: omousage-release
+          OMO_USAGE_RELEASE_REF: ${{ github.ref }}
+        run: >-
+          sh Scripts/with-signing-keychain.sh
+          sh Scripts/release-app.sh
+      - name: Preserve verified release outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: OmoUsage-${{ github.ref_name }}
+          if-no-files-found: error
+          path: |
+            dist/OmoUsage-*.zip
+            dist/OmoUsage-*.sha256
+            dist/OmoUsage-*-manifest.txt
+      - name: Upload verified GitHub release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          fail_on_unmatched_files: true
+          files: |
+            dist/OmoUsage-*.zip
+            dist/OmoUsage-*.sha256
+            dist/OmoUsage-*-manifest.txt

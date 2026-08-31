@@ -37,7 +37,7 @@ while IFS= read -r path; do
     [ -f "$path" ] || continue
 
     case "$path" in
-        Scripts/check-repository-hygiene.sh|Scripts/package-app.sh|Scripts/qa-dev-six-fixes.sh)
+        Scripts/check-repository-hygiene.sh|Scripts/package-app.sh|Scripts/qa-dev-six-fixes.sh|Scripts/release-app.sh|Scripts/with-signing-keychain.sh)
             expected_mode=755
             ;;
         *)
