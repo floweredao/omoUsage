@@ -80,6 +80,13 @@ extension LocalizationResolving {
         text(.refreshFailed)
     }
 
+    /// Text shown beside the snapshot-age symbol so an out-of-date mobile
+    /// snapshot is readable without color and stays distinct from a provider
+    /// refresh failure.
+    func snapshotAgeBadgeText() -> String {
+        text(.mobileSnapshotOutOfDate)
+    }
+
     func availabilityText(
         _ availability: ProviderAvailability
     ) -> String? {

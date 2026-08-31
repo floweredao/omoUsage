@@ -31,7 +31,10 @@ struct MobileUsageView: View {
                             Image(systemName: "arrow.clockwise")
                         }
                     }
-                    .accessibilityLabel(localization.text(.refresh))
+                    .accessibilityLabel(localization.text(.checkICloud))
+                    .accessibilityHint(
+                        localization.text(.mobileICloudCheckExplanation)
+                    )
                     .disabled(viewModel.loadState == .loading)
                 }
             }
@@ -88,30 +91,9 @@ struct MobileUsageView: View {
         ).mapValues(\.count)
         return ScrollView {
             LazyVStack(spacing: 12) {
-                HStack(spacing: 6) {
-                    Image(
-                        systemName: viewModel.loadState == .failed
-                            ? "exclamationmark.icloud"
-                            : "icloud.fill"
-                    )
-                    Text(
-                        localization.text(
-                            viewModel.loadState == .failed
-                                ? .mobileSyncFailed
-                                : .syncedThroughICloud
-                        )
-                    )
-                    Spacer()
-                    Text(
-                        snapshot.refreshedAt,
-                        format: .dateTime
-                            .hour()
-                            .minute()
-                    )
+                if let freshness = viewModel.freshnessPresentation {
+                    MobileSyncStatusHeader(freshness: freshness)
                 }
-                .font(.footnote.weight(.medium))
-                .foregroundStyle(.secondary)
-                .accessibilityElement(children: .combine)
 
                 ForEach(snapshot.providers) { usage in
                     MobileProviderCard(
@@ -191,7 +173,11 @@ private struct MobileProviderCard: View {
                 Spacer(minLength: 0)
 
                 if freshness.showsStaleBadge {
-                    MobileStaleUsageBadge()
+                    MobileFreshnessBadge(
+                        symbolName: StaleUsageVisualTokens.symbolName,
+                        text: localization.staleBadgeText(),
+                        accent: StaleUsageVisualTokens.accent
+                    )
                 }
             }
 
@@ -248,25 +234,90 @@ private struct MobileProviderCard: View {
     }
 }
 
-private struct MobileStaleUsageBadge: View {
+/// States what mobile actually knows: when the Mac last checked, whether that
+/// snapshot has aged out, whether the last iCloud read failed, and that a pull
+/// only re-reads iCloud.
+private struct MobileSyncStatusHeader: View {
+    let freshness: MobileFreshnessPresentation
     @Environment(\.appLocalization)
     private var localization
 
     var body: some View {
+        let clockText = MobileClockText.string(
+            from: freshness.macLastCheckedAt
+        )
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(
+                    systemName: freshness.hasSyncIssue
+                        ? "exclamationmark.icloud"
+                        : "icloud.fill"
+                )
+                Text(localization.text(.syncedThroughICloud))
+                Spacer(minLength: 0)
+                Text(
+                    freshness.statusText(
+                        localization,
+                        clockText: clockText
+                    )
+                )
+            }
+            .font(.footnote.weight(.medium))
+
+            if freshness.isStale {
+                MobileFreshnessBadge(
+                    symbolName: MobileFreshnessVisualTokens.symbolName,
+                    text: localization.snapshotAgeBadgeText(),
+                    accent: MobileFreshnessVisualTokens.accent
+                )
+            }
+
+            if freshness.hasSyncIssue {
+                Text(localization.text(.mobileRetainedAfterSyncFailure))
+                    .font(.caption)
+            }
+
+            Text(localization.text(.mobileICloudCheckExplanation))
+                .font(.caption)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .foregroundStyle(.secondary)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            freshness.accessibilityLabel(
+                localization,
+                clockText: clockText
+            )
+        )
+        .accessibilityHint(
+            localization.text(.mobileICloudCheckExplanation)
+        )
+    }
+}
+
+/// One badge primitive for both freshness facts, so retained provider usage
+/// and an aged-out snapshot share spacing, shape, and accent tokens while
+/// keeping distinct symbols and text.
+private struct MobileFreshnessBadge: View {
+    let symbolName: String
+    let text: String
+    let accent: VisualRGB
+
+    var body: some View {
         HStack(spacing: StaleUsageVisualTokens.badgeSpacing) {
-            Image(systemName: StaleUsageVisualTokens.symbolName)
+            Image(systemName: symbolName)
                 .imageScale(.small)
-            Text(localization.staleBadgeText())
+            Text(text)
         }
         .font(.caption.weight(.semibold))
-        .foregroundStyle(StaleUsageVisualTokens.accent.color)
+        .foregroundStyle(accent.color)
         .padding(
             .horizontal,
             StaleUsageVisualTokens.badgeHorizontalPadding
         )
         .padding(.vertical, StaleUsageVisualTokens.badgeVerticalPadding)
         .background(
-            StaleUsageVisualTokens.accent.color.opacity(
+            accent.color.opacity(
                 StaleUsageVisualTokens.badgeBackgroundOpacity
             ),
             in: Capsule()
@@ -274,7 +325,7 @@ private struct MobileStaleUsageBadge: View {
         .overlay {
             Capsule()
                 .stroke(
-                    StaleUsageVisualTokens.accent.color.opacity(
+                    accent.color.opacity(
                         StaleUsageVisualTokens.badgeBorderOpacity
                     ),
                     lineWidth: 0.5

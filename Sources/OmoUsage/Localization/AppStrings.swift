@@ -127,6 +127,11 @@ enum AppStringKey: String, CaseIterable, Sendable {
     case mobileSyncFailed
     case retry
     case syncedThroughICloud
+    case macLastChecked
+    case mobileSnapshotOutOfDate
+    case mobileRetainedAfterSyncFailure
+    case checkICloud
+    case mobileICloudCheckExplanation
 }
 
 struct AppStrings: Sendable {
@@ -279,7 +284,14 @@ struct AppStrings: Sendable {
             "Mac에서 OmoUsage를 새로고침하고 두 기기가 같은 Apple ID를 사용하는지 확인하세요.",
         .mobileSyncFailed: "iCloud 사용량을 불러오지 못했습니다.",
         .retry: "다시 시도",
-        .syncedThroughICloud: "iCloud로 동기화됨"
+        .syncedThroughICloud: "iCloud로 동기화됨",
+        .macLastChecked: "Mac 마지막 확인 %@",
+        .mobileSnapshotOutOfDate: "오래된 데이터",
+        .mobileRetainedAfterSyncFailure:
+            "iCloud 확인에 실패해 마지막으로 받은 데이터를 그대로 표시합니다.",
+        .checkICloud: "iCloud 확인",
+        .mobileICloudCheckExplanation:
+            "Mac이 iCloud에 올린 최신 데이터만 확인합니다. 이 기기는 프로바이더에 직접 연결하지 않습니다."
     ]
 
     private static let english: [AppStringKey: String] = [
@@ -420,6 +432,13 @@ struct AppStrings: Sendable {
             "Refresh OmoUsage on your Mac and make sure both devices use the same Apple ID.",
         .mobileSyncFailed: "Could not load usage from iCloud.",
         .retry: "Try Again",
-        .syncedThroughICloud: "Synced through iCloud"
+        .syncedThroughICloud: "Synced through iCloud",
+        .macLastChecked: "Mac last checked %@",
+        .mobileSnapshotOutOfDate: "Out of date",
+        .mobileRetainedAfterSyncFailure:
+            "The iCloud check failed, so the last data received is still shown.",
+        .checkICloud: "Check iCloud",
+        .mobileICloudCheckExplanation:
+            "Checks iCloud for the newest data your Mac published. This device never contacts providers."
     ]
 }
