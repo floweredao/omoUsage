@@ -208,48 +208,156 @@ enum OmoUsageApp {
         }
     }
 
+    @MainActor
     private static func runProviderKeyMigrationQA() {
         let environment = ProcessInfo.processInfo.environment
-        guard let homePath = environment["HOME"],
-              environment["OMO_USAGE_PROVIDER_KEYCHAIN_SERVICE"] != nil
-        else { Darwin.exit(EXIT_FAILURE) }
+        guard let homePath = environment[
+                "OMO_USAGE_KEY_MIGRATION_QA_ROOT"
+              ],
+              homePath.hasPrefix("/tmp/omousage-task05-qa-"),
+              let service = environment[
+                "OMO_USAGE_PROVIDER_KEYCHAIN_SERVICE"
+              ],
+              service.hasPrefix("com.omo.usage.qa.")
+        else {
+            writeFixtureEvent("status=invalid-fixture-configuration")
+            Darwin.exit(EXIT_FAILURE)
+        }
+
+        let application = NSApplication.shared
+        _ = application.setActivationPolicy(.accessory)
+        application.finishLaunching()
+
         let home = URL(filePath: homePath, directoryHint: .isDirectory)
-        writeFixtureEvent("migration-started")
-        let qaKeychain = ProviderMigrationQAKeychain(
-            reader: SecurityProviderKeychain()
+        let suiteName = "ProviderKeyMigrationQA-\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            writeFixtureEvent("status=defaults-unavailable")
+            Darwin.exit(EXIT_FAILURE)
+        }
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let keychain = ProviderKeyMigrationQAKeychain(
+            base: SecurityProviderKeychain()
         )
-        let store = ProviderAccountStore.live(
-            home: home,
-            environment: environment,
-            defaults: UserDefaults(suiteName: "ProviderKeyMigrationQA")!,
-            providerKeychain: qaKeychain
+        let legacyURL = home.appending(
+            path: ".config/openusage/keys/openrouter.key"
         )
-        let failpoint = environment["OMO_USAGE_KEY_MIGRATION_FAILPOINT"]
-            .flatMap(ProviderMutationPhase.init(rawValue:))
-        let coordinator = ProviderMutationCoordinator(
-            store: store,
-            keyStore: { provider, accountID in
-                ProviderAPIKeyStore.live(
-                    for: provider,
-                    accountID: accountID,
-                    home: home,
-                    environment: environment,
-                    keychain: qaKeychain
+        let registryURL = home.appending(
+            path: ".config/openusage/accounts.json"
+        )
+        let identity = AccountProviderID(
+            accountID: .legacy,
+            providerID: .openrouter
+        )
+        let keyStore = ProviderAPIKeyStore(
+            provider: .openrouter,
+            accountID: .legacy,
+            serviceName: service,
+            legacyURL: legacyURL,
+            environment: [:],
+            environmentNames: [],
+            keychain: keychain,
+            legacyFileSystem: LiveProviderLegacyFileSystem()
+        )
+        let accountStore = ProviderAccountStore(
+            registryURL: registryURL,
+            defaults: defaults,
+            legacyAPIKeyPresence: { $0 == .openrouter }
+        )
+        let secret = UUID().uuidString.replacingOccurrences(of: "-", with: "")
+
+        do {
+            try keychain.remove(service: service, account: keyStore.account)
+            try ProviderFileDurability.atomicWrite(
+                try JSONSerialization.data(withJSONObject: ["apiKey": secret]),
+                to: legacyURL,
+                permissions: 0o600
+            )
+            writeFixtureEvent("status=seeded")
+            writeFixtureEvent("source=legacy-file")
+            writeFixtureEvent("file-exists=true")
+            writeFixtureEvent("item-exists=false")
+
+            _ = try accountStore.loadOrMigrate()
+            let failpoint = environment[
+                "OMO_USAGE_KEY_MIGRATION_FAILPOINT"
+            ].flatMap(ProviderMutationPhase.init(rawValue:))
+            if let failpoint {
+                let interrupted = ProviderMutationCoordinator(
+                    store: accountStore,
+                    keyStore: { _, _ in keyStore },
+                    afterPhase: { phase in
+                        if phase == failpoint {
+                            throw ProviderKeyMigrationQAInterruption()
+                        }
+                    }
                 )
-            },
-            afterPhase: { phase in
-                if phase == failpoint { throw CocoaError(.fileWriteUnknown) }
+                _ = interrupted.loadOrRecover()
+                writeFixtureEvent("status=interrupted-\(failpoint.rawValue)")
+                writeFixtureEvent("source=legacy-file")
+                writeFixtureEvent(
+                    "file-exists=\(keyStore.legacyExists)"
+                )
+                writeFixtureEvent(
+                    "item-exists=\(keyStore.keychainCredential() != nil)"
+                )
+                guard keyStore.legacyExists else {
+                    throw ProviderKeyMigrationQAFailure.legacyRemovedTooEarly
+                }
             }
-        )
-        writeFixtureEvent("migration-attempting")
-        let result = coordinator.loadOrRecover()
-        writeFixtureEvent("migration-reconciled")
-        guard result.registry != nil else { Darwin.exit(EXIT_FAILURE) }
-        writeFixtureEvent(
-            coordinator.pendingLegacyCleanup().isEmpty
-                ? "migration-finished"
-                : "cleanup-pending"
-        )
+
+            let coordinator = ProviderMutationCoordinator(
+                store: accountStore,
+                keyStore: { _, _ in keyStore }
+            )
+            let result = coordinator.loadOrRecover()
+            let migratedKey = keyStore.keychainCredential()
+            writeFixtureEvent("status=reconciled")
+            writeFixtureEvent(
+                "source=\(keyStore.loadCredential()?.source.qaName ?? "none")"
+            )
+            writeFixtureEvent("file-exists=\(keyStore.legacyExists)")
+            writeFixtureEvent("item-exists=\(migratedKey != nil)")
+            guard result.registry?.apiKeyReferences.contains(identity) == true,
+                  migratedKey == secret,
+                  !keyStore.legacyExists
+            else {
+                if let status = keychain.lastStatus {
+                    throw KeychainReadError(status: status)
+                }
+                throw ProviderKeyMigrationQAFailure.migrationIncomplete
+            }
+            writeFixtureEvent("status=committed")
+            writeFixtureEvent("source=keychain")
+            writeFixtureEvent("file-exists=false")
+            writeFixtureEvent("item-exists=true")
+
+            // Exercise the exact-item SecItemUpdate path after migration.
+            try keychain.set(secret, service: service, account: keyStore.account)
+            try keychain.remove(service: service, account: keyStore.account)
+            try ProviderFileDurability.removeIfPresent(
+                accountStore.mutationJournalURL
+            )
+            try ProviderFileDurability.removeIfPresent(legacyURL)
+            let itemRemains = try keychain.value(
+                service: service,
+                account: keyStore.account
+            ) != nil
+            writeFixtureEvent("status=cleanup-complete")
+            writeFixtureEvent("source=none")
+            writeFixtureEvent("file-exists=false")
+            writeFixtureEvent("item-exists=\(itemRemains)")
+        } catch let error as KeychainReadError {
+            writeFixtureEvent("status=keychain-failed")
+            writeFixtureEvent("osstatus=\(error.status)")
+            Darwin.exit(EXIT_FAILURE)
+        } catch let error as ProviderKeyMigrationQAFailure {
+            writeFixtureEvent("status=\(error.status)")
+            Darwin.exit(EXIT_FAILURE)
+        } catch {
+            writeFixtureEvent("status=fixture-failed")
+            Darwin.exit(EXIT_FAILURE)
+        }
     }
 
     private static func runDiagnosticFixture() {
@@ -292,16 +400,60 @@ enum OmoUsageApp {
     }
 }
 
-private struct ProviderMigrationQAKeychain: ProviderKeychain {
-    let reader: any ProviderKeychain
+private final class ProviderKeyMigrationQAKeychain: ProviderKeychain,
+    @unchecked Sendable
+{
+    let base: any ProviderKeychain
+    private let lock = NSLock()
+    private var recordedStatus: OSStatus?
+
+    init(base: any ProviderKeychain) { self.base = base }
+
+    var lastStatus: OSStatus? { lock.withLock { recordedStatus } }
+
     func value(service: String, account: String) throws -> String? {
-        try reader.value(service: service, account: account)
+        try recording { try base.value(service: service, account: account) }
     }
+
     func set(_ value: String, service: String, account: String) throws {
-        throw KeychainReadError(status: errSecReadOnly)
+        try recording { try base.set(value, service: service, account: account) }
     }
+
     func remove(service: String, account: String) throws {
-        throw KeychainReadError(status: errSecReadOnly)
+        try recording { try base.remove(service: service, account: account) }
+    }
+
+    private func recording<T>(_ operation: () throws -> T) throws -> T {
+        do {
+            return try operation()
+        } catch let error as KeychainReadError {
+            lock.withLock { recordedStatus = error.status }
+            throw error
+        }
+    }
+}
+
+private struct ProviderKeyMigrationQAInterruption: Error {}
+
+private enum ProviderKeyMigrationQAFailure: Error {
+    case legacyRemovedTooEarly
+    case migrationIncomplete
+
+    var status: String {
+        switch self {
+        case .legacyRemovedTooEarly: "legacy-removed-before-commit"
+        case .migrationIncomplete: "migration-incomplete"
+        }
+    }
+}
+
+private extension CredentialSource {
+    var qaName: String {
+        switch self {
+        case .environment: "environment"
+        case .file: "legacy-file"
+        case .keychain: "keychain"
+        }
     }
 }
 
