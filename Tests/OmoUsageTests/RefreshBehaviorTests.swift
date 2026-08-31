@@ -94,7 +94,7 @@ struct UsageRefreshSchedulerTests {
         )
     }
 
-    @Test
+    @Test(.timeLimit(.minutes(1)))
     @MainActor
     func repeatsRefreshEveryMinute() async {
         let (ticks, tickSignal) = AsyncStream<Void>.makeStream()
@@ -131,17 +131,6 @@ struct UsageRefreshSchedulerTests {
 private func nextEvent<Element: Sendable>(
     from stream: AsyncStream<Element>
 ) async -> Element? {
-    await withTaskGroup(of: Element?.self) { group in
-        group.addTask {
-            var iterator = stream.makeAsyncIterator()
-            return await iterator.next()
-        }
-        group.addTask {
-            try? await Task.sleep(for: .seconds(1))
-            return nil
-        }
-        let event = await group.next() ?? nil
-        group.cancelAll()
-        return event
-    }
+    var iterator = stream.makeAsyncIterator()
+    return await iterator.next()
 }
