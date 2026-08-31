@@ -11,16 +11,26 @@ struct OmoUsageMobileApp: App {
     @MainActor
     init() {
         let store = UbiquitousUsageSnapshotStore()
-        let fixture = ProcessInfo.processInfo.environment[
-            "OMO_USAGE_FIXTURE_MODE"
-        ] == "1" ? DashboardSnapshot.mobileFixture(now: Date()) : nil
-        usesAccessibilityFixture = ProcessInfo.processInfo.environment[
+        let environment = ProcessInfo.processInfo.environment
+        let usesFixture = environment["OMO_USAGE_FIXTURE_MODE"] == "1"
+        let fixture = usesFixture
+            ? DashboardSnapshot.mobileFixture(
+                now: Date().addingTimeInterval(
+                    -MobileFixtureEnvironment.snapshotAgeSeconds(environment)
+                )
+            )
+            : nil
+        usesAccessibilityFixture = environment[
             "OMO_USAGE_ACCESSIBILITY_FIXTURE"
         ] == "1"
         _viewModel = State(
             initialValue: MobileUsageViewModel(
                 loadSnapshot: { try store.load() },
-                fixtureSnapshot: fixture
+                fixtureSnapshot: fixture,
+                simulatesSyncFailure: usesFixture
+                    && MobileFixtureEnvironment.simulatesSyncFailure(
+                        environment
+                    )
             )
         )
         _localization = State(

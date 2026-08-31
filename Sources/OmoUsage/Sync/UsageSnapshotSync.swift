@@ -414,29 +414,132 @@ enum MobileUsageLoadState: Equatable {
     case failed
 }
 
+/// How old the displayed snapshot is, measured from the Mac's last check.
+enum MobileSnapshotAge: String, Equatable, Sendable {
+    case fresh
+    case stale
+}
+
+/// The single deterministic model for what mobile may claim about its data:
+/// when the Mac last checked, whether that snapshot has aged out, and whether
+/// the latest iCloud read failed. Provider staleness is a separate fact; it
+/// reports a failed provider refresh, never the age of this snapshot.
+struct MobileFreshnessPresentation: Equatable, Sendable {
+    /// A snapshot reads as out of date once it reaches this age.
+    static let staleThreshold: TimeInterval = 15 * 60
+
+    let macLastCheckedAt: Date
+    let age: MobileSnapshotAge
+    let hasSyncIssue: Bool
+
+    var isStale: Bool { age == .stale }
+
+    init(
+        snapshot: DashboardSnapshot,
+        now: Date,
+        hasSyncIssue: Bool
+    ) {
+        let macLastCheckedAt = snapshot.refreshedAt
+        self.macLastCheckedAt = macLastCheckedAt
+        age = now.timeIntervalSince(macLastCheckedAt) >= Self.staleThreshold
+            ? .stale
+            : .fresh
+        self.hasSyncIssue = hasSyncIssue
+    }
+
+    /// The visible header line. It names the Mac's own check time so a fresh
+    /// pull is never mistaken for a fresh provider reading.
+    @MainActor
+    func statusText(
+        _ localization: LocalizationContext,
+        clockText: String
+    ) -> String {
+        localization.format(.macLastChecked, clockText)
+    }
+
+    /// VoiceOver hears the check time first, then any aged-out or sync-issue
+    /// qualification, so the state never depends on the visible badge color.
+    @MainActor
+    func accessibilityLabel(
+        _ localization: LocalizationContext,
+        clockText: String
+    ) -> String {
+        var parts = [statusText(localization, clockText: clockText)]
+        if isStale {
+            parts.append(localization.text(.mobileSnapshotOutOfDate))
+        }
+        if hasSyncIssue {
+            parts.append(
+                localization.text(.mobileRetainedAfterSyncFailure)
+            )
+        }
+        return parts.joined(separator: ", ")
+    }
+}
+
+/// Fixture-only knobs that let visual QA render the snapshot-age boundary and
+/// the retained sync-failure state without waiting on wall-clock time.
+enum MobileFixtureEnvironment {
+    static let ageKey = "OMO_USAGE_FIXTURE_AGE_SECONDS"
+    static let syncFailureKey = "OMO_USAGE_FIXTURE_SYNC_FAILURE"
+    private static let maximumAgeSeconds: TimeInterval = 86_400
+
+    static func snapshotAgeSeconds(
+        _ environment: [String: String]
+    ) -> TimeInterval {
+        guard
+            let raw = environment[ageKey],
+            let seconds = TimeInterval(raw),
+            seconds.isFinite
+        else {
+            return 0
+        }
+        return min(max(0, seconds), maximumAgeSeconds)
+    }
+
+    static func simulatesSyncFailure(
+        _ environment: [String: String]
+    ) -> Bool {
+        environment[syncFailureKey] == "1"
+    }
+}
+
 @Observable
 @MainActor
 final class MobileUsageViewModel {
     private let loadSnapshot: @MainActor () throws -> DashboardSnapshot?
     private let fixtureSnapshot: DashboardSnapshot?
+    private let simulatesSyncFailure: Bool
+    private let now: @MainActor () -> Date
 
     private(set) var snapshot: DashboardSnapshot?
     private(set) var loadState: MobileUsageLoadState = .loading
+    private(set) var freshnessPresentation: MobileFreshnessPresentation?
 
     init(
         loadSnapshot: @escaping @MainActor (
         ) throws -> DashboardSnapshot?,
-        fixtureSnapshot: DashboardSnapshot? = nil
+        fixtureSnapshot: DashboardSnapshot? = nil,
+        simulatesSyncFailure: Bool = false,
+        now: @escaping @MainActor () -> Date = Date.init
     ) {
         self.loadSnapshot = loadSnapshot
         self.fixtureSnapshot = fixtureSnapshot
+        self.simulatesSyncFailure = simulatesSyncFailure
+        self.now = now
     }
 
+    /// Reads the published snapshot once. A failed read keeps the last good
+    /// snapshot and its timestamps exactly as they were; only a newly
+    /// published snapshot may move the Mac and provider times.
     func reload() {
         loadState = .loading
         do {
             if let fixtureSnapshot {
                 snapshot = fixtureSnapshot
+                if simulatesSyncFailure {
+                    throw UsageSnapshotStoreError.synchronizationFailed
+                }
             } else {
                 snapshot = try loadSnapshot()
             }
@@ -445,6 +548,13 @@ final class MobileUsageViewModel {
                 : .empty
         } catch {
             loadState = .failed
+        }
+        freshnessPresentation = snapshot.map {
+            MobileFreshnessPresentation(
+                snapshot: $0,
+                now: now(),
+                hasSyncIssue: loadState == .failed
+            )
         }
     }
 }

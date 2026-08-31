@@ -192,6 +192,15 @@ launches, and other privileged controls remain native-only.
 - Mobile owns the full screen and scrolls provider cards vertically with
   16 pt page margins and 12 pt card spacing. Pull-to-refresh reloads iCloud;
   it does not call provider APIs from the phone.
+- Mobile states when the Mac last checked rather than implying that the phone
+  just refreshed. That time is the snapshot's own refresh attempt and never
+  moves on a pull; only a newly published snapshot advances it. Once the
+  snapshot reaches fifteen minutes of age, the header adds an amber
+  symbol-and-text out-of-date badge. Snapshot age and provider staleness are
+  separate facts and may appear together on one screen.
+- A failed iCloud read keeps the last good snapshot and its timestamps on
+  screen and adds one explicit sync-issue line instead of blanking the data.
+  The refresh affordance states that it checks iCloud only.
 - Mobile preserves snapshot order and keys every provider card by
   `AccountProviderID`. A non-default account, or any provider repeated in the
   snapshot, shows its sanitized alias directly below the provider name as one
@@ -271,6 +280,9 @@ launches, and other privileged controls remain native-only.
   reset metadata with the same period color semantics as macOS.
 - `MobileSyncState`: loading, synchronized content, empty guidance, and
   recoverable error states; each has explicit text rather than color alone.
+- `MobileFreshnessPresentation`: the one model behind that header. It derives
+  the Mac's last check time, the fifteen-minute snapshot age, and the sync-issue
+  flag from an injected clock, so every surface and test reads the same state.
 - `WebDashboardHeader`: identity, private-tailnet status, latest refresh time,
   a non-interactive live connection indicator, the dashboard/settings page
   link, and `WebRefreshButton`.
@@ -419,6 +431,10 @@ launches, and other privileged controls remain native-only.
 - Mobile cards retain readable order at accessibility text sizes, expose each
   meter as one combined accessibility element, and use at least 44 pt touch
   targets for toolbar actions.
+- The mobile sync header is one accessibility element that speaks the Mac's
+  last check time first, then out-of-date and sync-issue qualifications, and
+  hints that refreshing checks iCloud only. Snapshot age is never carried by
+  the badge color alone.
 - When a mobile account alias is visible, it participates in the card's native
   accessibility hierarchy so repeated same-provider cards are distinguishable
   without relying on order. Truncation is visual only; assistive technologies

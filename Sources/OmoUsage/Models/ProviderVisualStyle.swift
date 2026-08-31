@@ -30,6 +30,23 @@ enum StaleUsageVisualTokens {
     static let badgeBorderOpacity = 0.34
 }
 
+/// An aged-out mobile snapshot reuses the same amber accent and badge metrics
+/// as retained provider usage, with its own clock symbol and text, so the two
+/// facts stay visually related yet distinguishable without color alone.
+enum MobileFreshnessVisualTokens {
+    static let symbolName = "clock.badge.exclamationmark"
+    static let usesTextLabel = true
+    static let accent = StaleUsageVisualTokens.accent
+    static let badgeSpacing = StaleUsageVisualTokens.badgeSpacing
+    static let badgeHorizontalPadding =
+        StaleUsageVisualTokens.badgeHorizontalPadding
+    static let badgeVerticalPadding =
+        StaleUsageVisualTokens.badgeVerticalPadding
+    static let badgeBackgroundOpacity =
+        StaleUsageVisualTokens.badgeBackgroundOpacity
+    static let badgeBorderOpacity = StaleUsageVisualTokens.badgeBorderOpacity
+}
+
 struct ProviderVisualStyle {
     let background: AnyShapeStyle
     let foreground: Color
