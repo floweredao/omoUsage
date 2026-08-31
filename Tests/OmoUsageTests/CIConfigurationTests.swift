@@ -3,6 +3,8 @@ import Testing
 
 @Suite
 struct CIConfigurationTests {
+    private let checkoutSHA = "11d5960a326750d5838078e36cf38b85af677262"
+
     @Test
     func workflowHasBoundedLeastPrivilegePullRequestAndPushJobs() throws {
         let workflow = try contents(".github/workflows/ci.yml")
@@ -22,7 +24,9 @@ struct CIConfigurationTests {
             let body = try jobBody(named: job, in: workflow)
             #expect(body.contains("runs-on: macos-15"), "\(job) must run on macOS")
             #expect(body.contains("timeout-minutes:"), "\(job) must be bounded")
-            #expect(body.contains("uses: actions/checkout@v4"))
+            #expect(
+                body.contains("uses: actions/checkout@\(checkoutSHA) # v4")
+            )
             #expect(body.contains("run: sh Scripts/ci-check.sh \(job)"))
         }
     }
@@ -59,7 +63,7 @@ struct CIConfigurationTests {
     }
 
     @Test
-    func workflowPinsActionsToMajorVersions() throws {
+    func workflowPinsActionsToImmutableCommits() throws {
         let workflow = try contents(".github/workflows/ci.yml")
         let actionLines = workflow.split(separator: "\n").filter {
             $0.contains("uses:")
@@ -69,8 +73,13 @@ struct CIConfigurationTests {
         for line in actionLines {
             let action = line.split(separator: "uses:", maxSplits: 1)[1]
                 .trimmingCharacters(in: .whitespaces)
-            #expect(action.wholeMatch(of: /[^\s@]+@v\d+/) != nil)
+            #expect(
+                action.wholeMatch(
+                    of: /[^\s@]+@[0-9a-f]{40}\s+#\s+v\d+/
+                ) != nil
+            )
         }
+        #expect(!workflow.contains("@v4"))
     }
 
     private var repositoryRoot: URL {

@@ -182,21 +182,31 @@ struct ReleasePipelineTests {
         #expect(!workflow.contains("pull_request:"))
         #expect(!workflow.contains("workflow_dispatch:"))
         #expect(workflow.contains("permissions:\n  contents: read"))
-        #expect(workflow.contains("contents: write"))
-        #expect(workflow.contains("environment: release"))
+        #expect(!workflow.contains("contents: write"))
+        #expect(!workflow.contains("environment:"))
         #expect(workflow.contains("Scripts/with-signing-keychain.sh"))
         #expect(workflow.contains("CERTIFICATE_P12_BASE64: ${{ secrets."))
         #expect(workflow.contains("NOTARY_PASSWORD: ${{ secrets."))
-        #expect(workflow.contains("actions/upload-artifact@v4"))
-        #expect(workflow.contains("softprops/action-gh-release@v2"))
+        #expect(
+            workflow.contains(
+                "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4"
+            )
+        )
+        #expect(!workflow.contains("softprops/action-gh-release"))
 
         let actionLines = workflow.split(separator: "\n").filter { $0.contains("uses:") }
         #expect(!actionLines.isEmpty)
         for line in actionLines {
             let action = line.split(separator: "uses:", maxSplits: 1)[1]
                 .trimmingCharacters(in: .whitespaces)
-            #expect(action.wholeMatch(of: /[^\s@]+@v\d+/) != nil)
+            #expect(
+                action.wholeMatch(
+                    of: /[^\s@]+@[0-9a-f]{40}\s+#\s+v\d+/
+                ) != nil
+            )
         }
+        #expect(!workflow.contains("@v4"))
+        #expect(!workflow.contains("@v2"))
     }
 
     private var validEnvironment: [String: String] {

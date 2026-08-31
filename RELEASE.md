@@ -7,10 +7,12 @@ sh Scripts/package-app.sh --adhoc
 ```
 
 It is runnable on the building Mac but is not a trusted public distribution and
-has no iCloud team entitlement. Public releases are created only by pushing a
-version tag matching `Config/Version.xcconfig` (for example `v0.1.8`). The
-`release` GitHub environment should require approval and allow only protected
-version tags.
+has no iCloud team entitlement. Trusted release artifacts are created only by
+pushing a version tag matching `Config/Version.xcconfig` (for example
+`v0.1.8`). The workflow retains the verified ZIP, checksum, and manifest as
+immutable-SHA-pinned GitHub Actions artifacts with read-only repository
+permissions. Publishing those files as a public GitHub release is a separate,
+manual review step.
 
 Configure these environment secrets; never commit or persist their values:
 
@@ -24,7 +26,9 @@ Configure these environment secrets; never commit or persist their values:
 CI imports the certificate and notary profile into a throwaway keychain, signs
 with hardened runtime and secure timestamp, verifies, notarizes, staples,
 Gatekeeper-assesses, and only then uploads the ZIP, checksum, and source/version
-manifest. The cleanup trap deletes the temporary certificate and keychain.
+manifest to the workflow run. The cleanup trap deletes the temporary
+certificate and keychain. The workflow never receives repository write
+permission and never creates a GitHub release automatically.
 
 Inspect a non-executing plan without credentials or network calls:
 
