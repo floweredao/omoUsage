@@ -41,10 +41,7 @@ struct SideNotchPanelView: View {
                             }
                     }
 
-                    HStack(
-                        alignment: .top,
-                        spacing: SideNotchPanelLayout.detailSpacing
-                    ) {
+                    ZStack(alignment: .topTrailing) {
                         if let usage = selectedUsage {
                             SideNotchDetailView(
                                 usage: usage,
@@ -61,9 +58,18 @@ struct SideNotchPanelView: View {
                                     width:
                                         SideNotchPanelLayout.detailWidth
                                 )
-                                .padding(
-                                    .top,
-                                    detailTop(in: geometry.size.height)
+                                .position(
+                                    x: geometry.size.width
+                                        - SideNotchPanelLayout.collapsedWidth
+                                        - SideNotchPanelLayout.detailSpacing
+                                        - SideNotchPanelLayout.detailWidth / 2,
+                                    y: detailTop(
+                                        in: geometry.size.height
+                                    )
+                                        + SideNotchPanelLayout.detailHeight(
+                                            for: usage,
+                                            language: localization.language
+                                        ) / 2
                                 )
                                 .transition(.opacity)
                         }
@@ -91,8 +97,8 @@ struct SideNotchPanelView: View {
                         .frame(maxHeight: .infinity)
                     }
                     .frame(
-                        maxWidth: .infinity,
-                        maxHeight: .infinity,
+                        width: geometry.size.width,
+                        height: geometry.size.height,
                         alignment: .trailing
                     )
                 }
