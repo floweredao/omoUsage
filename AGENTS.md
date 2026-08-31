@@ -12,17 +12,18 @@ OmoUsage is a native Swift 6 menu-bar app that aggregates remaining quota from t
 
 ```text
 .
-|-- Sources/OmoUsage/          # Single SwiftPM executable; domain folders are not separate modules
+|-- Sources/OmoUsage/          # macOS executable plus the two-file Mobile UI
 |   |-- Credentials/           # Local environment, file, Keychain, SQLite, and CLI discovery
 |   |-- Providers/             # Provider HTTP adapters, payload parsing, and fixture providers
 |   |-- Dashboard/             # Refresh orchestration, ordering, and provider protocol
-|   |-- Models/                # Codable data shared with the mobile target
 |   |-- Settings/              # Provider setup actions and local API-key storage
 |   |-- Views/                 # macOS popover and settings UI
-|   |-- Localization/          # Korean-default typed string catalog
-|   |-- Sync/                  # Versioned iCloud snapshot codec/store
 |   |-- WebDashboard/          # Loopback HTTP router, command bridge, and bundled web assets
 |   `-- Mobile/                # iOS/Catalyst entry point and read-only UI
+|-- Sources/OmoUsageCore/      # One enforced mobile-safe shared library
+|   |-- Models/                # Typed metrics, freshness, provider identity
+|   |-- Localization/          # Korean-default typed string catalog
+|   `-- Sync/                  # Schema-v4 private iCloud codec/store
 |-- Tests/OmoUsageTests/       # Swift Testing suites and provider reliability fixtures
 |-- Config/                    # Plists and matching macOS/mobile iCloud entitlements
 |-- Scripts/                   # Local app packaging, icon generation, and manual QA tools
@@ -44,7 +45,7 @@ OmoUsage is a native Swift 6 menu-bar app that aggregates remaining quota from t
 | Change provider setup/login | `Settings/ProviderSetup.swift` | Only official apps/CLIs; OpenRouter and Z.ai accept API keys |
 | Change desktop UI | `Views/`, `AppDelegate.swift`, `DESIGN.md` | Native 320 pt popover and system appearance |
 | Change web dashboard | `WebDashboard/`, `Resources/WebDashboard/index.html` | Loopback-only sanitized surface; mutations require a launch nonce |
-| Change mobile data/UI | `Sync/`, `Models/`, `Localization/`, `Mobile/` | Mobile target excludes credentials and providers |
+| Change mobile data/UI | `Sources/OmoUsageCore/`, `Sources/OmoUsage/Mobile/` | Mobile target depends only on Core and its two UI files |
 | Change target membership | `project.yml` | Regenerate the checked-in Xcode project afterward |
 | Add regression coverage | `Tests/OmoUsageTests/` | Swift Testing, injected files/Keychain/URLProtocol |
 
@@ -60,8 +61,8 @@ LSP document symbols supplied declaration shape and semantic spot checks. `Refs`
 | `CredentialDiscovery` | struct | `Sources/OmoUsage/Credentials/CredentialDiscovery.swift:77` | 33 | Central local credential boundary |
 | `UsageProvider` | protocol | `Sources/OmoUsage/Dashboard/UsageProvider.swift:3` | 21 | `Sendable` async provider contract for live and fixture adapters |
 | `UsageDashboardViewModel` | class | `Sources/OmoUsage/Dashboard/UsageDashboardViewModel.swift:56` | 13 | Main-actor refresh, ordering, connection-state, and snapshot coordinator |
-| `ProviderID` | enum | `Sources/OmoUsage/Models/ProviderID.swift:42` | 49 | Canonical provider identity and order |
-| `UsageSnapshotCodec` | enum | `Sources/OmoUsage/Sync/UsageSnapshotSync.swift:16` | 5 | Validates and versions mobile-safe snapshots |
+| `ProviderID` | enum | `Sources/OmoUsageCore/Models/ProviderID.swift` | 49 | Canonical provider identity and order |
+| `UsageSnapshotCodec` | enum | `Sources/OmoUsageCore/Sync/UsageSnapshotSync.swift` | 5 | Validates schema-v4 mobile-safe snapshots |
 | `WebDashboardRouter` | struct | `Sources/OmoUsage/WebDashboard/WebDashboardServer.swift:290` | 3 | Allowlists local HTTP routes and authorized dashboard commands |
 | `OmoUsageMobileApp` | entry point | `Sources/OmoUsage/Mobile/OmoUsageMobileApp.swift:5` | 1 | Loads snapshots; never calls providers |
 
@@ -72,7 +73,7 @@ LSP document symbols supplied declaration shape and semantic spot checks. `Refs`
 - `UsageDashboardViewModel.refresh()` fetches independently with a task group. Cancellation publishes neither failure state nor a new timestamp.
 - Provider failures are typed. Missing authentication removes a provider; transient failures may retain its last-good usage.
 - Korean is the persisted default language. Machine values use typed IDs/enums; provider-generated display text is localized separately.
-- SwiftPM is the macOS build/test path. XcodeGen/Xcode is the only path for the mobile target.
+- SwiftPM builds `OmoUsageCore`, the macOS executable, and tests. XcodeGen/Xcode builds macOS, iOS, and Catalyst targets.
 - `OMO_USAGE_FIXTURE_MODE=1` swaps the production roster for fixture providers and also enables the mobile fixture.
 
 ## ANTI-PATTERNS (THIS PROJECT)
@@ -103,12 +104,12 @@ swift test
 sh Scripts/package-app.sh
 ```
 
-`package-app.sh` builds release with SwiftPM, assembles `dist/OmoUsage.app`, patches plist substitutions, generates the icon, and ad-hoc signs it. It does not notarize or publish.
+`package-app.sh` builds release with SwiftPM, assembles `dist/OmoUsage.app`, patches plist substitutions, generates the icon, and signs in explicit ad-hoc or Developer ID mode. `release-app.sh` owns notarization/stapling/assessment.
 
 ## NOTES
 
-- `Package.swift` builds only macOS; `project.yml` explicitly selects the shared files compiled into `OmoUsageMobile`.
+- `Package.swift` exports one `OmoUsageCore` library and the macOS executable; `project.yml` makes both apps depend on the same Core target.
 - Both app targets must use the same development team and `$(TeamIdentifierPrefix)com.omo.usage` iCloud identifier.
 - The checked-in `.xcodeproj` mirrors `project.yml`; treat the YAML as the target-definition source.
-- `UsageSnapshotCodec` currently uses schema version 1 and a 256 KB payload ceiling.
+- `UsageSnapshotCodec` currently uses schema version 4, decodes versions 1–3, and keeps a 256 KB payload ceiling.
 - `NWWebDashboardListener` binds `127.0.0.1:7827`; `WebDashboardRouter` is the only HTTP route and mutation boundary.

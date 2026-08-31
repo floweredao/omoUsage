@@ -2,7 +2,12 @@
 
 ## OVERVIEW
 
-One SwiftPM test target, 50 Swift files, all Swift Testing (`import Testing`, `@testable import OmoUsage`). No XCTest, no network, no real Keychain. Every provider gets a `*ReliabilityTests.swift` file that pins its real-world failure modes; shared behavior lives in the dashboard, account-state, credential, parsing, and web-dashboard suites.
+One SwiftPM test target, 74 Swift files, all Swift Testing (`import Testing`,
+`@testable import OmoUsage`, and public `OmoUsageCore` where required). No
+XCTest, live network, or real Keychain. Every provider gets a
+`*ReliabilityTests.swift` file that pins its real-world failure modes; shared
+behavior lives in dashboard, account-state, credential, parsing, sync,
+security, release, and web-dashboard suites.
 
 ## WHERE TO LOOK
 
