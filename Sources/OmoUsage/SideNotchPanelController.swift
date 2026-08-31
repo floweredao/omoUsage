@@ -193,32 +193,15 @@ enum SideNotchMotionPolicy {
     }
 
     static func shouldAnimateSelectionMutation(
-        current: SideNotchSelection?,
-        intent: SideNotchSelectionIntent,
-        requested: Bool,
-        reduceMotion: Bool
+        current _: SideNotchSelection?,
+        intent _: SideNotchSelectionIntent,
+        requested _: Bool,
+        reduceMotion _: Bool
     ) -> Bool {
-        guard shouldAnimate(
-            requested: requested,
-            reduceMotion: reduceMotion
-        ) else {
-            return false
-        }
-
-        switch intent {
-        case .hover:
-            return current == nil
-        case .exitPanel:
-            return current?.kind == .hovered
-        case let .commit(target):
-            guard let current else { return true }
-            return current.kind == .pinned && current.target == target
-        case .collapse:
-            return current != nil
-        case let .reconcile(available):
-            guard let current else { return false }
-            return !available.contains(current.target)
-        }
+        // AppKit owns the inward panel-frame animation. Mutating selection
+        // outside a SwiftUI animation prevents the HStack from adding a
+        // second right-to-left layout animation.
+        false
     }
 }
 

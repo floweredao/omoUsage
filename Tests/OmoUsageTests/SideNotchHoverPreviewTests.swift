@@ -543,7 +543,7 @@ struct SideNotchHoverPreviewTests {
     }
 
     @Test
-    func retargetReplacesDetailContentWithoutAnimatingOldAndNewText() {
+    func selectionMutationsNeverAnimateSwiftUILayout() {
         let accountA = AccountID(
             rawValue: "00000000-0000-0000-0000-00000000000a"
         )!
@@ -572,7 +572,7 @@ struct SideNotchHoverPreviewTests {
             )
         )
         #expect(
-            SideNotchMotionPolicy.shouldAnimateSelectionMutation(
+            !SideNotchMotionPolicy.shouldAnimateSelectionMutation(
                 current: nil,
                 intent: .hover(current.target),
                 requested: true,
@@ -580,9 +580,17 @@ struct SideNotchHoverPreviewTests {
             )
         )
         #expect(
-            SideNotchMotionPolicy.shouldAnimateSelectionMutation(
+            !SideNotchMotionPolicy.shouldAnimateSelectionMutation(
                 current: current,
                 intent: .exitPanel,
+                requested: true,
+                reduceMotion: false
+            )
+        )
+        #expect(
+            !SideNotchMotionPolicy.shouldAnimateSelectionMutation(
+                current: nil,
+                intent: .commit(current.target),
                 requested: true,
                 reduceMotion: false
             )
