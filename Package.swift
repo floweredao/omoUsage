@@ -52,7 +52,13 @@ let package = Package(
             name: "OmoUsage",
             dependencies: ["OmoUsageCore"],
             path: "Sources/OmoUsage",
-            exclude: ["Mobile"],
+            exclude: [
+                "Mobile",
+                "AGENTS.md",
+                "Credentials/AGENTS.md",
+                "Providers/AGENTS.md",
+                "WebDashboard/AGENTS.md"
+            ],
             resources: [
                 .process("Resources")
             ],
@@ -69,7 +75,8 @@ let package = Package(
         .testTarget(
             name: "OmoUsageTests",
             dependencies: ["OmoUsage", "OmoUsageCore"],
-            path: "Tests/OmoUsageTests"
+            path: "Tests/OmoUsageTests",
+            exclude: ["AGENTS.md"]
         )
     ]
 )
