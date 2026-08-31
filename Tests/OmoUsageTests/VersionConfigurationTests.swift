@@ -49,7 +49,8 @@ struct VersionConfigurationTests {
             project.components(separatedBy: "Config/Version.xcconfig").count - 1
                 == 4
         )
-        #expect(package.contains("contentsOfFile: \"Config/Version.xcconfig\""))
+        #expect(package.contains("URL(fileURLWithPath: #filePath)"))
+        #expect(package.contains("path: \"Config/Version.xcconfig\""))
         #expect(
             generatedProject.split(separator: "\n").filter {
                 $0.contains("baseConfigurationReference") &&

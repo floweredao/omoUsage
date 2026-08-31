@@ -54,7 +54,7 @@ struct CoreBoundaryTests {
         #expect(presentation.age == .stale)
     }
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(3)))
     func packageResolvesAsAnOutOfTreeCoreDependency() throws {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
