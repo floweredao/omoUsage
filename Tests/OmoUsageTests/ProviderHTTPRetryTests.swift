@@ -278,6 +278,39 @@ struct ProviderHTTPRetryTests {
         #expect(fixture.requestCount == 1)
     }
 
+    @Test(.timeLimit(.minutes(1)))
+    func oversizedStreamStopsBeforeTheResponseFinishes() async {
+        let fixture = ProviderHTTPRetryFixture(
+            steps: [.stream],
+            maximumResponseBytes: 16
+        )
+        defer { fixture.finishStreamingIfNeeded() }
+
+        let requestTask = Task {
+            await #expect(
+                throws: ProviderTransportError.responseTooLarge(
+                    .codex,
+                    limit: 16
+                )
+            ) {
+                try await fixture.http.data(
+                    for: fixture.request,
+                    provider: .codex
+                )
+            }
+        }
+
+        await fixture.waitUntilStarted()
+        fixture.send(Data(repeating: 0x20, count: 16))
+        fixture.send(Data([0x20]))
+
+        await fixture.waitUntilStopped()
+        #expect(!fixture.finishedBeforeStop)
+
+        fixture.finishStreamingIfNeeded()
+        _ = await requestTask.value
+    }
+
     @Test
     func malformedJSONDoesNotRetry() async {
         let fixture = ProviderHTTPRetryFixture(
@@ -461,6 +494,23 @@ private final class ProviderHTTPRetryFixture: @unchecked Sendable {
     var requestTimeouts: [TimeInterval] { state.requestTimeouts }
     var sleeps: [TimeInterval] { state.sleeps }
     var monotonicTime: TimeInterval { state.monotonicTime }
+    var finishedBeforeStop: Bool { state.finishedBeforeStop }
+
+    func waitUntilStarted() async {
+        await state.waitUntilStreamingStarted()
+    }
+
+    func send(_ data: Data) {
+        state.sendStreamingData(data)
+    }
+
+    func waitUntilStopped() async {
+        await state.waitUntilStreamingStopped()
+    }
+
+    func finishStreamingIfNeeded() {
+        state.finishStreamingIfNeeded()
+    }
 }
 
 private enum ProviderHTTPRetryStep: Sendable {
@@ -470,6 +520,7 @@ private enum ProviderHTTPRetryStep: Sendable {
         body: Data = Data()
     )
     case transport(URLError.Code)
+    case stream
 
     static func json(_ status: Int, _ body: String) -> Self {
         .response(
@@ -487,10 +538,21 @@ private final class ProviderHTTPRetryState: @unchecked Sendable {
     private var recordedRequests: [URLRequest] = []
     private var recordedSleeps: [TimeInterval] = []
     private var recordedMonotonicTime: TimeInterval = 0
+    private var streamingProtocol: ProviderHTTPRetryURLProtocol?
+    private let streamingStarted: AsyncStream<Void>
+    private let streamingStartedContinuation: AsyncStream<Void>.Continuation
+    private let streamingStopped: AsyncStream<Void>
+    private let streamingStoppedContinuation: AsyncStream<Void>.Continuation
+    private var streamingFinished = false
+    private var recordedFinishedBeforeStop = false
 
     init(steps: [ProviderHTTPRetryStep], randomValues: [Double]) {
         remainingSteps = steps
         remainingRandomValues = randomValues
+        (streamingStarted, streamingStartedContinuation) =
+            AsyncStream.makeStream(of: Void.self)
+        (streamingStopped, streamingStoppedContinuation) =
+            AsyncStream.makeStream(of: Void.self)
     }
 
     func nextStep(for request: URLRequest) -> ProviderHTTPRetryStep {
@@ -515,6 +577,61 @@ private final class ProviderHTTPRetryState: @unchecked Sendable {
             guard !remainingRandomValues.isEmpty else { return 1 }
             return remainingRandomValues.removeFirst()
         }
+    }
+
+    func startStreaming(_ protocolInstance: ProviderHTTPRetryURLProtocol) {
+        lock.withLock { streamingProtocol = protocolInstance }
+        streamingStartedContinuation.yield()
+        streamingStartedContinuation.finish()
+    }
+
+    func waitUntilStreamingStarted() async {
+        var iterator = streamingStarted.makeAsyncIterator()
+        _ = await iterator.next()
+    }
+
+    func sendStreamingData(_ data: Data) {
+        if let protocolInstance = lock.withLock({ streamingProtocol }) {
+            protocolInstance.client?.urlProtocol(
+                protocolInstance,
+                didLoad: data
+            )
+        }
+    }
+
+    func stopStreaming() {
+        let shouldSignal = lock.withLock {
+            guard streamingProtocol != nil else { return false }
+            recordedFinishedBeforeStop = streamingFinished
+            streamingProtocol = nil
+            return true
+        }
+        if shouldSignal {
+            streamingStoppedContinuation.yield()
+            streamingStoppedContinuation.finish()
+        }
+    }
+
+    func waitUntilStreamingStopped() async {
+        var iterator = streamingStopped.makeAsyncIterator()
+        _ = await iterator.next()
+    }
+
+    func finishStreamingIfNeeded() {
+        let protocolInstance: ProviderHTTPRetryURLProtocol? = lock.withLock {
+            guard !streamingFinished else { return nil }
+            streamingFinished = true
+            return streamingProtocol
+        }
+        if let protocolInstance {
+            protocolInstance.client?.urlProtocolDidFinishLoading(
+                protocolInstance
+            )
+        }
+    }
+
+    var finishedBeforeStop: Bool {
+        lock.withLock { recordedFinishedBeforeStop }
     }
 
     var requestCount: Int { lock.withLock { recordedRequests.count } }
@@ -574,6 +691,19 @@ private final class ProviderHTTPRetryURLProtocol: URLProtocol,
         switch state.nextStep(for: request) {
         case let .transport(code):
             client?.urlProtocol(self, didFailWithError: URLError(code))
+        case .stream:
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            client?.urlProtocol(
+                self,
+                didReceive: response,
+                cacheStoragePolicy: .notAllowed
+            )
+            state.startStreaming(self)
         case let .response(status, headers, body):
             let response = HTTPURLResponse(
                 url: request.url!,
@@ -591,5 +721,13 @@ private final class ProviderHTTPRetryURLProtocol: URLProtocol,
         }
     }
 
-    override func stopLoading() {}
+    override func stopLoading() {
+        guard
+            let identifier = request.url?.host?.components(
+                separatedBy: "."
+            ).first,
+            let state = Self.lock.withLock({ Self.states[identifier] })
+        else { return }
+        state.stopStreaming()
+    }
 }
