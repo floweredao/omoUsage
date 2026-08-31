@@ -60,6 +60,7 @@ struct CoreBoundaryTests {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
+        let packageIdentity = root.lastPathComponent.lowercased()
         let fixture = FileManager.default.temporaryDirectory.appending(
             path: "OmoUsageCoreConsumer-\(UUID().uuidString)",
             directoryHint: .isDirectory
@@ -85,7 +86,10 @@ struct CoreBoundaryTests {
                 .executableTarget(
                     name: "Consumer",
                     dependencies: [
-                        .product(name: "OmoUsageCore", package: "OmoUsage")
+                        .product(
+                            name: "OmoUsageCore",
+                            package: "\(packageIdentity)"
+                        )
                     ]
                 )
             ]
