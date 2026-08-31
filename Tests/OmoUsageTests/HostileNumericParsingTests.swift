@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import OmoUsage
+@testable import OmoUsageCore
 
 private let hostileNumericNow = Date(timeIntervalSince1970: 1_785_675_000)
 

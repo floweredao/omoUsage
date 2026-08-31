@@ -1,22 +1,22 @@
 import Foundation
 
-struct AccountID: RawRepresentable, Hashable, Sendable, Codable {
-    static let legacy = AccountID(
+public struct AccountID: RawRepresentable, Hashable, Sendable, Codable {
+    public static let legacy = AccountID(
         rawValue: "00000000-0000-0000-0000-000000000001"
     )!
 
-    let rawValue: String
+    public let rawValue: String
 
-    init?(rawValue: String) {
+    public init?(rawValue: String) {
         guard let uuid = UUID(uuidString: rawValue) else { return nil }
         self.rawValue = uuid.uuidString.lowercased()
     }
 
-    init(_ uuid: UUID = UUID()) {
+    public init(_ uuid: UUID = UUID()) {
         rawValue = uuid.uuidString.lowercased()
     }
 
-    init(from decoder: any Decoder) throws {
+    public init(from decoder: any Decoder) throws {
         let container = try decoder.singleValueContainer()
         let rawValue = try container.decode(String.self)
         guard let value = AccountID(rawValue: rawValue) else {
@@ -28,18 +28,23 @@ struct AccountID: RawRepresentable, Hashable, Sendable, Codable {
         self = value
     }
 
-    func encode(to encoder: any Encoder) throws {
+    public func encode(to encoder: any Encoder) throws {
         var container = encoder.singleValueContainer()
         try container.encode(rawValue)
     }
 }
 
-struct AccountProviderID: Hashable, Codable, Sendable {
-    let accountID: AccountID
-    let providerID: ProviderID
+public struct AccountProviderID: Hashable, Codable, Sendable {
+    public let accountID: AccountID
+    public let providerID: ProviderID
+
+    public init(accountID: AccountID, providerID: ProviderID) {
+        self.accountID = accountID
+        self.providerID = providerID
+    }
 }
 
-enum ProviderID: String, CaseIterable, Codable, Sendable {
+public enum ProviderID: String, CaseIterable, Codable, Sendable {
     case claude
     case codex
     case cursor
@@ -51,7 +56,7 @@ enum ProviderID: String, CaseIterable, Codable, Sendable {
     case openrouter
     case zai
 
-    var displayName: String {
+    public var displayName: String {
         switch self {
         case .claude: "Claude Code"
         case .codex: "Codex"
@@ -66,7 +71,7 @@ enum ProviderID: String, CaseIterable, Codable, Sendable {
         }
     }
 
-    var monogram: String {
+    public var monogram: String {
         switch self {
         case .claude: "C"
         case .codex: "⌘"

@@ -1,11 +1,11 @@
 import Foundation
 
 extension LocalizationResolving {
-    func providerText(_ value: String) -> String {
+    public func providerText(_ value: String) -> String {
         ProviderTextLocalization.text(value, language: language)
     }
 
-    func metricValue(_ metric: UsageMetric) -> String {
+    public func metricValue(_ metric: UsageMetric) -> String {
         switch metric {
         case .quotaRemaining(let percent):
             return format(.remaining, percent)
@@ -33,7 +33,7 @@ extension LocalizationResolving {
         }
     }
 
-    func metricAccessibilityLabel(
+    public func metricAccessibilityLabel(
         title: String,
         metric: UsageMetric
     ) -> String {
@@ -76,18 +76,18 @@ extension LocalizationResolving {
 
     /// Text shown beside the stale symbol so retained usage never relies on
     /// color alone to explain that its last refresh failed.
-    func staleBadgeText() -> String {
+    public func staleBadgeText() -> String {
         text(.refreshFailed)
     }
 
     /// Text shown beside the snapshot-age symbol so an out-of-date mobile
     /// snapshot is readable without color and stays distinct from a provider
     /// refresh failure.
-    func snapshotAgeBadgeText() -> String {
+    public func snapshotAgeBadgeText() -> String {
         text(.mobileSnapshotOutOfDate)
     }
 
-    func availabilityText(
+    public func availabilityText(
         _ availability: ProviderAvailability
     ) -> String? {
         switch availability {
@@ -101,54 +101,10 @@ extension LocalizationResolving {
             text(.refreshFailed)
         }
     }
-
-    #if os(macOS)
-    func providerSetupError(
-        _ error: ProviderSetupError
-    ) -> String {
-        switch error {
-        case .companionRequired(_, let companions):
-            let separator = language == .english ? " or " : " 또는 "
-            let targets = companions.joined(separator: separator)
-            if language == .english {
-                return "Install \(targets) to continue."
-            }
-            return "\(targets) 설치가 필요합니다."
-        case .unavailable(let provider):
-            return format(.unableToFindConnection, provider.displayName)
-        case .unableToLaunch(let target):
-            return format(.unableToLaunch, target)
-        case .unableToOpen:
-            return text(.unableToOpenOfficialAuthentication)
-        case .requiredExecutableMissing(let executables):
-            let separator = language == .english ? " or " : " 또는 "
-            let targets = executables.joined(separator: separator)
-            if language == .english {
-                return "Install \(targets) to continue."
-            }
-            return "\(targets) 설치가 필요합니다."
-        }
-    }
-
-    func launchStatus(
-        _ status: LaunchAtLoginServiceStatus
-    ) -> String {
-        switch status {
-        case .notRegistered:
-            text(.launchDisabled)
-        case .enabled:
-            text(.launchEnabled)
-        case .requiresApproval:
-            text(.launchApproval)
-        case .notFound:
-            text(.launchNotFound)
-        }
-    }
-    #endif
 }
 
 extension DashboardSnapshot {
-    func localized(
+    public func localized(
         using localization: LocalizationContext
     ) -> DashboardSnapshot {
         let localize = {
@@ -207,8 +163,8 @@ private extension UsageMetric {
     }
 }
 
-enum ProviderTextLocalization {
-    static func text(
+public enum ProviderTextLocalization {
+    public static func text(
         _ value: String,
         language: AppLanguage
     ) -> String {

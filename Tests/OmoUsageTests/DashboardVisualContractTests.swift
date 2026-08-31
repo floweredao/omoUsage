@@ -1,6 +1,7 @@
 import AppKit
 import Testing
 @testable import OmoUsage
+@testable import OmoUsageCore
 
 @Suite
 @MainActor

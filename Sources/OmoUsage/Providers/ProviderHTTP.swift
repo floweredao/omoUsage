@@ -1,3 +1,4 @@
+import OmoUsageCore
 import Foundation
 
 enum ProviderTransportError: Error, Equatable, Sendable {

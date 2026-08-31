@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import OmoUsage
+@testable import OmoUsageCore
 
 @Suite("Provider setup truthfulness")
 struct ProviderSetupTruthfulnessTests {

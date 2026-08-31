@@ -1,3 +1,4 @@
+import OmoUsageCore
 import SwiftUI
 
 enum UsageMeterVisualTokens {

@@ -1,3 +1,4 @@
+import OmoUsageCore
 import Foundation
 
 /// Rate-limits OAuth refresh attempts after a failure.

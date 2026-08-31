@@ -1,6 +1,7 @@
 import AppKit
 import Testing
 @testable import OmoUsage
+@testable import OmoUsageCore
 
 /// Contract for the side-notch hover preview.
 ///

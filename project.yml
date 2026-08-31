@@ -18,6 +18,10 @@ targets:
       - path: Sources/OmoUsage
         excludes:
           - Mobile
+          - AGENTS.md
+          - Credentials/AGENTS.md
+          - Providers/AGENTS.md
+          - WebDashboard/AGENTS.md
     entitlements:
       path: Config/OmoUsage.entitlements
       properties:
@@ -32,7 +36,25 @@ targets:
       Debug: Config/Version.xcconfig
       Release: Config/Version.xcconfig
     dependencies:
+      - target: OmoUsageCore
       - sdk: libsqlite3.tbd
+
+  OmoUsageCore:
+    type: framework
+    platform: iOS
+    supportedDestinations:
+      - macOS
+      - iOS
+    sources:
+      - path: Sources/OmoUsageCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.omo.usage.core
+        PRODUCT_NAME: OmoUsageCore
+        DEFINES_MODULE: YES
+        GENERATE_INFOPLIST_FILE: YES
+        SKIP_INSTALL: YES
+        SUPPORTS_MACCATALYST: YES
 
   OmoUsageMobile:
     type: application
@@ -41,13 +63,6 @@ targets:
       - iOS
       - macCatalyst
     sources:
-      - path: Sources/OmoUsage/Models/ProviderID.swift
-      - path: Sources/OmoUsage/Models/ProviderVisualStyle.swift
-      - path: Sources/OmoUsage/Models/UsageModels.swift
-      - path: Sources/OmoUsage/Models/DashboardSnapshot.swift
-      - path: Sources/OmoUsage/Settings/ProviderDisplayOrderStore.swift
-      - path: Sources/OmoUsage/Localization
-      - path: Sources/OmoUsage/Sync
       - path: Sources/OmoUsage/Mobile
     entitlements:
       path: Config/OmoUsageMobile.entitlements
@@ -64,6 +79,8 @@ targets:
     configFiles:
       Debug: Config/Version.xcconfig
       Release: Config/Version.xcconfig
+    dependencies:
+      - target: OmoUsageCore
 
 schemes:
   OmoUsage:

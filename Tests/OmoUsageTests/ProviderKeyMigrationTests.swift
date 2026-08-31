@@ -2,6 +2,7 @@ import Foundation
 import Security
 import Testing
 @testable import OmoUsage
+@testable import OmoUsageCore
 
 @Suite(.serialized)
 struct ProviderKeyMigrationTests {

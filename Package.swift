@@ -25,15 +25,34 @@ let currentProjectVersion = versionSettings["CURRENT_PROJECT_VERSION"]!
 let package = Package(
     name: "OmoUsage",
     platforms: [
-        .macOS(.v15)
+        .macOS(.v15),
+        .iOS(.v18)
     ],
     products: [
+        .library(name: "OmoUsageCore", targets: ["OmoUsageCore"]),
         .executable(name: "OmoUsage", targets: ["OmoUsage"])
     ],
     targets: [
+        .target(
+            name: "OmoUsageCore",
+            path: "Sources/OmoUsageCore",
+            sources: [
+                "Localization/AppLanguage.swift",
+                "Localization/AppStrings.swift",
+                "Localization/ProviderTextLocalization.swift",
+                "Models/DashboardSnapshot.swift",
+                "Models/ProviderID.swift",
+                "Models/ProviderVisualStyle.swift",
+                "Models/UsageModels.swift",
+                "Models/ProviderDisplayOrder.swift",
+                "Sync/UsageSnapshotSync.swift"
+            ]
+        ),
         .executableTarget(
             name: "OmoUsage",
+            dependencies: ["OmoUsageCore"],
             path: "Sources/OmoUsage",
+            exclude: ["Mobile"],
             resources: [
                 .process("Resources")
             ],
@@ -49,7 +68,7 @@ let package = Package(
         ),
         .testTarget(
             name: "OmoUsageTests",
-            dependencies: ["OmoUsage"],
+            dependencies: ["OmoUsage", "OmoUsageCore"],
             path: "Tests/OmoUsageTests"
         )
     ]

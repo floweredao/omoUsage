@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import Testing
 @testable import OmoUsage
+@testable import OmoUsageCore
 
 @Suite
 struct WebDashboardServerTests {

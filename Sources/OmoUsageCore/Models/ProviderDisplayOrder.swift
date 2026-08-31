@@ -1,7 +1,7 @@
 import Foundation
 
-enum ProviderDisplayOrder {
-    static func repaired(
+public enum ProviderDisplayOrder {
+    public static func repaired(
         rawValues: [String]
     ) -> [ProviderID] {
         repaired(
@@ -9,7 +9,7 @@ enum ProviderDisplayOrder {
         )
     }
 
-    static func repaired(
+    public static func repaired(
         _ providers: [ProviderID]
     ) -> [ProviderID] {
         var seen: Set<ProviderID> = []
@@ -22,8 +22,8 @@ enum ProviderDisplayOrder {
     }
 }
 
-enum AccountProviderDisplayOrder {
-    static func defaultOrder(
+public enum AccountProviderDisplayOrder {
+    public static func defaultOrder(
         configured identities: [AccountProviderID]
     ) -> [AccountProviderID] {
         var seenIdentities: Set<AccountProviderID> = []
@@ -46,7 +46,7 @@ enum AccountProviderDisplayOrder {
         }
     }
 
-    static func repaired(
+    public static func repaired(
         _ order: [AccountProviderID],
         configured identities: [AccountProviderID]
     ) -> [AccountProviderID] {
@@ -63,13 +63,13 @@ enum AccountProviderDisplayOrder {
     }
 }
 
-struct ProviderDisplayOrderStore {
-    static let defaultsKey = "providerDisplayOrder"
+public struct ProviderDisplayOrderStore {
+    public static let defaultsKey = "providerDisplayOrder"
 
-    let defaults: UserDefaults
-    let key: String
+    public let defaults: UserDefaults
+    public let key: String
 
-    init(
+    public init(
         defaults: UserDefaults,
         key: String = Self.defaultsKey
     ) {
@@ -77,7 +77,7 @@ struct ProviderDisplayOrderStore {
         self.key = key
     }
 
-    func load() -> [ProviderID] {
+    public func load() -> [ProviderID] {
         let rawValues = defaults.stringArray(forKey: key) ?? []
         let order = ProviderDisplayOrder.repaired(
             rawValues: rawValues
@@ -88,7 +88,7 @@ struct ProviderDisplayOrderStore {
         return order
     }
 
-    func save(_ order: [ProviderID]) {
+    public func save(_ order: [ProviderID]) {
         defaults.set(
             ProviderDisplayOrder.repaired(order).map(\.rawValue),
             forKey: key
