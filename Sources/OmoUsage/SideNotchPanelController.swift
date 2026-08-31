@@ -25,13 +25,49 @@ enum SideNotchPanelLayout {
     static let railCornerRadius: CGFloat = 20
     static let ringDiameter: CGFloat = 36
     static let providerIconSize: CGFloat = 22
+    private static let dashboardMeterEstimate: CGFloat = 40
+    private static let meterValueRowHeight: CGFloat = 15
+    private static let meterQuotaTrackHeight: CGFloat = 7
+    private static let meterResetRowHeight: CGFloat = 16
 
     static func detailHeight(for usage: ProviderUsage) -> CGFloat {
         min(
             detailMaximumHeight,
-            DashboardLayout.sectionHeight(usage)
+            detailSectionHeight(for: usage)
                 + detailContentPadding * 2
         )
+    }
+
+    private static func detailSectionHeight(
+        for usage: ProviderUsage
+    ) -> CGFloat {
+        let meters = usage.groups.flatMap(\.meters)
+        let dashboardMeterTotal =
+            CGFloat(meters.count) * dashboardMeterEstimate
+        let renderedMeterTotal = meters.reduce(CGFloat.zero) {
+            $0 + detailMeterHeight(for: $1)
+        }
+        return DashboardLayout.sectionHeight(usage)
+            - dashboardMeterTotal
+            + renderedMeterTotal
+    }
+
+    private static func detailMeterHeight(
+        for meter: UsageMeter
+    ) -> CGFloat {
+        let trackHeight: CGFloat = switch meter.metric.kind {
+        case .quotaRemaining:
+            meter.metric.progressFraction == nil
+                ? 0
+                : meterQuotaTrackHeight
+        case .spend, .credit, .count, .informational:
+            0
+        }
+        let resetHeight =
+            meter.resetText == nil && meter.resetsAt == nil
+            ? 0
+            : meterResetRowHeight
+        return meterValueRowHeight + trackHeight + resetHeight
     }
 
     static func requiredPanelHeight(

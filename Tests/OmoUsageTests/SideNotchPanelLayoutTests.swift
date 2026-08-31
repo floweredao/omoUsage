@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import Testing
 @testable import OmoUsage
 @testable import OmoUsageCore
@@ -7,7 +8,7 @@ import Testing
 @MainActor
 struct SideNotchPanelLayoutTests {
     @Test
-    func detailHeightIncludesActualContentPadding() {
+    func detailHeightMatchesRenderedProviderSection() {
         let claude = ProviderUsage(
             provider: .claude,
             planName: "Max 5x",
@@ -41,9 +42,21 @@ struct SideNotchPanelLayoutTests {
             availability: .available,
             updatedAt: nil
         )
+        let contentWidth = SideNotchPanelLayout.detailWidth
+            - SideNotchPanelLayout.detailContentPadding * 2
+        let hostingView = NSHostingView(
+            rootView:
+                ProviderSectionView(usage: claude)
+                .frame(width: contentWidth)
+        )
+        let renderedHeight = hostingView.fittingSize.height
+            + SideNotchPanelLayout.detailContentPadding * 2
 
         #expect(
-            SideNotchPanelLayout.detailHeight(for: claude) == 190
+            abs(
+                SideNotchPanelLayout.detailHeight(for: claude)
+                    - renderedHeight
+            ) <= 1
         )
     }
 
