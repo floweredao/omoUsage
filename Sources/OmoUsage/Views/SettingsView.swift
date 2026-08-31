@@ -609,6 +609,7 @@ private struct APIKeyAccountsSection: View {
                     .accessibilityLabel(
                         localization.text(.accountProvider)
                     )
+                    .accessibilityValue(provider.displayName)
 
                     TextField(
                         localization.text(.accountAlias),
