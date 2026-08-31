@@ -472,28 +472,33 @@ private struct SideNotchProviderButton: View {
         Button(action: action) {
             VStack(spacing: 4) {
                 ZStack {
-                    Circle()
-                        .stroke(
-                            Color.primary.opacity(
-                                UsageMeterVisualTokens.trackOpacity
-                            ),
-                            lineWidth: 4
-                        )
-                    Circle()
-                        .trim(
-                            from: 0,
-                            to: Double(summaryMeter.percentRemaining) / 100
-                        )
-                        .stroke(
-                            UsageMeterVisualTokens.fillRGB(
-                                for: summaryMeter.period
-                            ).color,
-                            style: StrokeStyle(
-                                lineWidth: 4,
-                                lineCap: .round
+                    switch summaryMeter.metric.kind {
+                    case .quotaRemaining:
+                        Circle()
+                            .stroke(
+                                Color.primary.opacity(
+                                    UsageMeterVisualTokens.trackOpacity
+                                ),
+                                lineWidth: 4
                             )
-                        )
-                        .rotationEffect(.degrees(-90))
+                        if let fraction = summaryMeter.metric.progressFraction {
+                            Circle()
+                                .trim(from: 0, to: fraction)
+                                .stroke(
+                                    UsageMeterVisualTokens.fillRGB(
+                                        for: summaryMeter.period
+                                    ).color,
+                                    style: StrokeStyle(
+                                        lineWidth: 4,
+                                        lineCap: .round
+                                    )
+                                )
+                                .rotationEffect(.degrees(-90))
+                        }
+                    case .spend, .credit, .count, .informational:
+                        Circle()
+                            .fill(Color.primary.opacity(0.06))
+                    }
 
                     ProviderIcon(provider: usage.provider)
                         .frame(
@@ -541,9 +546,12 @@ private struct SideNotchProviderButton: View {
                     height: SideNotchPanelLayout.ringDiameter
                 )
 
-                Text("\(summaryMeter.percentRemaining)%")
-                    .font(.system(size: 11, weight: .semibold))
+                Text(localization.metricValue(summaryMeter.metric))
+                    .font(.system(size: 10.5, weight: .semibold))
                     .monospacedDigit()
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.72)
+                    .multilineTextAlignment(.center)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(
@@ -638,8 +646,11 @@ private struct SideNotchProviderButton: View {
 
     private var summaryMeter: UsageMeter {
         let meters = usage.groups.flatMap(\.meters)
-        return meters.first(where: { $0.period != .extra })
-            ?? meters.first
+        return meters.first {
+            $0.metric.kind == .quotaRemaining && $0.period != .extra
+        } ?? meters.first {
+            $0.metric.kind == .quotaRemaining
+        } ?? meters.first
             ?? UsageMeter(
                 id: "unavailable",
                 title: "",
@@ -650,10 +661,7 @@ private struct SideNotchProviderButton: View {
 
     private var accessibilityValue: String {
         let value = "\(usage.provider.displayName), "
-            + localization.format(
-                .remaining,
-                summaryMeter.percentRemaining
-            )
+            + localization.metricValue(summaryMeter.metric)
         guard usage.freshness == .stale else { return value }
         return "\(value), \(localization.staleBadgeText())"
     }

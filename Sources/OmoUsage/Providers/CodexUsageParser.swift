@@ -24,17 +24,35 @@ enum CodexUsageParser {
         )
             .flatMap { UsageJSON.number($0["available_count"]) }
             .flatMap(ProviderPayload.nonnegativeInteger)
-        let creditText = [
-            credits.map { "크레딧 \($0)" },
-            resetTickets.map { "풀 리셋 티켓 \($0)" }
-        ]
-            .compactMap { $0 }
-            .joined(separator: "    ")
+        var typedMetrics = meters
+        if let credits {
+            typedMetrics.append(
+                UsageMeter(
+                    id: "codex.credits",
+                    title: "크레딧",
+                    period: .extra,
+                    metric: .credit(
+                        balance: Double(credits),
+                        unit: .credits
+                    )
+                )
+            )
+        }
+        if let resetTickets {
+            typedMetrics.append(
+                UsageMeter(
+                    id: "codex.reset-tickets",
+                    title: "풀 리셋 티켓",
+                    period: .extra,
+                    metric: .count(value: resetTickets, unit: .tickets)
+                )
+            )
+        }
         let group = UsageGroup(
             id: "codex.main",
             title: nil,
-            meters: meters,
-            creditText: creditText.isEmpty ? nil : creditText
+            meters: typedMetrics,
+            creditText: nil
         )
         let reportedPlan = planName(object["plan_type"])
         return ProviderUsage(

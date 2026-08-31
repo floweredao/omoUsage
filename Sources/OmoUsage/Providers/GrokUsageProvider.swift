@@ -266,6 +266,26 @@ struct GrokUsageProvider: UsageProvider {
         } else {
             nil
         }
+        var metrics = [
+            UsageMeter(
+                id: "grok-week",
+                title: "주간",
+                period: .week,
+                percentRemaining: percentRemaining,
+                resetsAt: reset,
+                resetText: ProviderPayload.resetText(reset, now: now)
+            )
+        ]
+        if let cap = cap.flatMap(ProviderPayload.nonnegativeInteger) {
+            metrics.append(
+                UsageMeter(
+                    id: "grok-monthly-cap",
+                    title: "추가 사용량",
+                    period: .extra,
+                    metric: .informational(value: "\(cap) 한도")
+                )
+            )
+        }
         return ProviderUsage(
             provider: id,
             planName: settingsRoot.flatMap {
@@ -283,22 +303,8 @@ struct GrokUsageProvider: UsageProvider {
                 UsageGroup(
                     id: "grok-usage",
                     title: nil,
-                    meters: [
-                        UsageMeter(
-                            id: "grok-week",
-                            title: "주간",
-                            period: .week,
-                            percentRemaining: percentRemaining,
-                            resetsAt: reset,
-                            resetText: ProviderPayload.resetText(
-                                reset,
-                                now: now
-                            )
-                        )
-                    ],
-                    creditText: cap
-                        .flatMap(ProviderPayload.nonnegativeInteger)
-                        .map { "추가 사용량 \($0) 한도" }
+                    meters: metrics,
+                    creditText: nil
                 )
             ],
             availability: .available,

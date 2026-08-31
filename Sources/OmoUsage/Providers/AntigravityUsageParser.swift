@@ -57,15 +57,13 @@ enum AntigravityUsageParser {
             .flatMap { UsageJSON.array($0["buckets"]) ?? [] } ?? []
         let metersByGroup = Dictionary(grouping: bucketValues.compactMap(meter), by: \.groupID)
 
-        let credits = UsageJSON.object(object["credits"])
-        let creditText = creditText(credits)
         let groups = [
             makeGroup(id: "antigravity.gemini", metersByGroup: metersByGroup),
             makeGroup(
                 id: "antigravity.third-party",
-                metersByGroup: metersByGroup,
-                creditText: creditText
-            )
+                metersByGroup: metersByGroup
+            ),
+            creditGroup(UsageJSON.object(object["credits"]))
         ].compactMap { $0 }
 
         guard !groups.isEmpty else {
@@ -133,7 +131,8 @@ enum AntigravityUsageParser {
                 id: "antigravity.third-party",
                 title: "Claude and GPT models",
                 meters: thirdParty
-            )
+            ),
+            creditGroup(UsageJSON.object(root["credits"]))
         ].compactMap { $0 }
         guard !groups.isEmpty else {
             throw UsageParsingError.invalidPayload
@@ -193,8 +192,7 @@ enum AntigravityUsageParser {
 
     private static func makeGroup(
         id: String,
-        metersByGroup: [String: [(groupID: String, order: Int, meter: UsageMeter)]],
-        creditText: String? = nil
+        metersByGroup: [String: [(groupID: String, order: Int, meter: UsageMeter)]]
     ) -> UsageGroup? {
         guard let entries = metersByGroup[id], let first = entries.first else { return nil }
         let spec = specs.values.first { $0.groupID == first.groupID }
@@ -202,21 +200,39 @@ enum AntigravityUsageParser {
             id: id,
             title: spec?.groupTitle,
             meters: entries.sorted { $0.order < $1.order }.map(\.meter),
-            creditText: creditText
+            creditText: nil
         )
     }
 
-    private static func creditText(_ object: [String: Any]?) -> String? {
-        guard
-            let object,
-            let prompt = UsageJSON.number(object["prompt"]),
-            let promptCount = ProviderPayload.nonnegativeInteger(prompt),
-            let flow = UsageJSON.number(object["flow"]),
-            let flowCount = ProviderPayload.nonnegativeInteger(flow)
-        else {
-            return nil
+    private static func creditGroup(
+        _ object: [String: Any]?
+    ) -> UsageGroup? {
+        guard let object else { return nil }
+        let definitions = [
+            ("prompt", "프롬프트 크레딧"),
+            ("flow", "플로우 크레딧")
+        ]
+        let meters = definitions.compactMap { key, title -> UsageMeter? in
+            guard
+                let raw = UsageJSON.number(object[key]),
+                let value = ProviderPayload.nonnegativeInteger(raw)
+            else {
+                return nil
+            }
+            return UsageMeter(
+                id: "antigravity.credits.\(key)",
+                title: title,
+                period: .extra,
+                metric: .credit(balance: Double(value), unit: .credits)
+            )
         }
-        return "프롬프트 크레딧 \(promptCount)    플로우 크레딧 \(flowCount)"
+        guard !meters.isEmpty else { return nil }
+        return UsageGroup(
+            id: "antigravity.credits",
+            title: nil,
+            meters: meters,
+            creditText: nil
+        )
     }
 
     private static func planName(_ value: Any?) -> String {

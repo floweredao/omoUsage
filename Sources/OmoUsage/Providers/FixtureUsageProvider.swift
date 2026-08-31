@@ -43,22 +43,51 @@ struct FixtureUsageProvider: UsageProvider {
         provider: ProviderID,
         now: Date
     ) -> ProviderUsage {
-        ProviderUsage(
+        var meters = [
+            UsageMeter(
+                id: "\(provider.rawValue)-week",
+                title: "주간",
+                period: .week,
+                percentRemaining: 72,
+                resetText: "4일 후 리셋"
+            )
+        ]
+        if provider == .openrouter {
+            meters.append(contentsOf: [
+                UsageMeter(
+                    id: "fixture-spend",
+                    title: "최근 30일",
+                    period: .extra,
+                    metric: .spend(amount: 3, currency: .usd)
+                ),
+                UsageMeter(
+                    id: "fixture-credit",
+                    title: "크레딧",
+                    period: .extra,
+                    metric: .credit(balance: 12, unit: .credits)
+                ),
+                UsageMeter(
+                    id: "fixture-count",
+                    title: "요청",
+                    period: .extra,
+                    metric: .count(value: 500, unit: .requests)
+                ),
+                UsageMeter(
+                    id: "fixture-information",
+                    title: "결제",
+                    period: .extra,
+                    metric: .informational(value: "수동 갱신")
+                )
+            ])
+        }
+        return ProviderUsage(
             provider: provider,
             planName: "Pro",
             groups: [
                 UsageGroup(
                     id: "\(provider.rawValue)-usage",
                     title: nil,
-                    meters: [
-                        UsageMeter(
-                            id: "\(provider.rawValue)-week",
-                            title: "주간",
-                            period: .week,
-                            percentRemaining: 72,
-                            resetText: "4일 후 리셋"
-                        )
-                    ],
+                    meters: meters,
                     creditText: nil
                 )
             ],

@@ -78,8 +78,10 @@ struct AdditionalUsageProviderTests {
 
             #expect(usage.provider == .opencode)
             #expect(usage.planName == "Zen")
-            #expect(usage.groups[0].meters.isEmpty)
-            #expect(usage.groups[0].creditText == "최근 30일 $3.00")
+            #expect(usage.groups[0].meters.map(\.metric) == [
+                .spend(amount: 3, currency: .usd)
+            ])
+            #expect(usage.groups[0].creditText == nil)
         }
     }
 

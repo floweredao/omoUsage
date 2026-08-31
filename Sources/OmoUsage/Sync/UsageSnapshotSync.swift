@@ -17,7 +17,7 @@ private struct LegacyUsageSnapshotPayload: Decodable {
     let refreshedAt: Date
 }
 
-private struct CloudSnapshotV3: Codable {
+private struct CloudSnapshot: Codable {
     let version: Int
     let providers: [CloudProviderUsage]
     let generatedAt: Date
@@ -96,7 +96,7 @@ private struct CloudUsageMeter: Codable {
     let id: String
     let title: String
     let period: UsagePeriod
-    let percentRemaining: Int
+    let metric: UsageMetric
     let resetsAt: Date?
     let resetText: String?
     let showsMenuBarBadge: Bool
@@ -105,7 +105,7 @@ private struct CloudUsageMeter: Codable {
         id = meter.id
         title = meter.title
         period = meter.period
-        percentRemaining = meter.percentRemaining
+        metric = meter.metric
         resetsAt = meter.resetsAt
         resetText = meter.resetText
         showsMenuBarBadge = meter.showsMenuBarBadge
@@ -116,16 +116,51 @@ private struct CloudUsageMeter: Codable {
             id: id,
             title: title,
             period: period,
-            percentRemaining: percentRemaining,
+            metric: metric,
             resetsAt: resetsAt,
             resetText: resetText,
             showsMenuBarBadge: showsMenuBarBadge
         )
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, title, period, metric, percentRemaining
+        case resetsAt, resetText, showsMenuBarBadge
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        title = try container.decode(String.self, forKey: .title)
+        period = try container.decode(UsagePeriod.self, forKey: .period)
+        metric = try container.decodeIfPresent(
+            UsageMetric.self,
+            forKey: .metric
+        ) ?? .quotaRemaining(
+            percent: try container.decode(Int.self, forKey: .percentRemaining)
+        )
+        resetsAt = try container.decodeIfPresent(Date.self, forKey: .resetsAt)
+        resetText = try container.decodeIfPresent(String.self, forKey: .resetText)
+        showsMenuBarBadge = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .showsMenuBarBadge
+        ) ?? false
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(title, forKey: .title)
+        try container.encode(period, forKey: .period)
+        try container.encode(metric, forKey: .metric)
+        try container.encodeIfPresent(resetsAt, forKey: .resetsAt)
+        try container.encodeIfPresent(resetText, forKey: .resetText)
+        try container.encode(showsMenuBarBadge, forKey: .showsMenuBarBadge)
+    }
 }
 
 enum UsageSnapshotCodec {
-    static let currentVersion = 3
+    static let currentVersion = 4
     static let maximumPayloadBytes = 256 * 1_024
     private static let minimumTimestamp = 946_684_800.0
     private static let maximumTimestamp = 4_102_444_800.0
@@ -138,7 +173,7 @@ enum UsageSnapshotCodec {
             ordinals[usage.provider] = ordinal
             return CloudProviderUsage(usage, accountOrdinal: ordinal)
         }
-        let payload = CloudSnapshotV3(
+        let payload = CloudSnapshot(
             version: currentVersion,
             providers: providers,
             generatedAt: snapshot.generatedAt,
@@ -180,9 +215,9 @@ enum UsageSnapshotCodec {
                     .compactMap(\.lastSuccessfulAt)
                     .min()
             )
-        case currentVersion:
+        case 3, currentVersion:
             let payload = try decoder.decode(
-                CloudSnapshotV3.self,
+                CloudSnapshot.self,
                 from: data
             )
             guard hasValidOrdinals(payload.providers) else {
@@ -286,7 +321,7 @@ enum UsageSnapshotCodec {
                         meter.id.count <= 256,
                         meter.title.count <= 512,
                         meter.resetText?.count ?? 0 <= 512,
-                        (0...100).contains(meter.percentRemaining),
+                        meter.metric.isValid,
                         isSafeDate(meter.resetsAt)
                     else {
                         throw UsageSnapshotCodecError.invalidPayload

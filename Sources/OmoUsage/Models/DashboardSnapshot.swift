@@ -150,6 +150,30 @@ struct DashboardSnapshot: Equatable, Codable, Sendable {
                             period: .week,
                             percentRemaining: percentRemaining,
                             resetsAt: now.addingTimeInterval(259_200)
+                        ),
+                        UsageMeter(
+                            id: "spend",
+                            title: "Last 30 days",
+                            period: .extra,
+                            metric: .spend(amount: 3, currency: .usd)
+                        ),
+                        UsageMeter(
+                            id: "credit",
+                            title: "Credits",
+                            period: .extra,
+                            metric: .credit(balance: 12, unit: .credits)
+                        ),
+                        UsageMeter(
+                            id: "count",
+                            title: "Requests",
+                            period: .extra,
+                            metric: .count(value: 500, unit: .requests)
+                        ),
+                        UsageMeter(
+                            id: "information",
+                            title: "Billing",
+                            period: .extra,
+                            metric: .informational(value: "Manual renewal")
                         )
                     ],
                     creditText: nil

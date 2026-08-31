@@ -128,21 +128,31 @@ struct OpenRouterUsageProvider: UsageProvider {
             )
         }
         var meters: [UsageMeter] = []
-        if
-            let total,
-            let usage,
-            let remaining = ProviderPayload.remainingPercent(
-                used: usage,
-                limit: total
-            )
-        {
+        if let usage,
+           let metric = UsageMetric.spend(
+               validating: usage,
+               currency: .usd
+           ) {
             meters.append(
                 UsageMeter(
-                    id: "openrouter-credits",
-                    title: "크레딧",
+                    id: "openrouter-total-spend",
+                    title: "총 사용량",
                     period: .extra,
-                    percentRemaining: remaining,
-                    resetText: "\(ProviderPayload.money(usage)) 사용"
+                    metric: metric
+                )
+            )
+        }
+        if let total, let usage,
+           let metric = UsageMetric.credit(
+               validating: max(0, total - usage),
+               unit: .usd
+           ) {
+            meters.append(
+                UsageMeter(
+                    id: "openrouter-credit-balance",
+                    title: "잔액",
+                    period: .extra,
+                    metric: metric
                 )
             )
         }
@@ -178,14 +188,19 @@ struct OpenRouterUsageProvider: UsageProvider {
                 paths: [["usage_daily"], ["usageDaily"]]
             )
         }
-        var creditParts: [String] = []
-        if let total, let usage {
-            creditParts.append(
-                "잔액 \(ProviderPayload.money(max(0, total - usage)))"
+        if let daily,
+           let metric = UsageMetric.spend(
+               validating: daily,
+               currency: .usd
+           ) {
+            meters.append(
+                UsageMeter(
+                    id: "openrouter-daily-spend",
+                    title: "오늘",
+                    period: .extra,
+                    metric: metric
+                )
             )
-        }
-        if let daily {
-            creditParts.append("오늘 \(ProviderPayload.money(daily))")
         }
         return ProviderUsage(
             provider: id,
@@ -195,9 +210,7 @@ struct OpenRouterUsageProvider: UsageProvider {
                     id: "openrouter-usage",
                     title: nil,
                     meters: meters,
-                    creditText: creditParts.isEmpty
-                        ? nil
-                        : creditParts.joined(separator: " · ")
+                    creditText: nil
                 )
             ],
             availability: .available,

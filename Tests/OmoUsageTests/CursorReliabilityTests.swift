@@ -68,10 +68,16 @@ struct CursorReliabilityTests {
             #expect(usage.planName == "Pro")
             let meters = usage.groups.flatMap(\.meters)
             #expect(meters.map(\.title) == [
-                "총 사용량", "Auto 사용량", "API 사용량"
+                "총 사용량", "Auto 사용량", "API 사용량", "크레딧"
             ])
-            #expect(meters.map(\.percentRemaining) == [75, 80, 70])
-            #expect(meters.allSatisfy { $0.resetsAt == expectedReset })
+            #expect(meters.map(\.metric) == [
+                .quotaRemaining(percent: 75),
+                .quotaRemaining(percent: 80),
+                .quotaRemaining(percent: 70),
+                .credit(balance: 875, unit: .credits)
+            ])
+            #expect(meters.dropLast().allSatisfy { $0.resetsAt == expectedReset })
+            #expect(meters.last?.resetsAt == nil)
             #expect(usage.updatedAt == now)
         }
     }

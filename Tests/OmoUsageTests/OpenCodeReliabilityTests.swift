@@ -57,18 +57,18 @@ struct OpenCodeReliabilityTests {
 
             let activeUsage = try await provider.fetch(now: now)
 
-            #expect(
-                activeUsage.groups[0].creditText == "최근 30일 $1.00"
-            )
+            #expect(activeUsage.groups[0].meters.map(\.metric) == [
+                .spend(amount: 1, currency: .usd)
+            ])
             try FileManager.default.removeItem(
                 at: directory.appending(path: "opencode.db")
             )
 
             let fallbackUsage = try await provider.fetch(now: now)
 
-            #expect(
-                fallbackUsage.groups[0].creditText == "최근 30일 $2.00"
-            )
+            #expect(fallbackUsage.groups[0].meters.map(\.metric) == [
+                .spend(amount: 2, currency: .usd)
+            ])
         }
     }
 

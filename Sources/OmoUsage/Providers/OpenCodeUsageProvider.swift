@@ -140,8 +140,18 @@ struct OpenCodeUsageProvider: UsageProvider {
                 UsageGroup(
                     id: "opencode-usage",
                     title: nil,
-                    meters: [],
-                    creditText: "최근 30일 \(ProviderPayload.money(hostedMonth))"
+                    meters: [
+                        UsageMeter(
+                            id: "opencode-local-spend",
+                            title: "최근 30일",
+                            period: .extra,
+                            metric: .spend(
+                                amount: hostedMonth,
+                                currency: .usd
+                            )
+                        )
+                    ],
+                    creditText: nil
                 )
             ],
             availability: .available,
