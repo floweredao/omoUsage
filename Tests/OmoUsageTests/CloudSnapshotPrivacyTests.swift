@@ -34,7 +34,7 @@ struct CloudSnapshotPrivacyTests {
             object["providers"] as? [[String: Any]]
         )
 
-        #expect(object["version"] as? Int == 3)
+        #expect(object["version"] as? Int == 4)
         #expect(providers.map { $0["accountOrdinal"] as? Int } == [1, 2])
         #expect(providers.allSatisfy { $0["accountID"] == nil })
         #expect(providers.allSatisfy { $0["accountLabel"] == nil })

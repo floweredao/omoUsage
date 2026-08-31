@@ -36,7 +36,7 @@ struct SnapshotFreshnessSchemaTests {
         )
         let decoded = try UsageSnapshotCodec.decode(encoded)
 
-        #expect(object["version"] as? Int == 3)
+        #expect(object["version"] as? Int == 4)
         #expect(object["generatedAt"] != nil)
         #expect(object["lastRefreshAttemptAt"] != nil)
         #expect(object["oldestDisplayedSuccessAt"] != nil)
@@ -102,7 +102,7 @@ struct SnapshotFreshnessSchemaTests {
             (object["providers"] as? [[String: Any]])?.first
         )
 
-        #expect(object["version"] as? Int == 3)
+        #expect(object["version"] as? Int == 4)
         #expect(object["generatedAt"] != nil)
         #expect(object["lastRefreshAttemptAt"] != nil)
         #expect(object["oldestDisplayedSuccessAt"] != nil)

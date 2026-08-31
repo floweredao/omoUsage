@@ -5,6 +5,75 @@ extension LocalizationResolving {
         ProviderTextLocalization.text(value, language: language)
     }
 
+    func metricValue(_ metric: UsageMetric) -> String {
+        switch metric {
+        case .quotaRemaining(let percent):
+            return format(.remaining, percent)
+        case .spend(let amount, let currency):
+            let money = Self.metricMoney(amount, currency: currency)
+            return language == .english
+                ? "\(money) spent"
+                : "\(money) 사용"
+        case .credit(let balance, .usd):
+            let money = Self.metricMoney(balance, currency: .usd)
+            return language == .english
+                ? "\(money) balance"
+                : "잔액 \(money)"
+        case .credit(let balance, let unit):
+            let value = Self.metricNumber(balance)
+            let unitText = metricUnit(unit, value: balance)
+            return language == .english
+                ? "\(value) \(unitText) balance"
+                : "\(unitText) 잔액 \(value)"
+        case .count(let value, let unit):
+            return "\(value.formatted(.number.locale(language.locale))) "
+                + metricUnit(unit, value: Double(value))
+        case .informational(let value):
+            return providerText(value)
+        }
+    }
+
+    func metricAccessibilityLabel(
+        title: String,
+        metric: UsageMetric
+    ) -> String {
+        "\(providerText(title)), \(metricValue(metric))"
+    }
+
+    private func metricUnit(
+        _ unit: UsageMetricUnit,
+        value: Double
+    ) -> String {
+        switch (language, unit) {
+        case (.english, .usd): "USD"
+        case (.english, .credits): value == 1 ? "credit" : "credits"
+        case (.english, .requests): value == 1 ? "request" : "requests"
+        case (.english, .tokens): value == 1 ? "token" : "tokens"
+        case (.english, .tickets): value == 1 ? "ticket" : "tickets"
+        case (.korean, .usd): "USD"
+        case (.korean, .credits): "크레딧"
+        case (.korean, .requests): "요청"
+        case (.korean, .tokens): "토큰"
+        case (.korean, .tickets): "티켓"
+        }
+    }
+
+    private static func metricMoney(
+        _ amount: Double,
+        currency: UsageCurrency
+    ) -> String {
+        switch currency {
+        case .usd:
+            "$" + String(format: "%.2f", locale: Locale(identifier: "en_US_POSIX"), amount)
+        }
+    }
+
+    private static func metricNumber(_ value: Double) -> String {
+        value.rounded() == value
+            ? String(Int(value))
+            : String(format: "%.2f", locale: Locale(identifier: "en_US_POSIX"), value)
+    }
+
     /// Text shown beside the stale symbol so retained usage never relies on
     /// color alone to explain that its last refresh failed.
     func staleBadgeText() -> String {
@@ -97,7 +166,7 @@ extension DashboardSnapshot {
                                     id: meter.id,
                                     title: localize(meter.title),
                                     period: meter.period,
-                                    percentRemaining: meter.percentRemaining,
+                                    metric: meter.metric.localized(localize),
                                     resetsAt: meter.resetsAt,
                                     resetText: meter.resetText.map(localize),
                                     showsMenuBarBadge:
@@ -117,6 +186,17 @@ extension DashboardSnapshot {
             lastRefreshAttemptAt: lastRefreshAttemptAt,
             oldestDisplayedSuccessAt: oldestDisplayedSuccessAt
         )
+    }
+}
+
+private extension UsageMetric {
+    func localized(_ localize: (String) -> String) -> UsageMetric {
+        switch self {
+        case .quotaRemaining, .spend, .credit, .count:
+            self
+        case .informational(let value):
+            .informational(value: localize(value))
+        }
     }
 }
 
@@ -226,6 +306,11 @@ enum ProviderTextLocalization {
         "토큰 한도": "Token quota",
         "모델별 주간": "Weekly by model",
         "총 사용량": "Total usage",
+        "최근 30일": "Last 30 days",
+        "크레딧": "Credits",
+        "요청": "Requests",
+        "결제": "Billing",
+        "수동 갱신": "Manual renewal",
         "Auto 사용량": "Auto usage",
         "API 사용량": "API usage",
         "추가 잔액": "Extra balance",

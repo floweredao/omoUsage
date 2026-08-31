@@ -174,9 +174,12 @@ struct CodexUsageParsingTests {
 
         #expect(usage.provider == .codex)
         #expect(usage.planName == "Plus")
-        #expect(usage.groups.flatMap(\.meters).map(\.title) == ["주간"])
-        #expect(usage.groups.flatMap(\.meters).map(\.percentRemaining) == [60])
-        #expect(usage.groups.first?.creditText == "크레딧 0")
+        #expect(usage.groups.flatMap(\.meters).map(\.title) == ["주간", "크레딧"])
+        #expect(usage.groups.flatMap(\.meters).map(\.metric) == [
+            .quotaRemaining(percent: 60),
+            .credit(balance: 0, unit: .credits)
+        ])
+        #expect(usage.groups.first?.creditText == nil)
         #expect(usage.groups.flatMap(\.meters).first?.resetsAt?.timeIntervalSince1970 == 1_786_100_400)
         #expect(usage.updatedAt == fixedNow)
     }
@@ -208,10 +211,11 @@ struct CodexUsageParsingTests {
             now: fixedNow
         )
 
-        #expect(
-            usage.groups.first?.creditText
-                == "크레딧 0    풀 리셋 티켓 1"
-        )
+        #expect(usage.groups.first?.meters.map(\.metric) == [
+            .quotaRemaining(percent: 18),
+            .credit(balance: 0, unit: .credits),
+            .count(value: 1, unit: .tickets)
+        ])
     }
 
     @Test
@@ -340,9 +344,14 @@ struct AntigravityUsageParsingTests {
 
         #expect(usage.provider == .antigravity)
         #expect(usage.planName == "Pro")
-        #expect(usage.groups.map(\.title) == ["Gemini Models", "Claude and GPT models"])
-        #expect(usage.groups.flatMap(\.meters).map(\.percentRemaining) == [100, 73, 100, 83])
-        #expect(usage.groups.last?.creditText == "프롬프트 크레딧 500    플로우 크레딧 100")
+        #expect(usage.groups.map(\.title) == ["Gemini Models", "Claude and GPT models", nil])
+        #expect(usage.groups.flatMap(\.meters).map(\.metric) == [
+            .quotaRemaining(percent: 100), .quotaRemaining(percent: 73),
+            .quotaRemaining(percent: 100), .quotaRemaining(percent: 83),
+            .credit(balance: 500, unit: .credits),
+            .credit(balance: 100, unit: .credits)
+        ])
+        #expect(usage.groups.last?.creditText == nil)
         #expect(usage.groups.flatMap(\.meters).first?.resetsAt?.timeIntervalSince1970 == 1_785_689_280)
         #expect(usage.updatedAt == fixedNow)
     }

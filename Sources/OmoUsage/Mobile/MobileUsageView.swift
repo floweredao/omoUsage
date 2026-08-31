@@ -309,29 +309,36 @@ private struct MobileUsageMeter: View {
                 }
             }
 
-            GeometryReader { geometry in
-                ZStack(alignment: .leading) {
-                    Capsule()
-                        .fill(Color.primary.opacity(0.16))
-                    Capsule()
-                        .fill(meterColor)
-                        .frame(
-                            width: geometry.size.width
-                                * Double(meter.percentRemaining) / 100
-                        )
+            switch meter.metric.kind {
+            case .quotaRemaining:
+                if let fraction = meter.metric.progressFraction {
+                    GeometryReader { geometry in
+                        ZStack(alignment: .leading) {
+                            Capsule()
+                                .fill(Color.primary.opacity(0.16))
+                            Capsule()
+                                .fill(meterColor)
+                                .frame(width: geometry.size.width * fraction)
+                        }
+                    }
+                    .frame(height: 6)
                 }
+            case .spend, .credit, .count, .informational:
+                EmptyView()
             }
-            .frame(height: 6)
 
-            Text(resetDescription)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
+            if meter.resetText != nil || meter.resetsAt != nil {
+                Text(resetDescription)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
-            "\(localization.providerText(meter.title)), "
-                + "\(localization.format(.remaining, meter.percentRemaining)), "
-                + resetDescription
+            localization.metricAccessibilityLabel(
+                title: meter.title,
+                metric: meter.metric
+            ) + resetAccessibilitySuffix
         )
     }
 
@@ -341,13 +348,14 @@ private struct MobileUsageMeter: View {
     }
 
     private var remainingValue: some View {
-        Text(
-            localization.format(
-                .remaining,
-                meter.percentRemaining
-            )
-        )
-        .font(.subheadline.weight(.semibold))
+        Text(localization.metricValue(meter.metric))
+            .font(.subheadline.weight(.semibold))
+    }
+
+    private var resetAccessibilitySuffix: String {
+        meter.resetText != nil || meter.resetsAt != nil
+            ? ", \(resetDescription)"
+            : ""
     }
 
     private var meterColor: Color {

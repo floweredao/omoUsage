@@ -23,10 +23,8 @@ struct GrokReliabilityTests {
 
             #expect(meter.percentRemaining == 63)
             #expect(meter.resetsAt == expectedReset)
-            #expect(
-                HephaestusGrokReliabilityFixture.integer(
-                    in: usage.groups.first?.creditText
-                ) == 2_500
+            #expect(usage.groups.first?.meters.last?.metric ==
+                .informational(value: "2500 한도")
             )
             #expect(usage.planName == "SuperGrok")
         }

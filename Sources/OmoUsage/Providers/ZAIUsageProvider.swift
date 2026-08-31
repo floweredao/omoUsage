@@ -240,7 +240,13 @@ struct ZAIUsageProvider: UsageProvider {
         with candidate: UsageMeter
     ) -> Bool {
         if candidate.percentRemaining != current.percentRemaining {
-            return candidate.percentRemaining < current.percentRemaining
+            guard
+                let candidatePercent = candidate.percentRemaining,
+                let currentPercent = current.percentRemaining
+            else {
+                return false
+            }
+            return candidatePercent < currentPercent
         }
         switch (current.resetsAt, candidate.resetsAt) {
         case let (.some(currentReset), .some(candidateReset)):

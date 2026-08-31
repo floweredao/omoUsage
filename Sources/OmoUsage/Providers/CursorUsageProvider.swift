@@ -130,6 +130,21 @@ struct CursorUsageProvider: UsageProvider {
             )
         }
         let planName = reportedPlan?.capitalized ?? ""
+        var typedMetrics = meters
+        if let credits,
+           let metric = UsageMetric.credit(
+               validating: credits,
+               unit: .credits
+           ) {
+            typedMetrics.append(
+                UsageMeter(
+                    id: "cursor-credit-balance",
+                    title: "크레딧",
+                    period: .extra,
+                    metric: metric
+                )
+            )
+        }
         return ProviderUsage(
             provider: id,
             planName: planName,
@@ -137,10 +152,8 @@ struct CursorUsageProvider: UsageProvider {
                 UsageGroup(
                     id: "cursor-usage",
                     title: nil,
-                    meters: meters,
-                    creditText: credits.map {
-                        "크레딧 \(ProviderPayload.money($0))"
-                    }
+                    meters: typedMetrics,
+                    creditText: nil
                 )
             ],
             availability: .available,

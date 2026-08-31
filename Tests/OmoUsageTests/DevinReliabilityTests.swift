@@ -60,10 +60,8 @@ struct DevinReliabilityTests {
             #expect(
                 weekly.resetsAt?.timeIntervalSince1970 == 1_900_500_000
             )
-            #expect(
-                hephaestusDevinMonetaryValue(
-                    usage.groups.first?.creditText
-                ) == 10
+            #expect(meters.first { $0.id == "devin-extra-balance" }?.metric ==
+                .credit(balance: 10, unit: .usd)
             )
         }
     }

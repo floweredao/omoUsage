@@ -1154,23 +1154,76 @@
       ).format(date);
     }
 
+    function metricValue(metric) {
+      switch (metric.kind) {
+      case "quotaRemaining":
+        return webLanguage === "korean"
+          ? `${metric.percent}% 남음`
+          : `${metric.percent}% remaining`;
+      case "spend": {
+        const amount = metric.currency === "USD"
+          ? `$${metric.amount.toFixed(2)}`
+          : `${metric.amount} ${metric.currency}`;
+        return webLanguage === "korean"
+          ? `${amount} 사용`
+          : `${amount} spent`;
+      }
+      case "credit": {
+        if (metric.unit === "USD") {
+          return webLanguage === "korean"
+            ? `잔액 $${metric.balance.toFixed(2)}`
+            : `$${metric.balance.toFixed(2)} balance`;
+        }
+        const value = Number.isInteger(metric.balance)
+          ? metric.balance.toString()
+          : metric.balance.toFixed(2);
+        const unit = webLanguage === "korean"
+          ? { credits: "크레딧", requests: "요청", tokens: "토큰", tickets: "티켓" }[metric.unit]
+          : metric.balance === 1 ? metric.unit.slice(0, -1) : metric.unit;
+        return webLanguage === "korean"
+          ? `${unit} 잔액 ${value}`
+          : `${value} ${unit} balance`;
+      }
+      case "count": {
+        const unit = webLanguage === "korean"
+          ? { credits: "크레딧", requests: "요청", tokens: "토큰", tickets: "티켓" }[metric.unit]
+          : metric.value === 1 ? metric.unit.slice(0, -1) : metric.unit;
+        return `${metric.value.toLocaleString(webLanguage === "korean" ? "ko-KR" : "en-US")} ${unit}`;
+      }
+      case "informational":
+        return metric.value;
+      default:
+        return "";
+      }
+    }
+
     function meterNode(meter) {
       const wrapper = element("div", "meter");
       const heading = element("div", "meter-heading");
+      const value = metricValue(meter.metric);
       heading.append(
         element("span", "meter-title", meter.title),
-        element("span", "meter-value", `${meter.percentRemaining}%`)
+        element("span", "meter-value", value)
       );
+      wrapper.append(heading);
 
-      const progress = element("progress");
-      progress.max = 100;
-      progress.value = meter.percentRemaining;
-      progress.setAttribute(
-        "aria-label",
-        `${meter.title}: ${meter.percentRemaining}% ${localized("remaining")}`
-      );
-      if (meter.period === "extra") progress.classList.add("extra");
-      wrapper.append(heading, progress);
+      switch (meter.metric.kind) {
+      case "quotaRemaining": {
+        const progress = element("progress");
+        progress.max = 100;
+        progress.value = meter.metric.percent;
+        progress.setAttribute("aria-label", `${meter.title}: ${value}`);
+        if (meter.period === "extra") progress.classList.add("extra");
+        wrapper.append(progress);
+        break;
+      }
+      case "spend":
+      case "credit":
+      case "count":
+      case "informational":
+        wrapper.setAttribute("aria-label", `${meter.title}: ${value}`);
+        break;
+      }
 
       const reset = meter.resetText
         || (

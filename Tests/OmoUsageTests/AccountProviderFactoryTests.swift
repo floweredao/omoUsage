@@ -138,8 +138,12 @@ struct AccountProviderFactoryTests {
             accountLabel: "Second"
         ).fetch(now: now)
 
-        #expect(firstUsage.groups[0].meters[0].percentRemaining == 75)
-        #expect(secondUsage.groups[0].meters[0].percentRemaining == 25)
+        #expect(firstUsage.groups[0].meters.first {
+            $0.id == "openrouter-credit-balance"
+        }?.metric == .credit(balance: 75, unit: .usd))
+        #expect(secondUsage.groups[0].meters.first {
+            $0.id == "openrouter-credit-balance"
+        }?.metric == .credit(balance: 25, unit: .usd))
     }
 }
 

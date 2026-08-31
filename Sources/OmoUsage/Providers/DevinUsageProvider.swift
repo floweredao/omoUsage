@@ -81,7 +81,7 @@ struct DevinUsageProvider: UsageProvider {
                 ["dailyResetAt"]
             ])
         ]
-        let meters = definitions.compactMap {
+        var meters = definitions.compactMap {
             definition -> UsageMeter? in
             let (title, usagePeriod, valuePaths, resetPaths) = definition
             guard
@@ -113,6 +113,17 @@ struct DevinUsageProvider: UsageProvider {
         guard !meters.isEmpty || balance != nil else {
             throw ProviderTransportError.invalidResponse(id)
         }
+        if let balance,
+           let metric = UsageMetric.credit(validating: balance, unit: .usd) {
+            meters.append(
+                UsageMeter(
+                    id: "devin-extra-balance",
+                    title: "추가 잔액",
+                    period: .extra,
+                    metric: metric
+                )
+            )
+        }
         return ProviderUsage(
             provider: id,
             planName: ProviderPayload.text(
@@ -124,9 +135,7 @@ struct DevinUsageProvider: UsageProvider {
                     id: "devin-usage",
                     title: nil,
                     meters: meters,
-                    creditText: balance.map {
-                        "추가 잔액 \(ProviderPayload.money($0))"
-                    }
+                    creditText: nil
                 )
             ],
             availability: .available,
@@ -194,6 +203,17 @@ struct DevinUsageProvider: UsageProvider {
         guard !meters.isEmpty || balance != nil else {
             throw ProviderTransportError.invalidResponse(id)
         }
+        if let balance,
+           let metric = UsageMetric.credit(validating: balance, unit: .usd) {
+            meters.append(
+                UsageMeter(
+                    id: "devin-extra-balance",
+                    title: "추가 잔액",
+                    period: .extra,
+                    metric: metric
+                )
+            )
+        }
         return ProviderUsage(
             provider: id,
             planName: (planInfo?["planName"] as? String) ?? "",
@@ -202,9 +222,7 @@ struct DevinUsageProvider: UsageProvider {
                     id: "devin-usage",
                     title: nil,
                     meters: meters,
-                    creditText: balance.map {
-                        "추가 잔액 \(ProviderPayload.money($0))"
-                    }
+                    creditText: nil
                 )
             ],
             availability: .available,

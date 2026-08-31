@@ -32,42 +32,57 @@ struct UsageMeterView: View {
 
                 Spacer(minLength: 8)
 
-                Text(
-                    localization.format(
-                        .remaining,
-                        meter.percentRemaining
-                    )
-                )
+                Text(localization.metricValue(meter.metric))
                     .font(.system(size: 12.5, weight: .semibold))
                     .foregroundStyle(.primary)
+                    .multilineTextAlignment(.trailing)
             }
 
-            GeometryReader { geometry in
-                ZStack(alignment: .leading) {
-                    Capsule()
-                        .fill(
-                            Color.primary.opacity(
-                                UsageMeterVisualTokens.trackOpacity
-                            )
-                        )
-                    Capsule()
-                        .fill(
-                            UsageMeterVisualTokens.fillRGB(
-                                for: meter.period
-                            ).color
-                        )
-                        .frame(
-                            width: geometry.size.width
-                                * Double(meter.percentRemaining) / 100
-                        )
+            switch meter.metric.kind {
+            case .quotaRemaining:
+                if let fraction = meter.metric.progressFraction {
+                    GeometryReader { geometry in
+                        ZStack(alignment: .leading) {
+                            Capsule()
+                                .fill(
+                                    Color.primary.opacity(
+                                        UsageMeterVisualTokens.trackOpacity
+                                    )
+                                )
+                            Capsule()
+                                .fill(
+                                    UsageMeterVisualTokens.fillRGB(
+                                        for: meter.period
+                                    ).color
+                                )
+                                .frame(width: geometry.size.width * fraction)
+                        }
+                    }
+                    .frame(height: 4)
                 }
+            case .spend, .credit, .count, .informational:
+                EmptyView()
             }
-            .frame(height: 4)
 
-            Text(resetText)
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
+            if meter.resetText != nil || meter.resetsAt != nil {
+                Text(resetText)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            localization.metricAccessibilityLabel(
+                title: meter.title,
+                metric: meter.metric
+            ) + resetAccessibilitySuffix
+        )
+    }
+
+    private var resetAccessibilitySuffix: String {
+        meter.resetText != nil || meter.resetsAt != nil
+            ? ", \(resetText)"
+            : ""
     }
 
     private var resetText: String {
