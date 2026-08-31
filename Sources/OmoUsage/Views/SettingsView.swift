@@ -592,16 +592,23 @@ private struct APIKeyAccountsSection: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
-                    Picker(
-                        localization.text(.accountProvider),
-                        selection: $provider
-                    ) {
-                        ForEach(supportedProviders, id: \.self) {
-                            Text($0.displayName).tag($0)
+                    Menu {
+                        ForEach(supportedProviders, id: \.self) { option in
+                            Button(option.displayName) {
+                                provider = option
+                            }
                         }
+                    } label: {
+                        Text(provider.displayName)
+                            .frame(
+                                maxWidth: .infinity,
+                                alignment: .leading
+                            )
                     }
-                    .labelsHidden()
                     .frame(width: 132)
+                    .accessibilityLabel(
+                        localization.text(.accountProvider)
+                    )
 
                     TextField(
                         localization.text(.accountAlias),
