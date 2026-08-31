@@ -27,8 +27,14 @@ final class SingleInstanceController: NSObject {
     private(set) var activationHandoffWasAcknowledged = false
     private var role: SingleInstanceRole?
     private var activationHandler: (() -> Void)?
-    private var hasPendingActivation = false
+    private var pendingActivationCount = 0
+    private var earlyActivationNotifications: [Notification] = []
     private var isObserving = false
+#if OMO_USAGE_FIXTURES
+    private var fixtureLockAcquired: (() -> Void)?
+    private var fixtureActivationReceived: (() -> Void)?
+    private var fixtureActivationSent: (() -> Void)?
+#endif
 
     init(
         lockURL: URL,
@@ -41,6 +47,18 @@ final class SingleInstanceController: NSObject {
         self.notificationCenter = notificationCenter
         self.processIdentifier = processIdentifier
     }
+
+#if OMO_USAGE_FIXTURES
+    func installFixtureHooks(
+        lockAcquired: (() -> Void)? = nil,
+        activationReceived: (() -> Void)? = nil,
+        activationSent: (() -> Void)? = nil
+    ) {
+        fixtureLockAcquired = lockAcquired
+        fixtureActivationReceived = activationReceived
+        fixtureActivationSent = activationSent
+    }
+#endif
 
     static func live(
         environment: [String: String] = ProcessInfo.processInfo.environment,
@@ -99,6 +117,7 @@ final class SingleInstanceController: NSObject {
             Darwin.close(descriptor)
             if lockError == EACCES || lockError == EAGAIN {
                 role = .contender
+                earlyActivationNotifications.removeAll()
                 stopObservingActivation()
                 activationHandoffWasAcknowledged =
                     sendActivationHandoff()
@@ -108,6 +127,9 @@ final class SingleInstanceController: NSObject {
             throw SingleInstanceControllerError.lockFailed(lockError)
         }
 
+#if OMO_USAGE_FIXTURES
+        fixtureLockAcquired?()
+#endif
         do {
             try writeOwnerMetadata(to: descriptor)
         } catch {
@@ -118,14 +140,16 @@ final class SingleInstanceController: NSObject {
         }
         lockDescriptor = descriptor
         role = .owner
+        drainEarlyActivationNotifications()
         return .owner
     }
 
     func installActivationHandler(_ handler: @escaping () -> Void) {
         precondition(role == .owner, "Only the lock owner handles activation")
         activationHandler = handler
-        if hasPendingActivation {
-            hasPendingActivation = false
+        let activationCount = pendingActivationCount
+        pendingActivationCount = 0
+        for _ in 0..<activationCount {
             handler()
         }
     }
@@ -174,12 +198,31 @@ final class SingleInstanceController: NSObject {
 
     @objc
     private func receiveActivation(_ notification: Notification) {
+#if OMO_USAGE_FIXTURES
+        fixtureActivationReceived?()
+#endif
+        if role == nil {
+            earlyActivationNotifications.append(notification)
+            return
+        }
         guard role == .owner else { return }
+        handleActivation(notification)
+    }
+
+    private func drainEarlyActivationNotifications() {
+        let notifications = earlyActivationNotifications
+        earlyActivationNotifications.removeAll()
+        for notification in notifications {
+            handleActivation(notification)
+        }
+    }
+
+    private func handleActivation(_ notification: Notification) {
         acknowledgeActivation(notification)
         if let activationHandler {
             activationHandler()
         } else {
-            hasPendingActivation = true
+            pendingActivationCount += 1
         }
     }
 
@@ -205,6 +248,9 @@ final class SingleInstanceController: NSObject {
             userInfo: ["acknowledgementFIFO": fifoURL.path],
             deliverImmediately: true
         )
+#if OMO_USAGE_FIXTURES
+        fixtureActivationSent?()
+#endif
 
         var event = pollfd(
             fd: descriptor,

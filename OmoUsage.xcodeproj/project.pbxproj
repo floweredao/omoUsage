@@ -960,6 +960,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.omo.usage;
 				PRODUCT_NAME = OmoUsage;
 				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) OMO_USAGE_FIXTURES";
 			};
 			name = Debug;
 		};

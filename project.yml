@@ -32,6 +32,9 @@ targets:
         PRODUCT_NAME: OmoUsage
         CODE_SIGN_STYLE: Automatic
         INFOPLIST_FILE: Config/Info.plist
+      configs:
+        Debug:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) OMO_USAGE_FIXTURES"
     configFiles:
       Debug: Config/Version.xcconfig
       Release: Config/Version.xcconfig

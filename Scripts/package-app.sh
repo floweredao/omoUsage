@@ -12,6 +12,7 @@ VERSION_CONFIGURATION="$ROOT/Config/Version.xcconfig"
 TEMP_ENTITLEMENTS=""
 EXTRACTED_ENTITLEMENTS=""
 PLAN=no
+QA_FIXTURES=no
 MODE_WAS_EXPLICIT=no
 
 version_setting() {
@@ -24,7 +25,7 @@ version_setting() {
 }
 
 usage() {
-    printf '%s\n' "usage: $0 [--adhoc|--developer-id] [--print-signing-plan]" >&2
+    printf '%s\n' "usage: $0 [--adhoc|--developer-id] [--qa-fixtures] [--print-signing-plan]" >&2
     exit 64
 }
 
@@ -42,6 +43,10 @@ while [ "$#" -gt 0 ]; do
             [ "$MODE_WAS_EXPLICIT" = no ] || usage
             SIGNING_MODE=developer-id
             MODE_WAS_EXPLICIT=yes
+            ;;
+        --qa-fixtures)
+            [ "$QA_FIXTURES" = no ] || usage
+            QA_FIXTURES=yes
             ;;
         --print-signing-plan)
             [ "$PLAN" = no ] || usage
@@ -90,6 +95,7 @@ if [ "$PLAN" = yes ]; then
     printf 'SOURCE_COMMIT=%s\n' "$SOURCE_COMMIT"
     printf 'SIGNING_MODE=%s\n' "$SIGNING_MODE"
     printf 'SIGNING_IDENTITY=%s\n' "$IDENTITY"
+    printf 'QA_FIXTURES=%s\n' "$QA_FIXTURES"
     if [ "$SIGNING_MODE" = developer-id ]; then
         printf 'TEAM_IDENTIFIER=%s\n' "$TEAM_IDENTIFIER"
         printf 'ENTITLEMENTS=%s\n' "$ENTITLEMENTS_TEMPLATE"
@@ -109,7 +115,11 @@ cleanup() {
 trap cleanup EXIT HUP INT TERM
 
 cd "$ROOT"
-swift build -c release
+if [ "$QA_FIXTURES" = yes ]; then
+    swift build -c release -Xswiftc -DOMO_USAGE_FIXTURES
+else
+    swift build -c release
+fi
 
 rm -rf "$APP"
 mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources/ProviderIcons"
