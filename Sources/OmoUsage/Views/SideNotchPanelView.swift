@@ -144,7 +144,8 @@ struct SideNotchPanelView: View {
             SideNotchPanelLayout.detailCardMargin,
             containerHeight
                 - SideNotchPanelLayout.detailHeight(
-                    for: viewModel.snapshot.providers[index]
+                    for: viewModel.snapshot.providers[index],
+                    language: localization.language
                 )
                 - SideNotchPanelLayout.detailCardMargin
         )
@@ -715,6 +716,8 @@ enum SideNotchProviderInteractionPolicy {
 private struct SideNotchDetailView: View {
     let usage: ProviderUsage
     let showsAccountLabel: Bool
+    @Environment(\.appLocalization)
+    private var localization
 
     var body: some View {
         ScrollView {
@@ -725,7 +728,12 @@ private struct SideNotchDetailView: View {
                 .padding(SideNotchPanelLayout.detailContentPadding)
         }
         .scrollIndicators(.hidden)
-        .frame(height: SideNotchPanelLayout.detailHeight(for: usage))
+        .frame(
+            height: SideNotchPanelLayout.detailHeight(
+                for: usage,
+                language: localization.language
+            )
+        )
         .background(
             .regularMaterial,
             in: RoundedRectangle(

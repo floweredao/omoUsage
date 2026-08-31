@@ -29,12 +29,21 @@ enum SideNotchPanelLayout {
     private static let meterValueRowHeight: CGFloat = 15
     private static let meterQuotaTrackHeight: CGFloat = 7
     private static let meterResetRowHeight: CGFloat = 16
+    private static let koreanTypographyAllowance: CGFloat = 2
 
-    static func detailHeight(for usage: ProviderUsage) -> CGFloat {
+    static func detailHeight(
+        for usage: ProviderUsage,
+        language: AppLanguage = .english
+    ) -> CGFloat {
         min(
             detailMaximumHeight,
             detailSectionHeight(for: usage)
                 + detailContentPadding * 2
+                + (
+                    language == .korean
+                        ? koreanTypographyAllowance
+                        : 0
+                )
         )
     }
 
@@ -71,20 +80,28 @@ enum SideNotchPanelLayout {
     }
 
     static func requiredPanelHeight(
-        for usage: ProviderUsage
+        for usage: ProviderUsage,
+        language: AppLanguage = .english
     ) -> CGFloat {
-        detailHeight(for: usage) + detailCardMargin * 2
+        detailHeight(for: usage, language: language)
+            + detailCardMargin * 2
     }
 
     static func presentationFrame(
         in visibleFrame: NSRect,
         providers: [ProviderUsage],
         mode: SideNotchPanelMode,
-        anchorY: CGFloat? = nil
+        anchorY: CGFloat? = nil,
+        language: AppLanguage = .english
     ) -> NSRect {
         let presentedContentMinimumHeight =
             mode.isPresented
-            ? providers.map(requiredPanelHeight).max() ?? 0
+            ? providers.map {
+                requiredPanelHeight(
+                    for: $0,
+                    language: language
+                )
+            }.max() ?? 0
             : 0
         return frame(
             in: visibleFrame,
@@ -569,6 +586,7 @@ final class SideNotchPanel: NSPanel {
 @MainActor
 final class SideNotchPanelController: NSObject {
     private let viewModel: UsageDashboardViewModel
+    private let localization: LocalizationController
     private let state = SideNotchPanelState()
     private let panel: NSPanel
     private let autoHideScheduler: any SideNotchAutoHideScheduling
@@ -607,6 +625,7 @@ final class SideNotchPanelController: NSObject {
         onQuit: @escaping @MainActor () -> Void
     ) {
         self.viewModel = viewModel
+        self.localization = localization
         self.autoHideScheduler = autoHideScheduler
         configuredAutoHideDelay = autoHideDelay
         self.onExpansionChange = onExpansionChange
@@ -1135,7 +1154,8 @@ final class SideNotchPanelController: NSObject {
             in: screen.visibleFrame,
             providers: viewModel.snapshot.providers,
             mode: mode,
-            anchorY: pointerAnchorY
+            anchorY: pointerAnchorY,
+            language: localization.language
         )
     }
 
