@@ -9,7 +9,7 @@ sh Scripts/package-app.sh --adhoc
 It is runnable on the building Mac but is not a trusted public distribution and
 has no iCloud team entitlement. Trusted release artifacts are created only by
 pushing a version tag matching `Config/Version.xcconfig` (for example
-`v0.1.9`). The workflow retains the verified ZIP, checksum, and manifest as
+`v0.1.10`). The workflow retains the verified ZIP, checksum, and manifest as
 immutable-SHA-pinned GitHub Actions artifacts with read-only repository
 permissions. Publishing those files as a public GitHub release is a separate,
 manual review step.
@@ -37,7 +37,7 @@ OMO_USAGE_CODESIGN_IDENTITY='Developer ID Application: Example (TEAMID)' \
 OMO_USAGE_TEAM_IDENTIFIER=TEAMID \
 OMO_USAGE_NOTARY_PROFILE=example \
 OMO_USAGE_NOTARY_KEYCHAIN=/tmp/example.keychain-db \
-OMO_USAGE_RELEASE_REF=refs/tags/v0.1.9 \
+OMO_USAGE_RELEASE_REF=refs/tags/v0.1.10 \
 sh Scripts/release-app.sh --dry-run
 ```
 
