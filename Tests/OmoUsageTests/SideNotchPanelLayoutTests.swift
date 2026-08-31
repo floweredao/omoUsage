@@ -61,6 +61,69 @@ struct SideNotchPanelLayoutTests {
     }
 
     @Test
+    func koreanDetailHeightMatchesRenderedProviderSection() {
+        let codex = ProviderUsage(
+            provider: .codex,
+            planName: "플러스",
+            groups: [
+                UsageGroup(
+                    id: "codex.main",
+                    title: nil,
+                    meters: [
+                        UsageMeter(
+                            id: "codex.session",
+                            title: "세션 (5시간)",
+                            period: .session,
+                            percentRemaining: 60,
+                            resetText: "3시간 후 리셋"
+                        ),
+                        UsageMeter(
+                            id: "codex.week",
+                            title: "주간",
+                            period: .week,
+                            percentRemaining: 88,
+                            resetText: "5일 후 리셋"
+                        ),
+                        UsageMeter(
+                            id: "codex.credits",
+                            title: "크레딧",
+                            period: .extra,
+                            metric: .credit(
+                                balance: 0,
+                                unit: .credits
+                            )
+                        ),
+                    ],
+                    creditText: nil
+                )
+            ],
+            availability: .available,
+            updatedAt: nil
+        )
+        let contentWidth = SideNotchPanelLayout.detailWidth
+            - SideNotchPanelLayout.detailContentPadding * 2
+        let hostingView = NSHostingView(
+            rootView:
+                ProviderSectionView(usage: codex)
+                .frame(width: contentWidth)
+                .environment(
+                    \.appLocalization,
+                    LocalizationContext(language: .korean)
+                )
+        )
+        let renderedHeight = hostingView.fittingSize.height
+            + SideNotchPanelLayout.detailContentPadding * 2
+        let reservedHeight =
+            SideNotchPanelLayout.detailHeight(
+                for: codex,
+                language: .korean
+            )
+
+        #expect(reservedHeight >= renderedHeight)
+        #expect(reservedHeight - renderedHeight <= 1)
+    }
+
+    @Test
     func detailPanelContainsCardMarginsWithoutClipping() {
         let claude = ProviderUsage(
             provider: .claude,
