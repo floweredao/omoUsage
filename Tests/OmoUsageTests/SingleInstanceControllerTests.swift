@@ -27,6 +27,13 @@ struct SingleInstanceControllerTests {
     }
 
     @Test(.timeLimit(.minutes(1)))
+    func simultaneousStartPreservesActivationArrivingBeforeOwnerRole() async throws {
+        for _ in 0..<4 {
+            try await runSimultaneousStartRound()
+        }
+    }
+
+    @Test(.timeLimit(.minutes(1)))
     func staleLivePIDMetadataNeverOverridesAdvisoryLockOwnership() async throws {
         let fixture = try SingleInstanceFixture()
         defer { fixture.cleanup() }
@@ -45,6 +52,30 @@ struct SingleInstanceControllerTests {
 
         let contender = try fixture.launch()
         #expect(try await contender.nextEvent() == "contender")
+        #expect(try await contender.terminationStatus() == 0)
+        #expect(try await owner.nextEvent() == "activation")
+        #expect(try await owner.terminationStatus() == 0)
+    }
+
+    private func runSimultaneousStartRound() async throws {
+        let fixture = try SingleInstanceFixture()
+        defer { fixture.cleanup() }
+
+        let owner = try fixture.launch(
+            pauseAfterLock: true,
+            traceProtocol: true
+        )
+        #expect(try await owner.nextEvent() == "lock-acquired")
+
+        let contender = try fixture.launch(traceProtocol: true)
+        #expect(try await owner.nextEvent() == "activation-received")
+        #expect(try await contender.nextEvent() == "handoff-sent")
+        try owner.releaseLockGate()
+
+        #expect(try await owner.nextEvent() == "owner")
+        let contenderEvent = try await contender.nextEvent()
+        #expect(contenderEvent == "contender")
+        guard contenderEvent == "contender" else { return }
         #expect(try await contender.terminationStatus() == 0)
         #expect(try await owner.nextEvent() == "activation")
         #expect(try await owner.terminationStatus() == 0)
@@ -119,13 +150,20 @@ private final class SingleInstanceFixture: @unchecked Sendable {
         executableURL = try Self.productExecutableURL()
     }
 
-    func launch() throws -> SingleInstanceFixtureProcess {
+    func launch(
+        pauseAfterLock: Bool = false,
+        traceProtocol: Bool = false
+    ) throws -> SingleInstanceFixtureProcess {
         let fixtureProcess = try SingleInstanceFixtureProcess(
             executableURL: executableURL,
             environment: [
                 "OMO_USAGE_SINGLE_INSTANCE_FIXTURE": "1",
                 "OMO_USAGE_SINGLE_INSTANCE_LOCK_PATH": lockURL.path,
-                "OMO_USAGE_SINGLE_INSTANCE_NOTIFICATION": notificationName
+                "OMO_USAGE_SINGLE_INSTANCE_NOTIFICATION": notificationName,
+                "OMO_USAGE_SINGLE_INSTANCE_PAUSE_AFTER_LOCK":
+                    pauseAfterLock ? "1" : "0",
+                "OMO_USAGE_SINGLE_INSTANCE_TRACE_PROTOCOL":
+                    traceProtocol ? "1" : "0"
             ]
         )
         lock.withLock {
@@ -165,6 +203,7 @@ private final class SingleInstanceFixture: @unchecked Sendable {
 private final class SingleInstanceFixtureProcess: @unchecked Sendable {
     private let process: Process
     private let events = SingleInstanceFixtureEvents()
+    private let input: Pipe
     private let output: Pipe
 
     var processIdentifier: Int32 { process.processIdentifier }
@@ -172,12 +211,14 @@ private final class SingleInstanceFixtureProcess: @unchecked Sendable {
 
     init(executableURL: URL, environment: [String: String]) throws {
         process = Process()
+        input = Pipe()
         output = Pipe()
         process.executableURL = executableURL
         process.environment = ProcessInfo.processInfo.environment.merging(
             environment,
             uniquingKeysWith: { _, fixture in fixture }
         )
+        process.standardInput = input
         process.standardOutput = output
         process.standardError = output
 
@@ -203,6 +244,11 @@ private final class SingleInstanceFixtureProcess: @unchecked Sendable {
 
     func terminationStatus() async throws -> Int32 {
         try await events.terminationStatus()
+    }
+
+    func releaseLockGate() throws {
+        try input.fileHandleForWriting.write(contentsOf: Data([1]))
+        try input.fileHandleForWriting.close()
     }
 
     func terminate() {

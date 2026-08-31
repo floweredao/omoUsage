@@ -69,7 +69,11 @@ let package = Package(
                 .define(
                     "OMO_USAGE_MARKETING_VERSION_\(marketingVersion.replacingOccurrences(of: ".", with: "_"))"
                 ),
-                .define("OMO_USAGE_BUILD_\(currentProjectVersion)")
+                .define("OMO_USAGE_BUILD_\(currentProjectVersion)"),
+                .define(
+                    "OMO_USAGE_FIXTURES",
+                    .when(configuration: .debug)
+                )
             ],
             linkerSettings: [
                 .linkedLibrary("sqlite3")

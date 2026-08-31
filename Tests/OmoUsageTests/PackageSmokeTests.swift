@@ -80,6 +80,56 @@ struct PackageSmokeTests {
     }
 
     @Test
+    func releaseFixtureEntryPointsAreCompileTimeOptIn() throws {
+        let appSource = try String(
+            contentsOf: repositoryRoot.appending(
+                path: "Sources/OmoUsage/OmoUsageApp.swift"
+            ),
+            encoding: .utf8
+        )
+        let packageSource = try String(
+            contentsOf: repositoryRoot.appending(path: "Package.swift"),
+            encoding: .utf8
+        )
+        let projectSource = try String(
+            contentsOf: repositoryRoot.appending(path: "project.yml"),
+            encoding: .utf8
+        )
+
+        for symbol in [
+            "runSingleInstanceFixture()",
+            "runProviderMutationFixture()",
+            "runProviderKeyMigrationQA()",
+            "runDiagnosticFixture()"
+        ] {
+            #expect(
+                fixtureGuardedOccurrences(of: symbol, in: appSource) == 2
+            )
+        }
+        #expect(
+            packageSource.contains(
+                "\"OMO_USAGE_FIXTURES\",\n                    .when(configuration: .debug)"
+            )
+        )
+        #expect(
+            projectSource.contains(
+                "SWIFT_ACTIVE_COMPILATION_CONDITIONS: \"$(inherited) OMO_USAGE_FIXTURES\""
+            )
+        )
+
+        let production = try signingPlan(environment: [:])
+        #expect(production.status == 0)
+        #expect(production.output.contains("QA_FIXTURES=no\n"))
+
+        let qa = try signingPlan(
+            environment: [:],
+            arguments: ["--qa-fixtures"]
+        )
+        #expect(qa.status == 0)
+        #expect(qa.output.contains("QA_FIXTURES=yes\n"))
+    }
+
+    @Test
     func packagedDashboardAssetsDoNotEvaluateSwiftPMBundle() throws {
         let fileManager = FileManager.default
         let root = fileManager.temporaryDirectory.appending(
@@ -124,6 +174,28 @@ struct PackageSmokeTests {
 
         #expect(resolved?.path == expected.path)
         #expect(!packageBundleWasRead)
+    }
+
+    private func fixtureGuardedOccurrences(
+        of symbol: String,
+        in source: String
+    ) -> Int {
+        var fixtureConditionStack: [Bool] = []
+        var guardedOccurrences = 0
+        for line in source.split(separator: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("#if ") {
+                fixtureConditionStack.append(
+                    trimmed == "#if OMO_USAGE_FIXTURES"
+                )
+            } else if trimmed == "#endif" {
+                _ = fixtureConditionStack.popLast()
+            } else if line.contains(symbol),
+                      fixtureConditionStack.contains(true) {
+                guardedOccurrences += 1
+            }
+        }
+        return guardedOccurrences
     }
 
     private func desktopInfo() throws -> [String: Any] {
@@ -172,7 +244,8 @@ struct PackageSmokeTests {
     }
 
     private func signingPlan(
-        environment: [String: String]
+        environment: [String: String],
+        arguments: [String] = []
     ) throws -> (status: Int32, output: String) {
         let process = Process()
         let output = Pipe()
@@ -180,9 +253,8 @@ struct PackageSmokeTests {
         process.arguments = [
             repositoryRoot
                 .appending(path: "Scripts")
-                .appending(path: "package-app.sh").path,
-            "--print-signing-plan"
-        ]
+                .appending(path: "package-app.sh").path
+        ] + arguments + ["--print-signing-plan"]
         var processEnvironment = ProcessInfo.processInfo.environment
         processEnvironment.removeValue(
             forKey: "OMO_USAGE_CODESIGN_IDENTITY"

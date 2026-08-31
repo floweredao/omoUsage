@@ -224,10 +224,14 @@ struct ProviderAPIKeyStore: Sendable {
             legacyURL.append(path: "accounts/\(accountID.rawValue)", directoryHint: .isDirectory)
         }
         legacyURL.append(path: fileName)
+#if OMO_USAGE_FIXTURES
         let serviceName = environment["OMO_USAGE_KEY_MIGRATION_QA"] == "1"
             ? environment["OMO_USAGE_PROVIDER_KEYCHAIN_SERVICE"]?.trimmedNonEmpty
                 ?? Self.serviceName
             : Self.serviceName
+#else
+        let serviceName = Self.serviceName
+#endif
         return ProviderAPIKeyStore(
             provider: provider,
             accountID: accountID,

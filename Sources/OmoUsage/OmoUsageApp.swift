@@ -1,12 +1,15 @@
 import OmoUsageCore
 import AppKit
+#if OMO_USAGE_FIXTURES
 import CryptoKit
 import Darwin
+#endif
 
 @main
 enum OmoUsageApp {
     @MainActor
     static func main() {
+#if OMO_USAGE_FIXTURES
         if ProcessInfo.processInfo.environment[
             "OMO_USAGE_SINGLE_INSTANCE_FIXTURE"
         ] == "1" {
@@ -31,6 +34,7 @@ enum OmoUsageApp {
             runDiagnosticFixture()
             return
         }
+#endif
 
         let singleInstance: SingleInstanceController
         do {
@@ -66,10 +70,29 @@ enum OmoUsageApp {
         withExtendedLifetime(singleInstance) {}
     }
 
+#if OMO_USAGE_FIXTURES
     @MainActor
     private static func runSingleInstanceFixture() {
         do {
             let singleInstance = try SingleInstanceController.live()
+            let environment = ProcessInfo.processInfo.environment
+            let lockAcquired: (() -> Void)? = environment[
+                "OMO_USAGE_SINGLE_INSTANCE_PAUSE_AFTER_LOCK"
+            ] == "1" ? { pauseSingleInstanceFixtureAfterLock() } : nil
+            let tracesProtocol = environment[
+                "OMO_USAGE_SINGLE_INSTANCE_TRACE_PROTOCOL"
+            ] == "1"
+            let activationReceived: (() -> Void)? = tracesProtocol ? {
+                writeFixtureEvent("activation-received")
+            } : nil
+            let activationSent: (() -> Void)? = tracesProtocol ? {
+                writeFixtureEvent("handoff-sent")
+            } : nil
+            singleInstance.installFixtureHooks(
+                lockAcquired: lockAcquired,
+                activationReceived: activationReceived,
+                activationSent: activationSent
+            )
             switch try singleInstance.claim() {
             case .owner:
                 writeFixtureEvent("owner")
@@ -94,6 +117,18 @@ enum OmoUsageApp {
             writeFixtureEvent("error")
             Darwin.exit(EXIT_FAILURE)
         }
+    }
+
+    private static func pauseSingleInstanceFixtureAfterLock() {
+        writeFixtureEvent("lock-acquired")
+        let input = FileHandle.standardInput
+        input.readabilityHandler = { handle in
+            _ = handle.availableData
+            handle.readabilityHandler = nil
+            CFRunLoopStop(CFRunLoopGetMain())
+        }
+        CFRunLoopRun()
+        input.readabilityHandler = nil
     }
 
     private static func runProviderMutationFixture() {
@@ -399,8 +434,10 @@ enum OmoUsageApp {
     private static func writeFixtureEvent(_ event: String) {
         FileHandle.standardOutput.write(Data("\(event)\n".utf8))
     }
+#endif
 }
 
+#if OMO_USAGE_FIXTURES
 private final class ProviderKeyMigrationQAKeychain: ProviderKeychain,
     @unchecked Sendable
 {
@@ -493,3 +530,4 @@ private struct DiagnosticFixtureFailure: Error, CustomStringConvertible {
     let value: String
     var description: String { value }
 }
+#endif
