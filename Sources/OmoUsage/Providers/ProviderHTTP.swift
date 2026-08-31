@@ -96,8 +96,9 @@ struct ProviderHTTP: Sendable {
             }
 
             do {
-                let (data, response) = try await session.data(
-                    for: attemptRequest
+                let (data, response) = try await boundedData(
+                    for: attemptRequest,
+                    provider: provider
                 )
                 try Task.checkCancellation()
                 guard let response = response as? HTTPURLResponse else {
@@ -195,6 +196,40 @@ struct ProviderHTTP: Sendable {
         guard monotonicNow() < deadline else {
             throw ProviderTransportError.operationTimedOut(provider)
         }
+    }
+
+    private func boundedData(
+        for request: URLRequest,
+        provider: ProviderID
+    ) async throws -> (Data, URLResponse) {
+        let (bytes, response) = try await session.bytes(for: request)
+        let limit = retryPolicy.maximumResponseBytes
+        guard
+            response.expectedContentLength <= 0
+                || response.expectedContentLength <= limit
+        else {
+            bytes.task.cancel()
+            throw ProviderTransportError.responseTooLarge(
+                provider,
+                limit: limit
+            )
+        }
+
+        var data = Data()
+        data.reserveCapacity(
+            min(max(Int(response.expectedContentLength), 0), limit)
+        )
+        for try await byte in bytes {
+            guard data.count < limit else {
+                bytes.task.cancel()
+                throw ProviderTransportError.responseTooLarge(
+                    provider,
+                    limit: limit
+                )
+            }
+            data.append(byte)
+        }
+        return (data, response)
     }
 
     private func validateBodySize(
