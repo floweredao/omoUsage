@@ -187,8 +187,10 @@ launches, and other privileged controls remain native-only.
   Add Account action. Existing non-default references are intrinsic-height
   rows with provider icon, provider name, account alias, and a destructive
   Remove action. Keys and account UUIDs are never rendered.
-- Meter rows render only the period title, remaining percentage, track, and
-  reset text. The former `메뉴바` badge is not part of the UI.
+- Meter rows render the period title, typed semantic value, and reset text.
+  Quota-remaining metrics alone add the percentage track and remaining
+  language; spend, credit, count, and informational metrics never impersonate
+  percentages. The former `메뉴바` badge is not part of the UI.
 - Mobile owns the full screen and scrolls provider cards vertically with
   16 pt page margins and 12 pt card spacing. Pull-to-refresh reloads iCloud;
   it does not call provider APIs from the phone.
@@ -276,8 +278,9 @@ launches, and other privileged controls remain native-only.
 - `MobileProviderCard`: composite account-provider identity, conditional
   sanitized account alias, optional plan pill, usage groups, meters, credits,
   and provider timestamp in one semantic grouped surface.
-- `MobileUsageMeter`: title, remaining percentage, 6 pt capsule track, and
-  reset metadata with the same period color semantics as macOS.
+- `MobileUsageMeter`: title, typed semantic value, and reset metadata. A quota
+  adds the 6 pt capsule track; spend, credit, count, and informational values
+  remain text-only with truthful VoiceOver labels.
 - `MobileSyncState`: loading, synchronized content, empty guidance, and
   recoverable error states; each has explicit text rather than color alone.
 - `MobileFreshnessPresentation`: the one model behind that header. It derives
@@ -289,8 +292,8 @@ launches, and other privileged controls remain native-only.
 - `WebProviderCard`: provider mark, provider name, conditional sanitized account
   alias, plan, availability, grouped usage meters, credits, and provider
   timestamp in one semantic article keyed by `AccountProviderID`.
-- `WebUsageMeter`: label, numeric remaining percentage, accessible progress
-  semantics, reset metadata, and the shared period color.
+- `WebUsageMeter`: label, typed semantic value, reset metadata, and the shared
+  period color. Native progress semantics exist only for quota remaining.
 - `WebRefreshButton`: one local-view-model refresh command, immediate busy and
   disabled state, synchronized completion timestamp, and no parallel fetch
   owner.
@@ -381,8 +384,9 @@ launches, and other privileged controls remain native-only.
 
 - Minimum pointer target: 28×28 pt in the compact footer.
 - Side-notch provider targets are at least 56×58 pt. Each exposes the provider
-  name, localized remaining percentage, and a detail-view hint; color and arc
-  geometry never carry the meaning alone.
+  name, a compact quota value when available, and a detail-view hint; color
+  and arc geometry never carry the meaning alone. Non-quota details retain
+  their spend, credit, count, or informational semantics.
 - Edge hover is an accelerator, not the sole entry. Menu-bar activation and
   accessibility focus expose the same revealed state without provider
   selection.
@@ -488,14 +492,17 @@ launches, and other privileged controls remain native-only.
 - The menu-bar item uses the native
   `gauge.with.dots.needle.50percent` SF Symbol as a 14 pt, medium-weight
   monochrome template image.
-- OpenCode Go, OpenRouter, and Z.ai keys are written only to their private local
-  config files; values are never rendered after save or written to diagnostics.
-- Adding a non-default API-key account writes its private key file before the
-  atomic registry update and deletes that new file if registry persistence or
-  readback fails. Removing persists the registry reference first and deletes
-  only the targeted account file; a key-file deletion failure restores the
-  prior registry before reporting failure. Legacy references cannot be removed
-  through multi-account controls.
+- OpenCode Go, OpenRouter, and Z.ai keys entered in Settings are stored only in
+  exact OmoUsage-owned generic-password items in the macOS Keychain; values
+  are never rendered after save or written to diagnostics. Legacy plaintext
+  config files are read only for one-time migration.
+- Adding, replacing, removing, or migrating an API-key account runs under the
+  provider-mutation advisory lock and a secret-free intent journal. New values
+  stage in Keychain before the atomic registry update and promote only after
+  registry persistence/readback succeeds. Removal deletes only the targeted
+  Keychain item after the registry commits. Interrupted phases reconcile to a
+  valid old or new state, and legacy files are deleted only after convergence;
+  cleanup failure remains visible and retryable.
 - Mobile synchronization contains usage totals, plan labels, reset times, and
   refresh timestamps only. Provider credentials, cookies, API keys, local file
   paths, and diagnostics never enter iCloud.

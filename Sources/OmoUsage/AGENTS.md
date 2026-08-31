@@ -2,7 +2,10 @@
 
 ## OVERVIEW
 
-One source tree supports two apps: SwiftPM builds one macOS target, while XcodeGen selects a smaller shared subset for iOS/Catalyst. Folders are boundaries by convention, not modules, so review must keep credentials, providers, and AppKit views out of mobile-compiled files.
+The macOS executable and two-file Mobile UI consume the separate
+`Sources/OmoUsageCore` library. Core is the enforceable shared boundary;
+credentials, providers, diagnostics, SQLite, Security, and AppKit stay in the
+macOS executable.
 
 ## STRUCTURE
 
@@ -12,11 +15,9 @@ AppDelegate.swift        composition root: stores -> providers -> view model -> 
 Credentials/             macOS only; env, files, Keychain, SQLite, CLI paths
 Providers/               one adapter per provider + parsers + ProviderHTTP + fixtures
 Dashboard/               UsageProvider protocol, view model, scheduler, layout
-Models/                  shared Codable types, ProviderID roster and order
 Settings/                UserDefaults-backed stores and ProviderSetup actions
 Views/                   AppKit/SwiftUI popover and settings surfaces
-Localization/            AppStringKey catalog, AppLanguage, provider text mapping
-Sync/                    UsageSnapshotCodec + iCloud KVS store
+../OmoUsageCore/         shared models, localization, schema-v4 snapshot sync
 WebDashboard/            loopback HTTP server, sanitized snapshot/control surface
 Mobile/                  iOS/Catalyst entry and read-only view
 Resources/ProviderIcons  bundled icon assets
@@ -27,7 +28,7 @@ Resources/WebDashboard  single bundled HTML/CSS/JS dashboard
 
 - Composition happens once in `AppDelegate`: it builds stores, providers, `UsageDashboardViewModel`, refresh scheduling, the native popover, and the loopback web server. Nothing else constructs providers or owns refreshes.
 - The view model takes every dependency by closure or array in `init`, including `now`. Tests build it directly; don't reach for singletons inside it.
-- `Sync/UsageSnapshotSync.swift` is the only bridge between halves. macOS encodes a `DashboardSnapshot` through `UsageSnapshotCodec` (version 1, 256 KB cap, millisecond dates) and Mobile decodes it. Any field added to `Models/` that reaches the codec becomes mobile-visible data, so treat model edits as a privacy decision.
+- `../OmoUsageCore/Sync/UsageSnapshotSync.swift` is the only bridge between halves. macOS encodes schema v4 through the privacy-minimized DTO; Mobile decodes versions 1–4. Any Core model field that reaches the codec is a privacy decision.
 - `WebDashboard/WebDashboardServer.swift` owns HTTP parsing, route authorization, settings commands, listener lifecycle, and synchronized snapshot/settings stores. `Resources/WebDashboard/index.html` is its bundled zero-dependency client.
 - The minimum provider path is `Models/ProviderID.swift`, a new `Providers/*UsageProvider.swift`, `ProviderFactory`, and `Settings/ProviderSetup.swift`; roster and reliability tests complete the change. Display strings go through `Localization/`, never string literals in views.
 - Parsing lives apart from fetching for the messy providers (`ClaudeUsageParser`, `CodexUsageParser`, `AntigravityUsageParser`); shared shapes are in `ProviderPayload` and `UsageParsing`. Put schema tolerance in the parser, HTTP concerns in the provider.
@@ -42,7 +43,9 @@ Resources/WebDashboard  single bundled HTML/CSS/JS dashboard
 
 ## ANTI-PATTERNS
 
-- Don't import AppKit or reference `Credentials/` or `Providers/` from `Mobile/`, `Sync/`, `Models/`, `Localization/`, or `Settings/ProviderDisplayOrderStore.swift`; those shared paths compile for iOS.
+- Don't import AppKit or reference `Credentials/`, `Providers/`, or
+  `Diagnostics/` from `Mobile/` or `Sources/OmoUsageCore`; Core compiles for
+  macOS, iOS, and Catalyst.
 - Don't widen `DashboardSnapshot` or `ProviderUsage` for UI convenience; those types cross into iCloud.
 - Don't spawn refreshes outside the view model or add a second scheduler. Cancellation must leave state and timestamp untouched.
 - Don't reintroduce `@MainActor` hops inside provider `fetch`; the fetch group runs off the main actor by design.

@@ -5,9 +5,10 @@ coding-AI providers, in one popover, without asking you to log in again.
 
 <img src="Docs/screenshot.png" width="346" alt="OmoUsage popover showing remaining Codex and Claude Code quota">
 
-OmoUsage never owns your credentials. It reads the ones the official CLIs and
-apps already stored on your Mac, calls each provider's own usage endpoint, and
-renders the remaining percentage and reset time.
+OmoUsage reuses credentials owned by official CLIs and apps whenever possible.
+For API keys entered directly in Settings, OmoUsage owns only its exact
+generic-password items in the macOS Keychain. It calls each provider's usage
+endpoint and renders quota, spend, credit, count, and informational metrics.
 
 ## Supported providers
 
@@ -20,12 +21,14 @@ renders the remaining percentage and reset time.
 | Copilot | `copilot login` or `gh auth login` | `copilot-cli` keychain item, `~/.config/gh/hosts.yml`, or an editor's OAuth token |
 | Devin | `devin auth login` | `~/.local/share/devin/credentials.toml` (honours `XDG_DATA_HOME`) |
 | Grok | `grok login` | `~/.grok/auth.json` |
-| OpenCode | `opencode auth login` | OpenCode's `auth.json` plus local usage records |
-| OpenRouter | API key in Settings | key you paste, written to its documented local config file |
-| Z.ai | API key in Settings | key you paste, written to its documented local config file |
+| OpenCode | `opencode auth login` or API key in Settings | OpenCode's `auth.json` plus local usage records, or an OmoUsage-owned Keychain item |
+| OpenRouter | API key in Settings | OmoUsage-owned Keychain item |
+| Z.ai | API key in Settings | OmoUsage-owned Keychain item |
 
-Only OpenRouter and Z.ai ask for a key. Everything else reuses an existing
-login. Providers you are not signed in to are simply omitted from the popover.
+OpenRouter and Z.ai use keys entered in Settings; OpenCode can optionally use
+one. Legacy OmoUsage plaintext key files migrate transactionally to Keychain
+and are deleted only after registry and Keychain state converge. Everything
+else reuses an existing login. Providers you are not signed in to are omitted.
 
 ## Requirements
 
@@ -106,8 +109,9 @@ public interface.
 Everything runs locally. OmoUsage talks only to each provider's own API, has no
 analytics or telemetry, and no backend of its own. Its web server is an
 always-on loopback-only companion surface while the app is running. API keys
-are written solely to their documented local config files and are never
-rendered again after save or written to diagnostics.
+entered in Settings are stored in OmoUsage's exact macOS Keychain items and
+are never rendered again after save, copied to iCloud, or written to
+diagnostics.
 
 ## Layout
 
@@ -121,6 +125,10 @@ Sources/OmoUsage/
   Localization/  Korean (default) and English strings
   Resources/     app icon, provider icons, web dashboard shell
   Mobile/        iOS companion
+Sources/OmoUsageCore/
+  Models/        shared typed usage and snapshot models
+  Localization/  shared Korean/English strings and presentation
+  Sync/          schema-v4 private iCloud codec and mobile state
 Tests/OmoUsageTests/
 Scripts/         app packaging and icon generation
 Config/          Info.plist and entitlements
