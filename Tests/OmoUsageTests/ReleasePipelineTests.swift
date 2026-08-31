@@ -59,10 +59,11 @@ struct ReleasePipelineTests {
     @Test
     func packagingKeepsExplicitAdHocAndDeveloperIDModesSeparate() throws {
         let script = try contents("Scripts/package-app.sh")
+        let signingHelper = try contents("Scripts/sign-app.sh")
         #expect(script.contains("--adhoc"))
         #expect(script.contains("--developer-id"))
-        #expect(script.contains("--options runtime"))
-        #expect(script.contains("--timestamp"))
+        #expect(signingHelper.contains("--options runtime"))
+        #expect(signingHelper.contains("--timestamp"))
         #expect(script.contains("codesign --verify --deep --strict"))
 
         let adHoc = try process(
@@ -74,6 +75,104 @@ struct ReleasePipelineTests {
         #expect(adHoc.output.contains("SIGNING_MODE=adhoc"))
         #expect(adHoc.output.contains("SIGNING_IDENTITY=-"))
         #expect(adHoc.output.contains("CLOUD_KVS_AVAILABLE=no"))
+    }
+
+    @Test
+    func signingHelperPassesOnlyTheDedicatedKeychainToCodesign() throws {
+        let root = FileManager.default.temporaryDirectory.appending(
+            path: "OmoUsageSigningHelper-\(UUID().uuidString)"
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+        let bin = root.appending(path: "bin")
+        let log = root.appending(path: "codesign.log")
+        try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+        try executable(
+            "#!/bin/sh\nprintf '%s\\n' \"$*\" > \"$FAKE_CODESIGN_LOG\"\n",
+            at: bin.appending(path: "codesign")
+        )
+
+        let result = try process(
+            executable: "/bin/sh",
+            arguments: [
+                scriptPath("sign-app.sh"), "--developer-id",
+                "/tmp/Synthetic.app", "Developer ID Application: Synthetic (TESTTEAM)",
+                "/tmp/synthetic-entitlements.plist"
+            ],
+            environment: [
+                "PATH": "\(bin.path):/usr/bin:/bin",
+                "FAKE_CODESIGN_LOG": log.path,
+                "OMO_USAGE_SIGNING_KEYCHAIN": "/tmp/synthetic.keychain-db"
+            ]
+        )
+
+        #expect(result.status == 0)
+        let arguments = try contentsOfURL(log).split(separator: " ").map(String.init)
+        #expect(arguments.contains("--options"))
+        #expect(arguments.contains("runtime"))
+        #expect(arguments.contains("--timestamp"))
+        let keychainIndex = try #require(arguments.firstIndex(of: "--keychain"))
+        #expect(arguments[keychainIndex + 1] == "/tmp/synthetic.keychain-db")
+        #expect(arguments.filter { $0 == "--keychain" }.count == 1)
+    }
+
+    @Test
+    func ephemeralKeychainCleanupNeverMutatesUserSearchList() throws {
+        let root = FileManager.default.temporaryDirectory.appending(
+            path: "OmoUsageKeychainWrapper-\(UUID().uuidString)"
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+        let bin = root.appending(path: "bin")
+        let securityLog = root.appending(path: "security.log")
+        let commandLog = root.appending(path: "command.log")
+        try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+        try executable(
+            """
+            #!/bin/sh
+            printf '%s\\n' "$*" >> "$FAKE_SECURITY_LOG"
+            case "$1" in
+                create-keychain)
+                    for argument in "$@"; do keychain="$argument"; done
+                    : > "$keychain"
+                    ;;
+                delete-keychain)
+                    rm -f "$2"
+                    ;;
+            esac
+            """,
+            at: bin.appending(path: "security")
+        )
+        try executable("#!/bin/sh\nexit 0\n", at: bin.appending(path: "xcrun"))
+        try executable(
+            "#!/bin/sh\nprintf 'SIGNING_KEYCHAIN=%s\\n' \"$OMO_USAGE_SIGNING_KEYCHAIN\" > \"$FAKE_COMMAND_LOG\"\ntest -f \"$OMO_USAGE_SIGNING_KEYCHAIN\"\n",
+            at: bin.appending(path: "capture-command")
+        )
+
+        let result = try process(
+            executable: "/bin/sh",
+            arguments: [scriptPath("with-signing-keychain.sh"), bin.appending(path: "capture-command").path],
+            environment: [
+                "PATH": "\(bin.path):/usr/bin:/bin",
+                "FAKE_SECURITY_LOG": securityLog.path,
+                "FAKE_COMMAND_LOG": commandLog.path,
+                "CERTIFICATE_P12_BASE64": "YQ==",
+                "CERTIFICATE_PASSWORD": "synthetic-certificate-password",
+                "NOTARY_APPLE_ID": "synthetic@example.invalid",
+                "NOTARY_PASSWORD": "synthetic-notary-password",
+                "OMO_USAGE_TEAM_IDENTIFIER": "TESTTEAM",
+                "OMO_USAGE_NOTARY_PROFILE": "synthetic-profile"
+            ]
+        )
+
+        #expect(result.status == 0)
+        let securityCalls = try contentsOfURL(securityLog)
+        #expect(!securityCalls.contains("list-keychains"))
+        let commandOutput = try contentsOfURL(commandLog)
+        let keychain = try #require(
+            commandOutput.split(separator: "=").last.map(String.init)
+        ).trimmingCharacters(in: .whitespacesAndNewlines)
+        #expect(securityCalls.contains("create-keychain"))
+        #expect(securityCalls.contains("delete-keychain \(keychain)"))
+        #expect(!FileManager.default.fileExists(atPath: keychain))
     }
 
     @Test
@@ -118,7 +217,19 @@ struct ReleasePipelineTests {
     }
 
     private func contents(_ path: String) throws -> String {
-        try String(contentsOf: repositoryRoot.appending(path: path), encoding: .utf8)
+        try contentsOfURL(repositoryRoot.appending(path: path))
+    }
+
+    private func contentsOfURL(_ url: URL) throws -> String {
+        try String(contentsOf: url, encoding: .utf8)
+    }
+
+    private func executable(_ contents: String, at url: URL) throws {
+        try contents.write(to: url, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o755],
+            ofItemAtPath: url.path
+        )
     }
 
     private func scriptPath(_ name: String) -> String {
@@ -158,7 +269,7 @@ struct ReleasePipelineTests {
         for key in [
             "OMO_USAGE_CODESIGN_IDENTITY", "OMO_USAGE_TEAM_IDENTIFIER",
             "OMO_USAGE_NOTARY_PROFILE", "OMO_USAGE_NOTARY_KEYCHAIN",
-            "OMO_USAGE_RELEASE_REF"
+            "OMO_USAGE_SIGNING_KEYCHAIN", "OMO_USAGE_RELEASE_REF"
         ] {
             cleanEnvironment.removeValue(forKey: key)
         }

@@ -141,8 +141,7 @@ if [ "$SIGNING_MODE" = developer-id ]; then
     /usr/libexec/PlistBuddy \
         -c "Set :com.apple.developer.ubiquity-kvstore-identifier ${TEAM_IDENTIFIER}.com.omo.usage" \
         "$TEMP_ENTITLEMENTS"
-    codesign --force --deep --sign "$IDENTITY" --options runtime --timestamp \
-        --entitlements "$TEMP_ENTITLEMENTS" "$APP"
+    sh Scripts/sign-app.sh --developer-id "$APP" "$IDENTITY" "$TEMP_ENTITLEMENTS"
     codesign --verify --deep --strict --verbose=2 "$APP"
     codesign -d --entitlements :- "$APP" > "$EXTRACTED_ENTITLEMENTS"
     ACTUAL_KVS_IDENTIFIER="$(/usr/libexec/PlistBuddy \
@@ -154,7 +153,7 @@ if [ "$SIGNING_MODE" = developer-id ]; then
     fi
 else
     printf '%s\n' "warning: ad-hoc package has no team identifier; cloud KVS is unavailable" >&2
-    codesign --force --deep --sign - "$APP"
+    sh Scripts/sign-app.sh --adhoc "$APP"
     codesign --verify --deep --strict --verbose=2 "$APP"
 fi
 printf '%s\n' "$APP"

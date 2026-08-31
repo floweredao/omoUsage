@@ -49,6 +49,7 @@ struct RepositoryHygieneTests {
         "Scripts/package-app.sh",
         "Scripts/qa-dev-six-fixes.sh",
         "Scripts/release-app.sh",
+        "Scripts/sign-app.sh",
         "Scripts/with-signing-keychain.sh"
     ]
 

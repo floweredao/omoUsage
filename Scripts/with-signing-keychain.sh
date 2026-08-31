@@ -36,11 +36,11 @@ security import "$CERTIFICATE" -k "$KEYCHAIN" -P "$CERTIFICATE_PASSWORD" \
     -T /usr/bin/codesign -T /usr/bin/security
 security set-key-partition-list -S apple-tool:,apple: -s \
     -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
-security list-keychains -d user -s "$KEYCHAIN"
 xcrun notarytool store-credentials "$OMO_USAGE_NOTARY_PROFILE" \
     --apple-id "$NOTARY_APPLE_ID" --team-id "$OMO_USAGE_TEAM_IDENTIFIER" \
     --password "$NOTARY_PASSWORD" --keychain "$KEYCHAIN"
 
 rm -f "$CERTIFICATE"
 export OMO_USAGE_NOTARY_KEYCHAIN="$KEYCHAIN"
+export OMO_USAGE_SIGNING_KEYCHAIN="$KEYCHAIN"
 "$@"
