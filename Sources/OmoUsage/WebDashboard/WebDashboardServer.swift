@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import Observation
 
 struct WebDashboardHTTPResponse: Sendable {
     let statusCode: Int
@@ -785,21 +786,123 @@ final class WebDashboardConnectionPool: @unchecked Sendable {
     }
 }
 
+enum WebDashboardBindMode: Equatable, Sendable {
+    case loopbackOnly
+}
+
+enum WebDashboardListenerFailureCategory: Equatable, Sendable {
+    case portInUse
+    case permissionDenied
+    case unavailable
+}
+
+enum WebDashboardListenerFailure: Error, Equatable, Sendable {
+    case portInUse(port: UInt16)
+    case permissionDenied(port: UInt16)
+    case unavailable(port: UInt16)
+
+    var category: WebDashboardListenerFailureCategory {
+        switch self {
+        case .portInUse: .portInUse
+        case .permissionDenied: .permissionDenied
+        case .unavailable: .unavailable
+        }
+    }
+
+    var port: UInt16 {
+        switch self {
+        case .portInUse(let port), .permissionDenied(let port),
+             .unavailable(let port):
+            port
+        }
+    }
+
+    static func classify(
+        _ error: any Error,
+        port: UInt16
+    ) -> WebDashboardListenerFailure {
+        let posixCode: POSIXErrorCode?
+        if let networkError = error as? NWError,
+           case .posix(let code) = networkError {
+            posixCode = code
+        } else if let posixError = error as? POSIXError {
+            posixCode = posixError.code
+        } else {
+            posixCode = nil
+        }
+
+        switch posixCode {
+        case .EADDRINUSE:
+            return .portInUse(port: port)
+        case .EACCES, .EPERM:
+            return .permissionDenied(port: port)
+        default:
+            return .unavailable(port: port)
+        }
+    }
+}
+
+enum WebDashboardStatusState: Equatable, Sendable {
+    case disabled
+    case starting
+    case ready
+    case failed(WebDashboardListenerFailure)
+}
+
+struct WebDashboardStatus: Equatable, Sendable {
+    let state: WebDashboardStatusState
+    let url: URL
+    let port: UInt16
+    let bindMode: WebDashboardBindMode
+
+    var failure: WebDashboardListenerFailure? {
+        guard case .failed(let failure) = state else { return nil }
+        return failure
+    }
+
+}
+
+@MainActor
+@Observable
+final class WebDashboardStatusStore {
+    private(set) var status: WebDashboardStatus
+
+    init(port: UInt16) {
+        precondition(port > 0)
+        status = WebDashboardStatus(
+            state: .disabled,
+            url: URL(string: "http://127.0.0.1:\(port)")!,
+            port: port,
+            bindMode: .loopbackOnly
+        )
+    }
+
+    func publish(_ state: WebDashboardStatusState) {
+        status = WebDashboardStatus(
+            state: state,
+            url: status.url,
+            port: status.port,
+            bindMode: status.bindMode
+        )
+    }
+}
+
 enum WebDashboardListenerState: Sendable {
     case ready
-    case failed
+    case failed(WebDashboardListenerFailure)
 }
 
 protocol WebDashboardListening: AnyObject, Sendable {
     func start(
         response: @escaping @Sendable (Data) -> Data,
-        stateChanged: @escaping @Sendable (
+        stateChanged: @escaping @MainActor @Sendable (
             WebDashboardListenerState
         ) -> Void
     ) throws
     func stop()
 }
 
+@MainActor
 final class WebDashboardServer: @unchecked Sendable {
     private enum State {
         case stopped
@@ -809,6 +912,7 @@ final class WebDashboardServer: @unchecked Sendable {
 
     private let listener: any WebDashboardListening
     private let gateway: WebDashboardAccessGateway
+    private let statusStore: WebDashboardStatusStore
     private let lock = NSLock()
     private var state = State.stopped
 
@@ -819,13 +923,15 @@ final class WebDashboardServer: @unchecked Sendable {
     init(
         listener: any WebDashboardListening,
         router: WebDashboardRouter,
-        accessStore: WebDashboardAccessStore
+        accessStore: WebDashboardAccessStore,
+        statusStore: WebDashboardStatusStore
     ) {
         self.listener = listener
         self.gateway = WebDashboardAccessGateway(
             accessStore: accessStore,
             router: router
         )
+        self.statusStore = statusStore
     }
 
     func start() throws {
@@ -835,6 +941,7 @@ final class WebDashboardServer: @unchecked Sendable {
             return true
         }
         guard shouldStart else { return }
+        statusStore.publish(.starting)
 
         do {
             try listener.start(
@@ -852,8 +959,17 @@ final class WebDashboardServer: @unchecked Sendable {
             lock.withLock {
                 state = .stopped
             }
-            throw error
+            let failure = WebDashboardListenerFailure.classify(
+                error,
+                port: statusStore.status.port
+            )
+            statusStore.publish(.failed(failure))
+            throw failure
         }
+    }
+
+    func retry() throws {
+        try start()
     }
 
     func stop() {
@@ -864,6 +980,7 @@ final class WebDashboardServer: @unchecked Sendable {
         }
         guard shouldStop else { return }
         listener.stop()
+        statusStore.publish(.disabled)
     }
 
     private func listenerStateChanged(
@@ -871,12 +988,15 @@ final class WebDashboardServer: @unchecked Sendable {
     ) {
         switch listenerState {
         case .ready:
-            lock.withLock {
-                if state == .starting {
-                    state = .running
-                }
+            let didBecomeReady = lock.withLock {
+                guard state == .starting else { return false }
+                state = .running
+                return true
             }
-        case .failed:
+            if didBecomeReady {
+                statusStore.publish(.ready)
+            }
+        case .failed(let failure):
             let shouldStop = lock.withLock {
                 guard state != .stopped else { return false }
                 state = .stopped
@@ -884,11 +1004,12 @@ final class WebDashboardServer: @unchecked Sendable {
             }
             if shouldStop {
                 listener.stop()
+                statusStore.publish(.failed(failure))
             }
         }
     }
 
-    private static func responseData(
+    nonisolated private static func responseData(
         for request: Data,
         gateway: WebDashboardAccessGateway
     ) -> Data {
@@ -900,7 +1021,7 @@ final class WebDashboardServer: @unchecked Sendable {
         ).serialized()
     }
 
-    private static let badRequest = WebDashboardHTTPResponse(
+    nonisolated private static let badRequest = WebDashboardHTTPResponse(
         statusCode: 400,
         reasonPhrase: "Bad Request",
         headers: [
@@ -947,7 +1068,7 @@ final class NWWebDashboardListener:
 
     func start(
         response: @escaping @Sendable (Data) -> Data,
-        stateChanged: @escaping @Sendable (
+        stateChanged: @escaping @MainActor @Sendable (
             WebDashboardListenerState
         ) -> Void
     ) throws {
@@ -961,7 +1082,9 @@ final class NWWebDashboardListener:
             guard let self, let listener else { return }
             switch state {
             case .ready:
-                stateChanged(.ready)
+                Task { @MainActor in
+                    stateChanged(.ready)
+                }
             case .failed(let error):
                 DiagnosticStore.shared.record(
                     error: error,
@@ -977,7 +1100,13 @@ final class NWWebDashboardListener:
                 listener.cancel()
                 if shouldNotify {
                     connections.stopAcceptingAndFinishAll()
-                    stateChanged(.failed)
+                    let failure = WebDashboardListenerFailure.classify(
+                        error,
+                        port: port.rawValue
+                    )
+                    Task { @MainActor in
+                        stateChanged(.failed(failure))
+                    }
                 }
             default:
                 break
@@ -1141,7 +1270,7 @@ enum WebDashboardPortPolicy {
             environment["OMO_USAGE_FIXTURE_MODE"] == "1",
             let rawValue = environment["OMO_USAGE_WEB_PORT"],
             let port = UInt16(rawValue),
-            port > 0
+            port >= 1_024
         else {
             return productionPort
         }

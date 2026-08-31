@@ -966,6 +966,7 @@ struct WebDashboardServerTests {
     }
 
     @Test
+    @MainActor
     func releasesPortAfterStop() throws {
         let listener = RecordingWebDashboardListener()
         let router = WebDashboardRouter(
@@ -977,7 +978,8 @@ struct WebDashboardServerTests {
             router: router,
             accessStore: WebDashboardAccessStore(
                 mode: .local(port: 7_827)
-            )
+            ),
+            statusStore: WebDashboardStatusStore(port: 7_827)
         )
 
         try server.start()
@@ -1019,6 +1021,7 @@ struct WebDashboardServerTests {
     }
 
     @Test
+    @MainActor
     func clearsRunningStateAfterListenerFailure() throws {
         let listener = RecordingWebDashboardListener()
         let router = WebDashboardRouter(
@@ -1030,7 +1033,8 @@ struct WebDashboardServerTests {
             router: router,
             accessStore: WebDashboardAccessStore(
                 mode: .local(port: 7_827)
-            )
+            ),
+            statusStore: WebDashboardStatusStore(port: 7_827)
         )
 
         try server.start()
@@ -1507,7 +1511,7 @@ private final class RecordingWebDashboardListener:
     private var starts = 0
     private var stopped = false
     private var stateChanged:
-        (@Sendable (WebDashboardListenerState) -> Void)?
+        (@MainActor @Sendable (WebDashboardListenerState) -> Void)?
 
     var didStart: Bool {
         lock.withLock { starts > 0 }
@@ -1523,7 +1527,7 @@ private final class RecordingWebDashboardListener:
 
     func start(
         response: @escaping @Sendable (Data) -> Data,
-        stateChanged: @escaping @Sendable (
+        stateChanged: @escaping @MainActor @Sendable (
             WebDashboardListenerState
         ) -> Void
     ) throws {
@@ -1533,12 +1537,16 @@ private final class RecordingWebDashboardListener:
         }
     }
 
+    @MainActor
     func ready() {
         lock.withLock { stateChanged }?(.ready)
     }
 
+    @MainActor
     func fail() {
-        lock.withLock { stateChanged }?(.failed)
+        lock.withLock { stateChanged }?(
+            .failed(.portInUse(port: 7_827))
+        )
     }
 
     func stop() {
