@@ -97,6 +97,29 @@ enum WebDashboardAccessError: Error {
     case invalidBootstrapURL
 }
 
+enum FixtureWebBootstrapExporter {
+    static func exportIfRequested(
+        accessStore: WebDashboardAccessStore,
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        fileManager: FileManager = .default
+    ) throws {
+        guard
+            environment["OMO_USAGE_FIXTURE_MODE"] == "1",
+            let path = environment["OMO_USAGE_BOOTSTRAP_URL_FILE"],
+            !path.isEmpty
+        else {
+            return
+        }
+        let fileURL = URL(fileURLWithPath: path)
+        let value = try accessStore.makeBootstrapURL().absoluteString + "\n"
+        try Data(value.utf8).write(to: fileURL, options: .atomic)
+        try fileManager.setAttributes(
+            [.posixPermissions: 0o600],
+            ofItemAtPath: fileURL.path
+        )
+    }
+}
+
 final class WebDashboardAccessStore: @unchecked Sendable {
     static let sessionCookieName = "omo_session"
 
