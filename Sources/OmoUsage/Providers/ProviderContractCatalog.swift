@@ -1,3 +1,4 @@
+import OmoUsageCore
 enum ProviderContractCatalog {
     static let contracts: [ProviderID: ProviderContract] = {
         let definitions: [ProviderID: [EndpointDefinition]] = [

@@ -2,13 +2,13 @@ import Foundation
 import Observation
 import SwiftUI
 
-enum AppLanguage: String, CaseIterable, Identifiable, Sendable {
+public enum AppLanguage: String, CaseIterable, Identifiable, Sendable {
     case korean
     case english
 
-    var id: String { rawValue }
+    public var id: String { rawValue }
 
-    var locale: Locale {
+    public var locale: Locale {
         switch self {
         case .korean:
             Locale(identifier: "ko_KR")
@@ -17,7 +17,7 @@ enum AppLanguage: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    static func systemDefault(
+    public static func systemDefault(
         preferredLanguages: [String] = Locale.preferredLanguages
     ) -> AppLanguage {
         for identifier in preferredLanguages {
@@ -38,15 +38,15 @@ enum AppLanguage: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-struct AppLanguageStore {
-    static let key = "OmoUsage.appLanguage"
+public struct AppLanguageStore {
+    public static let key = "OmoUsage.appLanguage"
     private static let explicitSelectionKey =
         "OmoUsage.appLanguageExplicitlySelected"
 
     private let defaults: UserDefaults
     private let systemLanguage: () -> AppLanguage
 
-    init(
+    public init(
         defaults: UserDefaults,
         systemLanguage: (() -> AppLanguage)? = nil
     ) {
@@ -60,7 +60,7 @@ struct AppLanguageStore {
         }
     }
 
-    func load() -> AppLanguage {
+    public func load() -> AppLanguage {
         let language = defaults
             .string(forKey: Self.key)
             .flatMap(AppLanguage.init(rawValue:))
@@ -80,25 +80,29 @@ struct AppLanguageStore {
         return systemLanguage()
     }
 
-    func save(_ language: AppLanguage) {
+    public func save(_ language: AppLanguage) {
         defaults.set(language.rawValue, forKey: Self.key)
         defaults.set(true, forKey: Self.explicitSelectionKey)
     }
 }
 
-enum LocalizedText: Equatable, Sendable {
+public enum LocalizedText: Equatable, Sendable {
     case key(AppStringKey)
     case formatted(AppStringKey, String)
     case raw(String)
 }
 
 @MainActor
-protocol LocalizationResolving {
+public protocol LocalizationResolving {
     var language: AppLanguage { get }
 }
 
-struct LocalizationContext: Equatable, Sendable {
-    let language: AppLanguage
+public struct LocalizationContext: Equatable, Sendable {
+    public let language: AppLanguage
+
+    public init(language: AppLanguage) {
+        self.language = language
+    }
 }
 
 private struct LocalizationContextKey: EnvironmentKey {
@@ -106,7 +110,7 @@ private struct LocalizationContextKey: EnvironmentKey {
 }
 
 extension EnvironmentValues {
-    var appLocalization: LocalizationContext {
+    public var appLocalization: LocalizationContext {
         get { self[LocalizationContextKey.self] }
         set { self[LocalizationContextKey.self] = newValue }
     }
@@ -114,34 +118,34 @@ extension EnvironmentValues {
 
 @Observable
 @MainActor
-final class LocalizationController: LocalizationResolving {
+public final class LocalizationController: LocalizationResolving {
     private let store: AppLanguageStore
-    private(set) var language: AppLanguage
+    public private(set) var language: AppLanguage
 
-    init(store: AppLanguageStore) {
+    public init(store: AppLanguageStore) {
         self.store = store
         language = store.load()
     }
 
-    var locale: Locale {
+    public var locale: Locale {
         language.locale
     }
 
-    var context: LocalizationContext {
+    public var context: LocalizationContext {
         LocalizationContext(language: language)
     }
 
-    func select(_ language: AppLanguage) {
+    public func select(_ language: AppLanguage) {
         guard self.language != language else { return }
         self.language = language
         store.save(language)
     }
 
-    func text(_ key: AppStringKey) -> String {
+    public func text(_ key: AppStringKey) -> String {
         context.text(key)
     }
 
-    func resolve(_ text: LocalizedText) -> String {
+    public func resolve(_ text: LocalizedText) -> String {
         switch text {
         case .key(let key):
             self.text(key)
@@ -152,7 +156,7 @@ final class LocalizationController: LocalizationResolving {
         }
     }
 
-    func format(
+    public func format(
         _ key: AppStringKey,
         _ arguments: any CVarArg...
     ) -> String {
@@ -163,18 +167,18 @@ final class LocalizationController: LocalizationResolving {
 extension LocalizationContext: LocalizationResolving {}
 
 extension LocalizationResolving {
-    func text(_ key: AppStringKey) -> String {
+    public func text(_ key: AppStringKey) -> String {
         AppStrings(language: language).text(key)
     }
 
-    func format(
+    public func format(
         _ key: AppStringKey,
         _ arguments: any CVarArg...
     ) -> String {
         format(key, arguments: arguments)
     }
 
-    func format(
+    public func format(
         _ key: AppStringKey,
         arguments: [any CVarArg]
     ) -> String {

@@ -1,3 +1,4 @@
+import OmoUsageCore
 import AppKit
 import Foundation
 import Observation

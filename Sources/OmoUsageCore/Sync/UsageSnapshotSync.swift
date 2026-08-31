@@ -1,7 +1,7 @@
 import Foundation
 import Observation
 
-enum UsageSnapshotCodecError: Error, Equatable {
+public enum UsageSnapshotCodecError: Error, Equatable {
     case unsupportedVersion(Int)
     case payloadTooLarge(Int)
     case invalidPayload
@@ -159,13 +159,13 @@ private struct CloudUsageMeter: Codable {
     }
 }
 
-enum UsageSnapshotCodec {
-    static let currentVersion = 4
-    static let maximumPayloadBytes = 256 * 1_024
+public enum UsageSnapshotCodec {
+    public static let currentVersion = 4
+    public static let maximumPayloadBytes = 256 * 1_024
     private static let minimumTimestamp = 946_684_800.0
     private static let maximumTimestamp = 4_102_444_800.0
 
-    static func encode(_ snapshot: DashboardSnapshot) throws -> Data {
+    public static func encode(_ snapshot: DashboardSnapshot) throws -> Data {
         try validate(snapshot)
         var ordinals: [ProviderID: Int] = [:]
         let providers = snapshot.providers.map { usage in
@@ -190,7 +190,7 @@ enum UsageSnapshotCodec {
         return data
     }
 
-    static func decode(_ data: Data) throws -> DashboardSnapshot {
+    public static func decode(_ data: Data) throws -> DashboardSnapshot {
         guard data.count <= maximumPayloadBytes else {
             throw UsageSnapshotCodecError.payloadTooLarge(data.count)
         }
@@ -360,7 +360,7 @@ enum UsageSnapshotCodec {
     }
 }
 
-protocol UbiquitousKeyValueStoring: AnyObject {
+public protocol UbiquitousKeyValueStoring: AnyObject {
     func set(_ value: Any?, forKey key: String)
     func data(forKey key: String) -> Data?
     func synchronize() -> Bool
@@ -368,24 +368,24 @@ protocol UbiquitousKeyValueStoring: AnyObject {
 
 extension NSUbiquitousKeyValueStore: UbiquitousKeyValueStoring {}
 
-enum UsageSnapshotStoreError: Error, Equatable {
+public enum UsageSnapshotStoreError: Error, Equatable {
     case synchronizationFailed
 }
 
 @MainActor
-final class UbiquitousUsageSnapshotStore {
-    static let snapshotKey = "OmoUsage.dashboardSnapshot.v1"
+public final class UbiquitousUsageSnapshotStore {
+    public static let snapshotKey = "OmoUsage.dashboardSnapshot.v1"
 
     private let store: any UbiquitousKeyValueStoring
 
-    init(
+    public init(
         store: any UbiquitousKeyValueStoring =
             NSUbiquitousKeyValueStore.default
     ) {
         self.store = store
     }
 
-    func publish(_ snapshot: DashboardSnapshot) throws {
+    public func publish(_ snapshot: DashboardSnapshot) throws {
         let data = try UsageSnapshotCodec.encode(snapshot)
         guard store.data(forKey: Self.snapshotKey) != data else {
             return
@@ -396,7 +396,7 @@ final class UbiquitousUsageSnapshotStore {
         }
     }
 
-    func load() throws -> DashboardSnapshot? {
+    public func load() throws -> DashboardSnapshot? {
         guard store.synchronize() else {
             throw UsageSnapshotStoreError.synchronizationFailed
         }
@@ -407,7 +407,7 @@ final class UbiquitousUsageSnapshotStore {
     }
 }
 
-enum MobileUsageLoadState: Equatable {
+public enum MobileUsageLoadState: Equatable {
     case loading
     case content
     case empty
@@ -415,7 +415,7 @@ enum MobileUsageLoadState: Equatable {
 }
 
 /// How old the displayed snapshot is, measured from the Mac's last check.
-enum MobileSnapshotAge: String, Equatable, Sendable {
+public enum MobileSnapshotAge: String, Equatable, Sendable {
     case fresh
     case stale
 }
@@ -424,17 +424,17 @@ enum MobileSnapshotAge: String, Equatable, Sendable {
 /// when the Mac last checked, whether that snapshot has aged out, and whether
 /// the latest iCloud read failed. Provider staleness is a separate fact; it
 /// reports a failed provider refresh, never the age of this snapshot.
-struct MobileFreshnessPresentation: Equatable, Sendable {
+public struct MobileFreshnessPresentation: Equatable, Sendable {
     /// A snapshot reads as out of date once it reaches this age.
-    static let staleThreshold: TimeInterval = 15 * 60
+    public static let staleThreshold: TimeInterval = 15 * 60
 
-    let macLastCheckedAt: Date
-    let age: MobileSnapshotAge
-    let hasSyncIssue: Bool
+    public let macLastCheckedAt: Date
+    public let age: MobileSnapshotAge
+    public let hasSyncIssue: Bool
 
-    var isStale: Bool { age == .stale }
+    public var isStale: Bool { age == .stale }
 
-    init(
+    public init(
         snapshot: DashboardSnapshot,
         now: Date,
         hasSyncIssue: Bool
@@ -450,7 +450,7 @@ struct MobileFreshnessPresentation: Equatable, Sendable {
     /// The visible header line. It names the Mac's own check time so a fresh
     /// pull is never mistaken for a fresh provider reading.
     @MainActor
-    func statusText(
+    public func statusText(
         _ localization: LocalizationContext,
         clockText: String
     ) -> String {
@@ -460,7 +460,7 @@ struct MobileFreshnessPresentation: Equatable, Sendable {
     /// VoiceOver hears the check time first, then any aged-out or sync-issue
     /// qualification, so the state never depends on the visible badge color.
     @MainActor
-    func accessibilityLabel(
+    public func accessibilityLabel(
         _ localization: LocalizationContext,
         clockText: String
     ) -> String {
@@ -479,12 +479,12 @@ struct MobileFreshnessPresentation: Equatable, Sendable {
 
 /// Fixture-only knobs that let visual QA render the snapshot-age boundary and
 /// the retained sync-failure state without waiting on wall-clock time.
-enum MobileFixtureEnvironment {
-    static let ageKey = "OMO_USAGE_FIXTURE_AGE_SECONDS"
-    static let syncFailureKey = "OMO_USAGE_FIXTURE_SYNC_FAILURE"
+public enum MobileFixtureEnvironment {
+    public static let ageKey = "OMO_USAGE_FIXTURE_AGE_SECONDS"
+    public static let syncFailureKey = "OMO_USAGE_FIXTURE_SYNC_FAILURE"
     private static let maximumAgeSeconds: TimeInterval = 86_400
 
-    static func snapshotAgeSeconds(
+    public static func snapshotAgeSeconds(
         _ environment: [String: String]
     ) -> TimeInterval {
         guard
@@ -497,7 +497,7 @@ enum MobileFixtureEnvironment {
         return min(max(0, seconds), maximumAgeSeconds)
     }
 
-    static func simulatesSyncFailure(
+    public static func simulatesSyncFailure(
         _ environment: [String: String]
     ) -> Bool {
         environment[syncFailureKey] == "1"
@@ -506,17 +506,17 @@ enum MobileFixtureEnvironment {
 
 @Observable
 @MainActor
-final class MobileUsageViewModel {
+public final class MobileUsageViewModel {
     private let loadSnapshot: @MainActor () throws -> DashboardSnapshot?
     private let fixtureSnapshot: DashboardSnapshot?
     private let simulatesSyncFailure: Bool
     private let now: @MainActor () -> Date
 
-    private(set) var snapshot: DashboardSnapshot?
-    private(set) var loadState: MobileUsageLoadState = .loading
-    private(set) var freshnessPresentation: MobileFreshnessPresentation?
+    public private(set) var snapshot: DashboardSnapshot?
+    public private(set) var loadState: MobileUsageLoadState = .loading
+    public private(set) var freshnessPresentation: MobileFreshnessPresentation?
 
-    init(
+    public init(
         loadSnapshot: @escaping @MainActor (
         ) throws -> DashboardSnapshot?,
         fixtureSnapshot: DashboardSnapshot? = nil,
@@ -532,7 +532,7 @@ final class MobileUsageViewModel {
     /// Reads the published snapshot once. A failed read keeps the last good
     /// snapshot and its timestamps exactly as they were; only a newly
     /// published snapshot may move the Mac and provider times.
-    func reload() {
+    public func reload() {
         loadState = .loading
         do {
             if let fixtureSnapshot {

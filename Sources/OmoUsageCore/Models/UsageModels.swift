@@ -1,12 +1,12 @@
 import Foundation
 
-enum UsagePeriod: String, Codable, Sendable {
+public enum UsagePeriod: String, Codable, Sendable {
     case session
     case week
     case extra
 }
 
-enum UsageMetricKind: String, Codable, CaseIterable, Sendable {
+public enum UsageMetricKind: String, Codable, CaseIterable, Sendable {
     case quotaRemaining
     case spend
     case credit
@@ -14,11 +14,11 @@ enum UsageMetricKind: String, Codable, CaseIterable, Sendable {
     case informational
 }
 
-enum UsageCurrency: String, Codable, CaseIterable, Sendable {
+public enum UsageCurrency: String, Codable, CaseIterable, Sendable {
     case usd = "USD"
 }
 
-enum UsageMetricUnit: String, Codable, CaseIterable, Sendable {
+public enum UsageMetricUnit: String, Codable, CaseIterable, Sendable {
     case usd = "USD"
     case credits
     case requests
@@ -26,22 +26,22 @@ enum UsageMetricUnit: String, Codable, CaseIterable, Sendable {
     case tickets
 }
 
-struct UsageMetricPresentation: Equatable, Sendable {
-    let showsProgress: Bool
+public struct UsageMetricPresentation: Equatable, Sendable {
+    public let showsProgress: Bool
 }
 
-enum UsageMetric: Equatable, Codable, Sendable {
+public enum UsageMetric: Equatable, Codable, Sendable {
     case quotaRemaining(percent: Int)
     case spend(amount: Double, currency: UsageCurrency)
     case credit(balance: Double, unit: UsageMetricUnit)
     case count(value: Int, unit: UsageMetricUnit)
     case informational(value: String)
 
-    static let maximumAmount = 1_000_000_000.0
-    static let maximumCount = 1_000_000_000_000
-    static let maximumInformationLength = 512
+    public static let maximumAmount = 1_000_000_000.0
+    public static let maximumCount = 1_000_000_000_000
+    public static let maximumInformationLength = 512
 
-    var kind: UsageMetricKind {
+    public var kind: UsageMetricKind {
         switch self {
         case .quotaRemaining: .quotaRemaining
         case .spend: .spend
@@ -51,14 +51,14 @@ enum UsageMetric: Equatable, Codable, Sendable {
         }
     }
 
-    var progressFraction: Double? {
+    public var progressFraction: Double? {
         switch self {
         case .quotaRemaining(let percent): Double(percent) / 100
         case .spend, .credit, .count, .informational: nil
         }
     }
 
-    var presentation: UsageMetricPresentation {
+    public var presentation: UsageMetricPresentation {
         switch self {
         case .quotaRemaining:
             UsageMetricPresentation(showsProgress: true)
@@ -67,7 +67,7 @@ enum UsageMetric: Equatable, Codable, Sendable {
         }
     }
 
-    var isValid: Bool {
+    public var isValid: Bool {
         switch self {
         case .quotaRemaining(let percent):
             (0...100).contains(percent)
@@ -81,12 +81,12 @@ enum UsageMetric: Equatable, Codable, Sendable {
         }
     }
 
-    static func quotaRemaining(validating percent: Int) -> UsageMetric? {
+    public static func quotaRemaining(validating percent: Int) -> UsageMetric? {
         let metric = UsageMetric.quotaRemaining(percent: percent)
         return metric.isValid ? metric : nil
     }
 
-    static func spend(
+    public static func spend(
         validating amount: Double,
         currency: UsageCurrency
     ) -> UsageMetric? {
@@ -94,7 +94,7 @@ enum UsageMetric: Equatable, Codable, Sendable {
         return metric.isValid ? metric : nil
     }
 
-    static func credit(
+    public static func credit(
         validating balance: Double,
         unit: UsageMetricUnit
     ) -> UsageMetric? {
@@ -102,7 +102,7 @@ enum UsageMetric: Equatable, Codable, Sendable {
         return metric.isValid ? metric : nil
     }
 
-    static func count(
+    public static func count(
         validating value: Int,
         unit: UsageMetricUnit
     ) -> UsageMetric? {
@@ -110,7 +110,7 @@ enum UsageMetric: Equatable, Codable, Sendable {
         return metric.isValid ? metric : nil
     }
 
-    static func informational(validating value: String) -> UsageMetric? {
+    public static func informational(validating value: String) -> UsageMetric? {
         let metric = UsageMetric.informational(value: value)
         return metric.isValid ? metric : nil
     }
@@ -125,7 +125,7 @@ enum UsageMetric: Equatable, Codable, Sendable {
         case value
     }
 
-    init(from decoder: any Decoder) throws {
+    public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let kind = try container.decode(UsageMetricKind.self, forKey: .kind)
         self = switch kind {
@@ -165,7 +165,7 @@ enum UsageMetric: Equatable, Codable, Sendable {
         }
     }
 
-    func encode(to encoder: any Encoder) throws {
+    public func encode(to encoder: any Encoder) throws {
         guard isValid else {
             throw EncodingError.invalidValue(
                 self,
@@ -195,21 +195,21 @@ enum UsageMetric: Equatable, Codable, Sendable {
     }
 }
 
-struct UsageMeter: Identifiable, Equatable, Codable, Sendable {
-    let id: String
-    let title: String
-    let period: UsagePeriod
-    let metric: UsageMetric
-    let resetsAt: Date?
-    let resetText: String?
-    let showsMenuBarBadge: Bool
+public struct UsageMeter: Identifiable, Equatable, Codable, Sendable {
+    public let id: String
+    public let title: String
+    public let period: UsagePeriod
+    public let metric: UsageMetric
+    public let resetsAt: Date?
+    public let resetText: String?
+    public let showsMenuBarBadge: Bool
 
-    var percentRemaining: Int? {
+    public var percentRemaining: Int? {
         guard case .quotaRemaining(let percent) = metric else { return nil }
         return percent
     }
 
-    init(
+    public init(
         id: String,
         title: String,
         period: UsagePeriod,
@@ -227,7 +227,7 @@ struct UsageMeter: Identifiable, Equatable, Codable, Sendable {
         self.showsMenuBarBadge = showsMenuBarBadge
     }
 
-    init(
+    public init(
         id: String,
         title: String,
         period: UsagePeriod,
@@ -258,7 +258,7 @@ struct UsageMeter: Identifiable, Equatable, Codable, Sendable {
         case showsMenuBarBadge
     }
 
-    init(from decoder: any Decoder) throws {
+    public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(String.self, forKey: .id)
         title = try container.decode(String.self, forKey: .title)
@@ -284,7 +284,7 @@ struct UsageMeter: Identifiable, Equatable, Codable, Sendable {
         ) ?? false
     }
 
-    func encode(to encoder: any Encoder) throws {
+    public func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
         try container.encode(title, forKey: .title)
@@ -296,21 +296,33 @@ struct UsageMeter: Identifiable, Equatable, Codable, Sendable {
     }
 }
 
-struct UsageGroup: Identifiable, Equatable, Codable, Sendable {
-    let id: String
-    let title: String?
-    let meters: [UsageMeter]
-    let creditText: String?
+public struct UsageGroup: Identifiable, Equatable, Codable, Sendable {
+    public let id: String
+    public let title: String?
+    public let meters: [UsageMeter]
+    public let creditText: String?
+
+    public init(
+        id: String,
+        title: String?,
+        meters: [UsageMeter],
+        creditText: String?
+    ) {
+        self.id = id
+        self.title = title
+        self.meters = meters
+        self.creditText = creditText
+    }
 }
 
-enum ProviderAvailability: String, Equatable, Codable, Sendable {
+public enum ProviderAvailability: String, Equatable, Codable, Sendable {
     case available
     case authenticationRequired
     case unavailable
     case failed
     case schemaChanged
 
-    var koreanLabel: String? {
+    public var koreanLabel: String? {
         switch self {
         case .available: nil
         case .authenticationRequired: "인증 필요"
@@ -322,13 +334,13 @@ enum ProviderAvailability: String, Equatable, Codable, Sendable {
 }
 
 /// Whether displayed usage came from the most recent refresh attempt.
-enum UsageFreshness: String, Codable, Sendable {
+public enum UsageFreshness: String, Codable, Sendable {
     case current
     case stale
 }
 
 /// Why the most recent refresh attempt failed while its values were kept.
-enum ProviderRefreshFailure: String, Codable, Sendable, CaseIterable {
+public enum ProviderRefreshFailure: String, Codable, Sendable, CaseIterable {
     case network
     case service
     case schema
@@ -336,11 +348,11 @@ enum ProviderRefreshFailure: String, Codable, Sendable, CaseIterable {
     case unknown
 }
 
-enum AccountLabel {
-    static let defaultValue = "Default Account"
-    static let maximumLength = 128
+public enum AccountLabel {
+    public static let defaultValue = "Default Account"
+    public static let maximumLength = 128
 
-    static func sanitized(_ rawValue: String?) -> String {
+    public static func sanitized(_ rawValue: String?) -> String {
         guard let rawValue else { return defaultValue }
         let value = rawValue.trimmingCharacters(
             in: .whitespacesAndNewlines
@@ -359,8 +371,8 @@ enum AccountLabel {
     }
 }
 
-enum DashboardAccountIdentityRule {
-    static func showsAlias(
+public enum DashboardAccountIdentityRule {
+    public static func showsAlias(
         for usage: ProviderUsage,
         sameProviderCount: Int
     ) -> Bool {
@@ -368,31 +380,31 @@ enum DashboardAccountIdentityRule {
     }
 }
 
-struct ProviderUsage: Identifiable, Equatable, Codable, Sendable {
-    var id: AccountProviderID { accountProviderID }
-    var accountProviderID: AccountProviderID {
+public struct ProviderUsage: Identifiable, Equatable, Codable, Sendable {
+    public var id: AccountProviderID { accountProviderID }
+    public var accountProviderID: AccountProviderID {
         AccountProviderID(accountID: accountID, providerID: provider)
     }
 
-    let provider: ProviderID
-    let accountID: AccountID
-    let accountLabel: String
-    let planName: String
-    let groups: [UsageGroup]
-    let availability: ProviderAvailability
-    let lastSuccessfulAt: Date?
-    let lastRefreshAttemptAt: Date?
-    let refreshFailure: ProviderRefreshFailure?
+    public let provider: ProviderID
+    public let accountID: AccountID
+    public let accountLabel: String
+    public let planName: String
+    public let groups: [UsageGroup]
+    public let availability: ProviderAvailability
+    public let lastSuccessfulAt: Date?
+    public let lastRefreshAttemptAt: Date?
+    public let refreshFailure: ProviderRefreshFailure?
 
-    var updatedAt: Date? { lastSuccessfulAt }
+    public var updatedAt: Date? { lastSuccessfulAt }
 
     /// Displayed values are stale once an attempt failed after the last
     /// success and the previous values were kept on screen.
-    var freshness: UsageFreshness {
+    public var freshness: UsageFreshness {
         refreshFailure == nil ? .current : .stale
     }
 
-    init(
+    public init(
         provider: ProviderID,
         accountID: AccountID = .legacy,
         accountLabel: String = AccountLabel.defaultValue,
@@ -414,7 +426,7 @@ struct ProviderUsage: Identifiable, Equatable, Codable, Sendable {
         self.refreshFailure = refreshFailure
     }
 
-    init(
+    public init(
         provider: ProviderID,
         accountID: AccountID = .legacy,
         accountLabel: String = AccountLabel.defaultValue,
@@ -434,7 +446,7 @@ struct ProviderUsage: Identifiable, Equatable, Codable, Sendable {
         )
     }
 
-    func assigningAccount(
+    public func assigningAccount(
         id accountID: AccountID,
         label accountLabel: String
     ) -> ProviderUsage {
@@ -453,7 +465,7 @@ struct ProviderUsage: Identifiable, Equatable, Codable, Sendable {
 
     /// Records the outcome of a refresh attempt without ever moving
     /// `lastSuccessfulAt` forward on failure.
-    func recordingRefreshAttempt(
+    public func recordingRefreshAttempt(
         at attemptedAt: Date,
         failure: ProviderRefreshFailure? = nil
     ) -> ProviderUsage {
@@ -486,7 +498,7 @@ struct ProviderUsage: Identifiable, Equatable, Codable, Sendable {
         case updatedAt
     }
 
-    init(from decoder: any Decoder) throws {
+    public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         provider = try container.decode(ProviderID.self, forKey: .provider)
         accountID = try container.decodeIfPresent(
@@ -528,18 +540,18 @@ struct ProviderUsage: Identifiable, Equatable, Codable, Sendable {
 
 /// Freshness rows shared by the popover, Side Notch, web, and mobile cards so
 /// every surface reports the same success and attempt times.
-struct ProviderFreshnessDisplay: Equatable, Sendable {
-    let showsStaleBadge: Bool
-    let successAt: Date?
-    let attemptAt: Date?
+public struct ProviderFreshnessDisplay: Equatable, Sendable {
+    public let showsStaleBadge: Bool
+    public let successAt: Date?
+    public let attemptAt: Date?
 
-    var rowCount: Int {
+    public var rowCount: Int {
         (successAt == nil ? 0 : 1) + (attemptAt == nil ? 0 : 1)
     }
 
     /// - Parameter includesSuccessRow: whether the surface already shows the
     ///   last successful refresh time while the provider is current.
-    static func make(
+    public static func make(
         for usage: ProviderUsage,
         includesSuccessRow: Bool
     ) -> ProviderFreshnessDisplay {

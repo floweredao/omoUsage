@@ -1,3 +1,4 @@
+import OmoUsageCore
 import Foundation
 
 struct AntigravityUsageProvider: UsageProvider {

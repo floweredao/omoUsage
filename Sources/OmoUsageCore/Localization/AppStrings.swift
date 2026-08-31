@@ -1,4 +1,4 @@
-enum AppStringKey: String, CaseIterable, Sendable {
+public enum AppStringKey: String, CaseIterable, Sendable {
     case aiUsage
     case settingsTitle
     case settingsSubtitle
@@ -134,10 +134,14 @@ enum AppStringKey: String, CaseIterable, Sendable {
     case mobileICloudCheckExplanation
 }
 
-struct AppStrings: Sendable {
-    let language: AppLanguage
+public struct AppStrings: Sendable {
+    public let language: AppLanguage
 
-    func text(_ key: AppStringKey) -> String {
+    public init(language: AppLanguage) {
+        self.language = language
+    }
+
+    public func text(_ key: AppStringKey) -> String {
         switch language {
         case .korean:
             Self.korean[key, default: ""]

@@ -1,11 +1,17 @@
 import SwiftUI
 
-struct VisualRGB: Equatable, Sendable {
-    let red: UInt8
-    let green: UInt8
-    let blue: UInt8
+public struct VisualRGB: Equatable, Sendable {
+    public let red: UInt8
+    public let green: UInt8
+    public let blue: UInt8
 
-    var color: Color {
+    public init(red: UInt8, green: UInt8, blue: UInt8) {
+        self.red = red
+        self.green = green
+        self.blue = blue
+    }
+
+    public var color: Color {
         Color(
             red: Double(red) / 255,
             green: Double(green) / 255,
@@ -16,42 +22,42 @@ struct VisualRGB: Equatable, Sendable {
 
 /// Stale usage is announced with a symbol and a text label so the state never
 /// depends on color alone. The accent reuses the dashboard's amber token.
-enum StaleUsageVisualTokens {
-    static let symbolName = "exclamationmark.triangle.fill"
-    static let usesTextLabel = true
-    static let accent = VisualRGB(red: 0xB7, green: 0x79, blue: 0x3F)
-    static let badgeRowHeight: CGFloat = 19
-    static let badgeSymbolPointSize: CGFloat = 9.5
-    static let badgeFontSize: CGFloat = 11
-    static let badgeSpacing: CGFloat = 4
-    static let badgeHorizontalPadding: CGFloat = 7
-    static let badgeVerticalPadding: CGFloat = 3
-    static let badgeBackgroundOpacity = 0.12
-    static let badgeBorderOpacity = 0.34
+public enum StaleUsageVisualTokens {
+    public static let symbolName = "exclamationmark.triangle.fill"
+    public static let usesTextLabel = true
+    public static let accent = VisualRGB(red: 0xB7, green: 0x79, blue: 0x3F)
+    public static let badgeRowHeight: CGFloat = 19
+    public static let badgeSymbolPointSize: CGFloat = 9.5
+    public static let badgeFontSize: CGFloat = 11
+    public static let badgeSpacing: CGFloat = 4
+    public static let badgeHorizontalPadding: CGFloat = 7
+    public static let badgeVerticalPadding: CGFloat = 3
+    public static let badgeBackgroundOpacity = 0.12
+    public static let badgeBorderOpacity = 0.34
 }
 
 /// An aged-out mobile snapshot reuses the same amber accent and badge metrics
 /// as retained provider usage, with its own clock symbol and text, so the two
 /// facts stay visually related yet distinguishable without color alone.
-enum MobileFreshnessVisualTokens {
-    static let symbolName = "clock.badge.exclamationmark"
-    static let usesTextLabel = true
-    static let accent = StaleUsageVisualTokens.accent
-    static let badgeSpacing = StaleUsageVisualTokens.badgeSpacing
-    static let badgeHorizontalPadding =
+public enum MobileFreshnessVisualTokens {
+    public static let symbolName = "clock.badge.exclamationmark"
+    public static let usesTextLabel = true
+    public static let accent = StaleUsageVisualTokens.accent
+    public static let badgeSpacing = StaleUsageVisualTokens.badgeSpacing
+    public static let badgeHorizontalPadding =
         StaleUsageVisualTokens.badgeHorizontalPadding
-    static let badgeVerticalPadding =
+    public static let badgeVerticalPadding =
         StaleUsageVisualTokens.badgeVerticalPadding
-    static let badgeBackgroundOpacity =
+    public static let badgeBackgroundOpacity =
         StaleUsageVisualTokens.badgeBackgroundOpacity
-    static let badgeBorderOpacity = StaleUsageVisualTokens.badgeBorderOpacity
+    public static let badgeBorderOpacity = StaleUsageVisualTokens.badgeBorderOpacity
 }
 
-struct ProviderVisualStyle {
-    let background: AnyShapeStyle
-    let foreground: Color
+public struct ProviderVisualStyle {
+    public let background: AnyShapeStyle
+    public let foreground: Color
 
-    static func style(for provider: ProviderID) -> ProviderVisualStyle {
+    public static func style(for provider: ProviderID) -> ProviderVisualStyle {
         switch provider {
         case .claude:
             ProviderVisualStyle(

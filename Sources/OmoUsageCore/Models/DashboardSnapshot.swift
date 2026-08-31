@@ -1,14 +1,14 @@
 import Foundation
 
-struct DashboardSnapshot: Equatable, Codable, Sendable {
-    let providers: [ProviderUsage]
-    let generatedAt: Date
-    let lastRefreshAttemptAt: Date?
-    let oldestDisplayedSuccessAt: Date?
+public struct DashboardSnapshot: Equatable, Codable, Sendable {
+    public let providers: [ProviderUsage]
+    public let generatedAt: Date
+    public let lastRefreshAttemptAt: Date?
+    public let oldestDisplayedSuccessAt: Date?
 
-    var refreshedAt: Date { lastRefreshAttemptAt ?? generatedAt }
+    public var refreshedAt: Date { lastRefreshAttemptAt ?? generatedAt }
 
-    init(
+    public init(
         providers: [ProviderUsage],
         generatedAt: Date,
         lastRefreshAttemptAt: Date? = nil,
@@ -20,7 +20,7 @@ struct DashboardSnapshot: Equatable, Codable, Sendable {
         self.oldestDisplayedSuccessAt = oldestDisplayedSuccessAt
     }
 
-    init(providers: [ProviderUsage], refreshedAt: Date) {
+    public init(providers: [ProviderUsage], refreshedAt: Date) {
         self.init(
             providers: providers,
             generatedAt: refreshedAt,
@@ -31,7 +31,7 @@ struct DashboardSnapshot: Equatable, Codable, Sendable {
         )
     }
 
-    static func ordered(
+    public static func ordered(
         providers: [ProviderUsage],
         refreshedAt: Date,
         providerOrder: [ProviderID] = ProviderID.allCases
@@ -52,7 +52,7 @@ struct DashboardSnapshot: Equatable, Codable, Sendable {
         )
     }
 
-    static func ordered(
+    public static func ordered(
         providers: [ProviderUsage],
         refreshedAt: Date,
         accountProviderOrder: [AccountProviderID]
@@ -80,7 +80,7 @@ struct DashboardSnapshot: Equatable, Codable, Sendable {
         )
     }
 
-    static func mobileFixture(now: Date) -> DashboardSnapshot {
+    public static func mobileFixture(now: Date) -> DashboardSnapshot {
         let teamAccount = AccountID(
             UUID(
                 uuid: (
