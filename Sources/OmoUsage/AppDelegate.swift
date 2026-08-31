@@ -115,6 +115,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let webDashboardLanguageStore: WebDashboardLanguageStore
     private let webDashboardCommandBridge: WebDashboardCommandBridge
     private let webDashboardAccessStore: WebDashboardAccessStore
+    private let webDashboardStatusStore: WebDashboardStatusStore
     private let webDashboardServer: WebDashboardServer
     private let presentationStyleStore: DashboardPresentationStyleStore
     private var presentationStyle: DashboardPresentationStyle
@@ -234,6 +235,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 port: webDashboardPort
             )
         )
+        let webDashboardStatusStore = WebDashboardStatusStore(
+            port: webDashboardPort
+        )
         let mutationNonce = UUID().uuidString.replacingOccurrences(
             of: "-",
             with: ""
@@ -303,7 +307,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 mutationNonce: mutationNonce,
                 dispatchCommand: webDashboardCommandBridge.send
             ),
-            accessStore: webDashboardAccessStore
+            accessStore: webDashboardAccessStore,
+            statusStore: webDashboardStatusStore
         )
 
         self.viewModel = viewModel
@@ -315,6 +320,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         self.webDashboardLanguageStore = webDashboardLanguageStore
         self.webDashboardCommandBridge = webDashboardCommandBridge
         self.webDashboardAccessStore = webDashboardAccessStore
+        self.webDashboardStatusStore = webDashboardStatusStore
         self.webDashboardServer = webDashboardServer
         self.presentationStyleStore = presentationStyleStore
         self.presentationStyle = presentationStyle
@@ -528,6 +534,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 onSideNotchHideDelayChange: { [weak self] delay in
                     self?.setSideNotchHideDelay(delay)
                 },
+                webDashboardStatusStore: webDashboardStatusStore,
                 onOpenWebDashboard: { [weak self] in
                     guard let self else { return false }
                     do {
@@ -536,6 +543,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                         return NSWorkspace.shared.open(url)
                     } catch {
                         return false
+                    }
+                },
+                onRetryWebDashboard: { [weak self] in
+                    guard let self else { return }
+                    do {
+                        try self.webDashboardServer.retry()
+                    } catch {
+                        DiagnosticStore.shared.record(
+                            error: error,
+                            category: .webServer
+                        )
                     }
                 },
                 onExportDiagnostics: {

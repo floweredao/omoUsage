@@ -9,7 +9,9 @@ struct SettingsView: View {
     let onLanguageChange: () -> Void
     let onPresentationStyleChange: (DashboardPresentationStyle) -> Void
     let onSideNotchHideDelayChange: (SideNotchHideDelay) -> Void
+    @Bindable var webDashboardStatusStore: WebDashboardStatusStore
     let onOpenWebDashboard: () -> Bool
+    let onRetryWebDashboard: () -> Void
     let onExportDiagnostics: () -> DiagnosticExportOutcome
     @State private var keyDrafts: [ProviderID: String] = [:]
     @State private var newAccountProvider = ProviderID.openrouter
@@ -39,7 +41,9 @@ struct SettingsView: View {
             @escaping (DashboardPresentationStyle) -> Void,
         onSideNotchHideDelayChange:
             @escaping (SideNotchHideDelay) -> Void,
+        webDashboardStatusStore: WebDashboardStatusStore,
         onOpenWebDashboard: @escaping () -> Bool,
+        onRetryWebDashboard: @escaping () -> Void,
         onExportDiagnostics: @escaping () -> DiagnosticExportOutcome
     ) {
         self.viewModel = viewModel
@@ -50,7 +54,9 @@ struct SettingsView: View {
         self.onPresentationStyleChange = onPresentationStyleChange
         self.onSideNotchHideDelayChange =
             onSideNotchHideDelayChange
+        self.webDashboardStatusStore = webDashboardStatusStore
         self.onOpenWebDashboard = onOpenWebDashboard
+        self.onRetryWebDashboard = onRetryWebDashboard
         self.onExportDiagnostics = onExportDiagnostics
         _presentationStyle = State(initialValue: presentationStyle)
         _sideNotchHideDelay = State(initialValue: sideNotchHideDelay)
@@ -208,11 +214,15 @@ struct SettingsView: View {
                         controller: launchAtLogin
                     )
 
-                    WebDashboardSettingsRow {
-                        if !onOpenWebDashboard() {
-                            feedback = .key(.webDashboardOpenFailed)
-                        }
-                    }
+                    WebDashboardSettingsRow(
+                        status: webDashboardStatusStore.status,
+                        onOpen: {
+                            if !onOpenWebDashboard() {
+                                feedback = .key(.webDashboardOpenFailed)
+                            }
+                        },
+                        onRetry: onRetryWebDashboard
+                    )
 
                     DiagnosticsSettingsRow {
                         switch onExportDiagnostics() {
@@ -680,33 +690,51 @@ private struct APIKeyAccountsSection: View {
 }
 
 private struct WebDashboardSettingsRow: View {
+    let status: WebDashboardStatus
     let onOpen: () -> Void
+    let onRetry: () -> Void
     @Environment(\.appLocalization) private var localization
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "globe")
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: statusIcon)
                 .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(statusColor)
                 .frame(width: 24, height: 24)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(localization.text(.webDashboard))
-                    .font(.system(size: 13.5, weight: .semibold))
-                Text(localization.text(.webDashboardDescription))
-                    .font(.system(size: 11.5))
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(localization.text(.webDashboard))
+                        .font(.system(size: 13.5, weight: .semibold))
+                    Text(statusLabel)
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .foregroundStyle(statusColor)
+                }
+                Text(status.url.absoluteString)
+                    .font(.system(size: 11.5, design: .monospaced))
+                    .textSelection(.enabled)
+                Text(
+                    localization.format(
+                        .webDashboardEndpointDetails,
+                        Int(status.port)
+                    )
+                )
+                    .font(.system(size: 11))
                     .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                if let failure = status.failure {
+                    Text(failureMessage(failure))
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
 
             Spacer(minLength: 8)
 
-            Button(
-                localization.text(.openWebDashboard),
-                action: onOpen
-            )
+            Button(buttonTitle, action: buttonAction)
                 .buttonStyle(.bordered)
                 .controlSize(.small)
+                .disabled(status.state == .starting)
         }
         .padding(10)
         .background(
@@ -719,6 +747,64 @@ private struct WebDashboardSettingsRow: View {
                     Color(nsColor: .separatorColor),
                     lineWidth: 0.5
                 )
+        }
+    }
+
+    private var statusLabel: String {
+        switch status.state {
+        case .disabled:
+            localization.text(.webDashboardDisabled)
+        case .starting:
+            localization.text(.webDashboardStarting)
+        case .ready:
+            localization.text(.webDashboardReady)
+        case .failed:
+            localization.text(.webDashboardFailed)
+        }
+    }
+
+    private var statusIcon: String {
+        switch status.state {
+        case .disabled: "globe"
+        case .starting: "hourglass"
+        case .ready: "checkmark.circle.fill"
+        case .failed: "exclamationmark.triangle.fill"
+        }
+    }
+
+    private var statusColor: Color {
+        switch status.state {
+        case .disabled, .starting: .secondary
+        case .ready: .green
+        case .failed: .orange
+        }
+    }
+
+    private var buttonTitle: String {
+        switch status.state {
+        case .ready:
+            localization.text(.openWebDashboard)
+        case .starting:
+            localization.text(.webDashboardStarting)
+        case .disabled, .failed:
+            localization.text(.retry)
+        }
+    }
+
+    private var buttonAction: () -> Void {
+        status.state == .ready ? onOpen : onRetry
+    }
+
+    private func failureMessage(
+        _ failure: WebDashboardListenerFailure
+    ) -> String {
+        switch failure {
+        case .portInUse(let port):
+            localization.format(.webDashboardPortInUse, Int(port))
+        case .permissionDenied(let port):
+            localization.format(.webDashboardPermissionDenied, Int(port))
+        case .unavailable(let port):
+            localization.format(.webDashboardUnavailable, Int(port))
         }
     }
 }

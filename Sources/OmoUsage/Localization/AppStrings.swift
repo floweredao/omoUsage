@@ -40,6 +40,14 @@ enum AppStringKey: String, CaseIterable, Sendable {
     case webDashboardDescription
     case openWebDashboard
     case webDashboardOpenFailed
+    case webDashboardDisabled
+    case webDashboardStarting
+    case webDashboardReady
+    case webDashboardFailed
+    case webDashboardEndpointDetails
+    case webDashboardPortInUse
+    case webDashboardPermissionDenied
+    case webDashboardUnavailable
     case diagnostics
     case diagnosticsDescription
     case exportDiagnostics
@@ -179,6 +187,17 @@ struct AppStrings: Sendable {
             "일회용 보안 링크로 이 Mac의 대시보드를 엽니다.",
         .openWebDashboard: "대시보드 열기",
         .webDashboardOpenFailed: "웹 대시보드를 열지 못했습니다.",
+        .webDashboardDisabled: "비활성화됨",
+        .webDashboardStarting: "시작 중",
+        .webDashboardReady: "준비됨",
+        .webDashboardFailed: "실패",
+        .webDashboardEndpointDetails: "포트 %d · 루프백 전용",
+        .webDashboardPortInUse:
+            "포트 %d이(가) 이미 사용 중입니다. 해당 포트를 사용하는 앱을 종료한 후 다시 시도하세요.",
+        .webDashboardPermissionDenied:
+            "macOS에서 포트 %d 접근을 거부했습니다. 보안 설정을 확인한 후 다시 시도하세요.",
+        .webDashboardUnavailable:
+            "포트 %d에서 로컬 대시보드를 시작하지 못했습니다. 다시 시도하거나 OmoUsage를 재시작하세요.",
         .diagnostics: "진단 정보",
         .diagnosticsDescription:
             "민감한 내용을 제외한 기계 판독용 진단 정보를 내보냅니다.",
@@ -309,6 +328,17 @@ struct AppStrings: Sendable {
             "Open this Mac's dashboard with a one-use secure link.",
         .openWebDashboard: "Open Dashboard",
         .webDashboardOpenFailed: "Could not open the web dashboard.",
+        .webDashboardDisabled: "Disabled",
+        .webDashboardStarting: "Starting",
+        .webDashboardReady: "Ready",
+        .webDashboardFailed: "Failed",
+        .webDashboardEndpointDetails: "Port %d · Loopback only",
+        .webDashboardPortInUse:
+            "Port %d is already in use. Close the app using it, then retry.",
+        .webDashboardPermissionDenied:
+            "macOS denied access to port %d. Check security settings, then retry.",
+        .webDashboardUnavailable:
+            "The local dashboard could not start on port %d. Retry, or restart OmoUsage.",
         .diagnostics: "Diagnostics",
         .diagnosticsDescription:
             "Export machine-readable diagnostics with sensitive data excluded.",
