@@ -16,11 +16,8 @@ jobs:
   release:
     runs-on: macos-15
     timeout-minutes: 60
-    environment: release
-    permissions:
-      contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
       - name: Build, sign, notarize, and verify
@@ -37,19 +34,11 @@ jobs:
           sh Scripts/with-signing-keychain.sh
           sh Scripts/release-app.sh
       - name: Preserve verified release outputs
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: OmoUsage-${{ github.ref_name }}
           if-no-files-found: error
           path: |
-            dist/OmoUsage-*.zip
-            dist/OmoUsage-*.sha256
-            dist/OmoUsage-*-manifest.txt
-      - name: Upload verified GitHub release assets
-        uses: softprops/action-gh-release@v2
-        with:
-          fail_on_unmatched_files: true
-          files: |
             dist/OmoUsage-*.zip
             dist/OmoUsage-*.sha256
             dist/OmoUsage-*-manifest.txt
