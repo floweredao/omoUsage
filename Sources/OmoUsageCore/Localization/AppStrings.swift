@@ -153,7 +153,7 @@ public struct AppStrings: Sendable {
     private static let korean: [AppStringKey: String] = [
         .aiUsage: "AI 사용량",
         .settingsTitle: "설정",
-        .settingsSubtitle: "로그인 실행과 프로바이더 인증을 관리합니다.",
+        .settingsSubtitle: "프로바이더 인증과 앱 설정을 관리합니다.",
         .registryRecoveredTitle: "계정 레지스트리를 백업에서 불러왔습니다",
         .registryRecoveredDescription:
             "손상된 원본은 격리했습니다. 백업을 복원하거나 새 레지스트리로 재설정하세요.",
@@ -301,7 +301,7 @@ public struct AppStrings: Sendable {
     private static let english: [AppStringKey: String] = [
         .aiUsage: "AI Usage",
         .settingsTitle: "Settings",
-        .settingsSubtitle: "Manage launch at login and provider authentication.",
+        .settingsSubtitle: "Manage provider authentication and app settings.",
         .registryRecoveredTitle: "Account registry loaded from backup",
         .registryRecoveredDescription:
             "The damaged original was quarantined. Restore the backup or reset to a new registry.",
