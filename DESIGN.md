@@ -57,8 +57,8 @@ the one local Mac view model. Two accounts on one provider remain separate
 controls and neither order nor visibility broadens to provider-level mutation.
 Web language initializes from App language once when no web preference exists,
 then changes independently.
-API keys, credential status internals, local paths, launch-at-login, executable
-launches, and other privileged controls remain native-only.
+API keys, credential status internals, local paths, executable launches, and
+other privileged controls remain native-only.
 
 ## 2. Visual Tokens
 
@@ -159,7 +159,7 @@ launches, and other privileged controls remain native-only.
   remain stable while the named outer body owns vertical scrolling. API-key
   account forms and account rows participate in ordinary body flow and never
   introduce another `List` or `ScrollView`.
-- `Dashboard Order` sits between the presentation/login settings group and the
+- `Dashboard Order` sits between the presentation settings group and the
   `Provider Authentication` group. Ordering is a separate task from
   authentication, so it gets its own titled section rather than controls
   embedded in each auth row.
@@ -310,12 +310,11 @@ launches, and other privileged controls remain native-only.
 - Entering the 6 pt edge handle for 0.18 seconds reveals the rail and cancels
   a pending hide. Brief crossings cancel the reveal task before it fires.
   The stationary pointer that triggered the reveal is not treated as a
-  provider-row hover; the visible handle stays 6 pt wide inside one bounded
-  8×144 pt transparent tracking region, and a preview begins only after the
-  pointer moves inward past that tracking strip. The hidden region is centered
-  on the latest edge-entry anchor, falls back to the screen midpoint, and
-  clamps wholly inside that screen's visible frame. Right-edge app and
-  scrollbar input above and below it remains owned by the foreground app.
+  provider-row hover; the visible handle stays 6 pt wide inside one
+  full-visible-height 8 pt transparent tracking strip, and a preview begins
+  only after the pointer moves inward past that strip. Entering anywhere along
+  the selected screen's right visible edge records that pointer Y as the
+  reveal anchor, so the compact rail opens beside the actual entry point.
   Leaving the revealed rail schedules one cancellable hide using the selected
   0.4, 0.8, 1.2, or 2.0 second delay. Background refresh and controller-driven
   frame changes never reveal the rail.

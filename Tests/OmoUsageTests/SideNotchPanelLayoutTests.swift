@@ -273,7 +273,7 @@ struct SideNotchPanelLayoutTests {
     }
 
     @Test
-    func hiddenActivationFrameIsEightBy144AtMidpointFallback() {
+    func hiddenActivationFrameSpansTheFullVisibleHeight() {
         let visibleFrame = NSRect(
             x: 0,
             y: 25,
@@ -287,16 +287,22 @@ struct SideNotchPanelLayoutTests {
             mode: .hidden
         )
 
-        #expect(hiddenTrigger.size == NSSize(width: 8, height: 144))
-        #expect(SideNotchPanelLayout.hiddenTrackingHeight == 144)
+        #expect(
+            hiddenTrigger.size
+                == NSSize(
+                    width: SideNotchPanelLayout.hiddenTrackingWidth,
+                    height: visibleFrame.height
+                )
+        )
+        #expect(hiddenTrigger.minY == visibleFrame.minY)
+        #expect(hiddenTrigger.maxY == visibleFrame.maxY)
         #expect(hiddenTrigger.maxX == visibleFrame.maxX)
-        #expect(hiddenTrigger.midY == visibleFrame.midY)
         #expect(SideNotchPanelLayout.hiddenWidth == 6)
         #expect(SideNotchPanelLayout.hiddenTrackingWidth == 8)
     }
 
     @Test
-    func hiddenActivationExcludesNormalTopAndBottomEdgeInput() {
+    func hiddenActivationIncludesTopMiddleAndBottomEdgeInput() {
         let visibleFrame = NSRect(
             x: 100,
             y: 50,
@@ -310,12 +316,12 @@ struct SideNotchPanelLayoutTests {
         )
 
         #expect(
-            !hiddenTrigger.contains(
+            hiddenTrigger.contains(
                 NSPoint(x: visibleFrame.maxX - 1, y: visibleFrame.minY + 40)
             )
         )
         #expect(
-            !hiddenTrigger.contains(
+            hiddenTrigger.contains(
                 NSPoint(x: visibleFrame.maxX - 1, y: visibleFrame.maxY - 40)
             )
         )
@@ -327,7 +333,7 @@ struct SideNotchPanelLayoutTests {
     }
 
     @Test
-    func hiddenActivationAnchorFollowsPointerAndClampsPerScreen() {
+    func hiddenActivationGeometryIgnoresRevealAnchor() {
         let visibleFrame = NSRect(
             x: -1_600,
             y: 50,
@@ -335,6 +341,11 @@ struct SideNotchPanelLayoutTests {
             height: 900
         )
 
+        let hiddenActivationFrame = SideNotchPanelLayout.frame(
+            in: visibleFrame,
+            providerCount: 2,
+            mode: .hidden
+        )
         let anchored = SideNotchPanelLayout.frame(
             in: visibleFrame,
             providerCount: 2,
@@ -354,10 +365,12 @@ struct SideNotchPanelLayoutTests {
             anchorY: 940
         )
 
-        #expect(anchored.midY == 640)
-        #expect(anchored.maxX == visibleFrame.maxX)
-        #expect(clampedBottom.minY == visibleFrame.minY)
-        #expect(clampedTop.maxY == visibleFrame.maxY)
+        #expect(anchored == hiddenActivationFrame)
+        #expect(clampedBottom == hiddenActivationFrame)
+        #expect(clampedTop == hiddenActivationFrame)
+        #expect(hiddenActivationFrame.minY == visibleFrame.minY)
+        #expect(hiddenActivationFrame.maxY == visibleFrame.maxY)
+        #expect(hiddenActivationFrame.maxX == visibleFrame.maxX)
     }
 
     @Test
