@@ -12,26 +12,57 @@ extension CredentialDiscovery {
             "globalStorage",
             "state.vscdb"
         )
-        let sql = """
-        SELECT value FROM ItemTable
-        WHERE key = 'cursorAuth/accessToken' LIMIT 1;
-        """
-        let token = try LocalDataAccess.sqliteValue(
-            database: database,
-            sql: sql
+        let databaseAccessToken = try cursorDatabaseValue(
+            database,
+            key: "cursorAuth/accessToken"
         )
-        guard let accessToken = token?.nonBlank else {
+        let keychainAccessToken = cursorKeychainValue(
+            "cursor-access-token"
+        )
+        if let databaseAccessToken {
+            if let keychainAccessToken {
+                let membership = try cursorDatabaseValue(
+                    database,
+                    key: "cursorAuth/stripeMembershipType"
+                )
+                if
+                    membership == "free",
+                    cursorSubjectsDiffer(
+                        databaseAccessToken,
+                        keychainAccessToken
+                    )
+                {
+                    return try cursorKeychainCredential(
+                        keychainAccessToken,
+                        now: now
+                    )
+                }
+            }
+            let refreshToken = try cursorDatabaseValue(
+                database,
+                key: "cursorAuth/refreshToken"
+            )
+            try rejectExpiredJWT(
+                databaseAccessToken,
+                provider: .cursor,
+                now: now
+            )
+            return DiscoveredCredential(
+                provider: .cursor,
+                accessToken: databaseAccessToken,
+                refreshToken: refreshToken,
+                accountID: nil,
+                planName: nil,
+                expiresAt: nil,
+                source: .file
+            )
+        }
+        guard let keychainAccessToken else {
             throw CredentialDiscoveryError.notFound(.cursor)
         }
-        try rejectExpiredJWT(
-            accessToken,
-            provider: .cursor,
+        return try cursorKeychainCredential(
+            keychainAccessToken,
             now: now
-        )
-        return credential(
-            .cursor,
-            token: accessToken,
-            source: .file
         )
     }
 
@@ -531,6 +562,23 @@ private extension CredentialDiscovery {
     }
 
     func jwtExpiration(_ token: String) -> Date? {
+        guard
+            let payload = jwtPayload(token),
+            let seconds = UsageJSON.number(payload["exp"])
+        else {
+            return nil
+        }
+        return Date(timeIntervalSince1970: seconds)
+    }
+
+    func jwtSubject(_ token: String) -> String? {
+        guard let payload = jwtPayload(token) else {
+            return nil
+        }
+        return (payload["sub"] as? String)?.nonBlank
+    }
+
+    func jwtPayload(_ token: String) -> [String: Any]? {
         let parts = token.split(separator: ".")
         guard parts.count > 1 else { return nil }
         var value = String(parts[1])
@@ -539,12 +587,68 @@ private extension CredentialDiscovery {
         value += String(repeating: "=", count: (4 - value.count % 4) % 4)
         guard
             let data = Data(base64Encoded: value),
-            let object = try? UsageJSON.object(data),
-            let seconds = UsageJSON.number(object["exp"])
+            let object = try? UsageJSON.object(data)
         else {
             return nil
         }
-        return Date(timeIntervalSince1970: seconds)
+        return object
+    }
+
+    func cursorDatabaseValue(
+        _ database: URL,
+        key: String
+    ) throws -> String? {
+        try LocalDataAccess.sqliteValue(
+            database: database,
+            sql: """
+            SELECT value FROM ItemTable
+            WHERE key = '\(key)' LIMIT 1;
+            """
+        )?.nonBlank
+    }
+
+    func cursorKeychainValue(_ service: String) -> String? {
+        do {
+            return try keychain.value(
+                service: service,
+                account: ""
+            )?.nonBlank
+        } catch {
+            return nil
+        }
+    }
+
+    func cursorSubjectsDiffer(
+        _ first: String,
+        _ second: String
+    ) -> Bool {
+        guard
+            let firstSubject = jwtSubject(first),
+            let secondSubject = jwtSubject(second)
+        else {
+            return false
+        }
+        return firstSubject != secondSubject
+    }
+
+    func cursorKeychainCredential(
+        _ accessToken: String,
+        now: Date
+    ) throws -> DiscoveredCredential {
+        try rejectExpiredJWT(
+            accessToken,
+            provider: .cursor,
+            now: now
+        )
+        return DiscoveredCredential(
+            provider: .cursor,
+            accessToken: accessToken,
+            refreshToken: cursorKeychainValue("cursor-refresh-token"),
+            accountID: nil,
+            planName: nil,
+            expiresAt: nil,
+            source: .keychain
+        )
     }
 }
 
