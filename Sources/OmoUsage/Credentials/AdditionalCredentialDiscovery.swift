@@ -3,6 +3,11 @@ import Foundation
 import Darwin
 
 extension CredentialDiscovery {
+    /// Shipped Grok CLI client id, used when the credential store carries
+    /// no explicit or account-key-encoded value.
+    static let grokDefaultClientID =
+        "b1a00492-073a-47ea-816f-4c329264a828"
+
     func cursor(now: Date) throws -> DiscoveredCredential {
         let database = home.appending(
             components: "Library",
@@ -230,6 +235,28 @@ extension CredentialDiscovery {
     }
 
     func grok(now: Date) throws -> DiscoveredCredential {
+        let resolution = try resolveGrokCandidates(now: now)
+        if let best = resolution.candidates.first {
+            return best
+        }
+        if let failure = resolution.failure {
+            throw failure
+        }
+        throw CredentialDiscoveryError.malformed(.grok)
+    }
+
+    /// Every usable account, in the sorted key order the runtime should
+    /// try them. `grok(now:)` returns the first of these.
+    func grokCandidates(now: Date) -> [DiscoveredCredential] {
+        ((try? resolveGrokCandidates(now: now))?.candidates) ?? []
+    }
+
+    private func resolveGrokCandidates(
+        now: Date
+    ) throws -> (
+        candidates: [DiscoveredCredential],
+        failure: CredentialDiscoveryError?
+    ) {
         let root = grokHome.appending(path: "auth.json")
         guard FileManager.default.fileExists(atPath: root.path) else {
             throw CredentialDiscoveryError.notFound(.grok)
@@ -242,6 +269,7 @@ extension CredentialDiscovery {
         } catch {
             throw CredentialDiscoveryError.malformed(.grok)
         }
+        var candidates: [DiscoveredCredential] = []
         var candidateError: CredentialDiscoveryError?
         for key in object.keys.sorted() {
             guard
@@ -258,42 +286,50 @@ extension CredentialDiscovery {
                 entry["oidc_issuer"] as? String
                 ?? entry["issuer"] as? String
             )?.nonBlank
+            // The CLI stores the client id explicitly, encodes it after
+            // `::` in the account key, or omits it entirely and relies on
+            // the shipped default.
+            let suffixClientID = key.range(of: "::").map {
+                String(key[$0.upperBound...])
+            }?.nonBlank
             let clientID = (
                 entry["oidc_client_id"] as? String
                 ?? entry["client_id"] as? String
             )?.nonBlank
-            let expiresAt = UsageJSON.date(entry["expires_at"])
-                ?? jwtExpiration(token)
+                ?? suffixClientID
+                ?? Self.grokDefaultClientID
+            let expiresAt = UsageJSON.date(
+                entry["expires_at"] ?? entry["expires"]
+            ) ?? jwtExpiration(token)
             if
                 let expiresAt,
                 expiresAt <= now,
-                refreshToken == nil || issuer == nil || clientID == nil
+                refreshToken == nil
             {
                 candidateError = .expired(.grok)
                 continue
             }
-            return DiscoveredCredential(
-                provider: .grok,
-                accessToken: token,
-                refreshToken: refreshToken,
-                accountID: key,
-                planName: nil,
-                expiresAt: expiresAt,
-                source: .file,
-                oidcIssuer: issuer,
-                oidcClientID: clientID,
-                principalType: (
-                    entry["principal_type"] as? String
-                )?.nonBlank,
-                principalID: (
-                    entry["principal_id"] as? String
-                )?.nonBlank
+            candidates.append(
+                DiscoveredCredential(
+                    provider: .grok,
+                    accessToken: token,
+                    refreshToken: refreshToken,
+                    accountID: key,
+                    planName: nil,
+                    expiresAt: expiresAt,
+                    source: .file,
+                    oidcIssuer: issuer,
+                    oidcClientID: clientID,
+                    principalType: (
+                        entry["principal_type"] as? String
+                    )?.nonBlank,
+                    principalID: (
+                        entry["principal_id"] as? String
+                    )?.nonBlank
+                )
             )
         }
-        if let candidateError {
-            throw candidateError
-        }
-        throw CredentialDiscoveryError.malformed(.grok)
+        return (candidates, candidateError)
     }
 
     func opencode(

@@ -2,17 +2,67 @@ import OmoUsageCore
 import Foundation
 
 struct GrokUsageProvider: UsageProvider {
+    /// Refresh inside a guard band rather than at the deadline; a token
+    /// that expires mid-flight reads as a revoked credential.
+    static let refreshLeadTime: TimeInterval = 300
+    /// Used when the store carries no issuer to discover from. A stored
+    /// issuer still goes through the strict allow-list below.
+    static let fixedTokenEndpoint = URL(
+        string: "https://auth.x.ai/oauth2/token"
+    )!
+    /// Unreserved set from RFC 3986: `+` must survive as `%2B`, because a
+    /// form-urlencoded reader decodes a literal `+` back into a space.
+    static let formAllowedCharacters: CharacterSet = {
+        var allowed = CharacterSet.alphanumerics
+        allowed.insert(charactersIn: "-._~")
+        return allowed
+    }()
+
     let id = ProviderID.grok
     let discovery: CredentialDiscovery
     let http: ProviderHTTP
 
     func fetch(now: Date) async throws -> ProviderUsage {
         let discovered = try discovery.grok(now: now)
-        let credential: DiscoveredCredential
-        if let expiresAt = discovered.expiresAt, expiresAt <= now {
-            credential = try await refresh(discovered, now: now)
-        } else {
-            credential = discovered
+        // Only an auth rejection says the *account* is the problem. A 500,
+        // a 429, a malformed payload or a failed write-back are facts about
+        // the request, and replaying them across every stored account just
+        // multiplies the damage.
+        var candidates = discovery.grokCandidates(now: now)
+        if candidates.isEmpty {
+            candidates = [discovered]
+        }
+        var authFailure: any Error = ProviderTransportError
+            .authenticationRequired(id)
+        for candidate in candidates {
+            do {
+                return try await usage(for: candidate, now: now)
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch let error as ProviderTransportError
+                where error == .authenticationRequired(id)
+            {
+                authFailure = error
+            } catch {
+                throw error
+            }
+        }
+        throw authFailure
+    }
+
+    /// One account's full attempt: rotate it if it is inside the guard
+    /// band, read usage, and rotate once more if a token the clock still
+    /// trusts turns out to be revoked.
+    private func usage(
+        for candidate: DiscoveredCredential,
+        now: Date
+    ) async throws -> ProviderUsage {
+        var credential = candidate
+        if
+            let expiresAt = credential.expiresAt,
+            expiresAt.timeIntervalSince(now) <= Self.refreshLeadTime
+        {
+            credential = try await refresh(credential, now: now)
         }
         do {
             return try await fetchUsage(
@@ -24,7 +74,6 @@ struct GrokUsageProvider: UsageProvider {
                 case .authenticationRequired(let provider) = error,
                 provider == id,
                 credential.refreshToken != nil,
-                credential.oidcIssuer != nil,
                 credential.oidcClientID != nil
             else {
                 throw error
@@ -55,15 +104,35 @@ struct GrokUsageProvider: UsageProvider {
         }
     }
 
-    private func refresh(
-        _ credential: DiscoveredCredential,
-        now: Date
-    ) async throws -> DiscoveredCredential {
+    private static func formBody(
+        _ fields: [(String, String)]
+    ) -> Data? {
+        let encoded = fields.compactMap { name, value in
+            guard
+                let name = name.addingPercentEncoding(
+                    withAllowedCharacters: formAllowedCharacters
+                ),
+                let value = value.addingPercentEncoding(
+                    withAllowedCharacters: formAllowedCharacters
+                )
+            else {
+                return nil as String?
+            }
+            return "\(name)=\(value)"
+        }
+        guard encoded.count == fields.count else {
+            return nil
+        }
+        return encoded.joined(separator: "&").data(using: .utf8)
+    }
+
+    /// Resolves the token endpoint from a stored issuer. The allow-list
+    /// and the same-host check on the discovered endpoint are the reason
+    /// a hostile `oidc_issuer` never receives the refresh token.
+    private func discoveredTokenEndpoint(
+        issuer: String
+    ) async throws -> URL {
         guard
-            let refreshToken = credential.refreshToken,
-            let issuer = credential.oidcIssuer,
-            let clientID = credential.oidcClientID,
-            let accountID = credential.accountID,
             var discoveryURL = URL(string: issuer),
             discoveryURL.scheme == "https",
             discoveryURL.host?.lowercased() == "auth.grok.com",
@@ -73,9 +142,9 @@ struct GrokUsageProvider: UsageProvider {
         else {
             throw ProviderTransportError.invalidResponse(id)
         }
-        discoveryURL.append(
-            path: ".well-known/openid-configuration"
-        )
+        let host = discoveryURL.host?.lowercased()
+        let port = discoveryURL.port ?? 443
+        discoveryURL.append(path: ".well-known/openid-configuration")
         let discoveryContract = ProviderContractCatalog.endpoint(
             .grokOpenIDConfiguration,
             for: id
@@ -89,8 +158,10 @@ struct GrokUsageProvider: UsageProvider {
             for: discoveryRequest,
             endpoint: discoveryContract
         )
-        let endpoint = try discoveryContract.schemaChecked {
-            let discoveryPayload = try ProviderPayload.object(discoveryData)
+        return try discoveryContract.schemaChecked {
+            let discoveryPayload = try ProviderPayload.object(
+                discoveryData
+            )
             guard
                 let endpointText = ProviderPayload.text(
                     discoveryPayload,
@@ -98,39 +169,46 @@ struct GrokUsageProvider: UsageProvider {
                 ),
                 let endpoint = URL(string: endpointText),
                 endpoint.scheme == "https",
-                endpoint.host?.lowercased()
-                    == discoveryURL.host?.lowercased(),
+                endpoint.host?.lowercased() == host,
                 endpoint.user == nil,
                 endpoint.password == nil,
-                (endpoint.port ?? 443) == (discoveryURL.port ?? 443)
+                (endpoint.port ?? 443) == port
             else {
                 throw ProviderTransportError.invalidResponse(id)
             }
             return endpoint
         }
-        var form = URLComponents()
-        form.queryItems = [
-            URLQueryItem(name: "grant_type", value: "refresh_token"),
-            URLQueryItem(name: "refresh_token", value: refreshToken),
-            URLQueryItem(name: "client_id", value: clientID)
+    }
+
+    private func refresh(
+        _ credential: DiscoveredCredential,
+        now: Date
+    ) async throws -> DiscoveredCredential {
+        guard
+            let refreshToken = credential.refreshToken,
+            let clientID = credential.oidcClientID,
+            let accountID = credential.accountID
+        else {
+            throw ProviderTransportError.invalidResponse(id)
+        }
+        let endpoint: URL
+        if let issuer = credential.oidcIssuer {
+            endpoint = try await discoveredTokenEndpoint(issuer: issuer)
+        } else {
+            endpoint = Self.fixedTokenEndpoint
+        }
+        var fields: [(String, String)] = [
+            ("grant_type", "refresh_token"),
+            ("refresh_token", refreshToken),
+            ("client_id", clientID)
         ]
         if let principalType = credential.principalType {
-            form.queryItems?.append(
-                URLQueryItem(
-                    name: "principal_type",
-                    value: principalType
-                )
-            )
+            fields.append(("principal_type", principalType))
         }
         if let principalID = credential.principalID {
-            form.queryItems?.append(
-                URLQueryItem(
-                    name: "principal_id",
-                    value: principalID
-                )
-            )
+            fields.append(("principal_id", principalID))
         }
-        guard let body = form.percentEncodedQuery?.data(using: .utf8) else {
+        guard let body = Self.formBody(fields) else {
             throw ProviderTransportError.invalidResponse(id)
         }
         let tokenContract = ProviderContractCatalog.endpoint(
@@ -176,7 +254,11 @@ struct GrokUsageProvider: UsageProvider {
             accountID: accountID,
             accessToken: accessToken,
             refreshToken: rotatedRefreshToken,
-            expiresAt: expiresAt
+            expiresAt: expiresAt,
+            idToken: ProviderPayload.text(
+                tokenPayload,
+                paths: [["id_token"]]
+            )
         )
         return DiscoveredCredential(
             provider: id,
@@ -186,7 +268,7 @@ struct GrokUsageProvider: UsageProvider {
             planName: credential.planName,
             expiresAt: expiresAt,
             source: credential.source,
-            oidcIssuer: issuer,
+            oidcIssuer: credential.oidcIssuer,
             oidcClientID: clientID,
             principalType: credential.principalType,
             principalID: credential.principalID
