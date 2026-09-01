@@ -407,7 +407,8 @@ struct CredentialDiscovery: Sendable {
         accountID: String,
         accessToken: String,
         refreshToken: String,
-        expiresAt: Date
+        expiresAt: Date,
+        idToken: String? = nil
     ) throws {
         let url = grokHome.appending(path: "auth.json")
         guard
@@ -420,6 +421,11 @@ struct CredentialDiscovery: Sendable {
         entry["key"] = accessToken
         entry["refresh_token"] = refreshToken
         entry["expires_at"] = expiresAt.ISO8601Format()
+        // Only overwrite when the exchange returned one; a response that
+        // omits `id_token` must leave the stored identity intact.
+        if let idToken {
+            entry["id_token"] = idToken
+        }
         object[accountID] = entry
         let encoded = try JSONSerialization.data(
             withJSONObject: object,

@@ -648,6 +648,96 @@ struct AdditionalCredentialDiscoveryTests {
     }
 
     @Test
+    func parsesISOExpiresAliasForGrokCredential() throws {
+        try withFixtureDirectory { home in
+            try writeJSON(
+                [
+                    "account": [
+                        "key": "grok-token",
+                        "expires": "2026-09-01T00:00:00Z"
+                    ]
+                ],
+                to: home.appending(path: ".grok/auth.json")
+            )
+            let discovery = fixtureDiscovery(
+                home: home,
+                keychain: AdditionalKeychain()
+            )
+
+            let credential = try discovery.grok(
+                now: Date(timeIntervalSince1970: 1_785_675_000)
+            )
+
+            #expect(
+                credential.expiresAt
+                    == Date(timeIntervalSince1970: 1_788_220_800)
+            )
+        }
+    }
+
+    @Test
+    func prefersExplicitGrokClientIDOverAccountKeySuffix() throws {
+        try withFixtureDirectory { home in
+            try writeJSON(
+                [
+                    "account::suffix-client": [
+                        "key": "grok-token",
+                        "oidc_client_id": "explicit-client"
+                    ]
+                ],
+                to: home.appending(path: ".grok/auth.json")
+            )
+            let discovery = fixtureDiscovery(
+                home: home,
+                keychain: AdditionalKeychain()
+            )
+
+            #expect(
+                try discovery.grok(now: .distantPast).oidcClientID
+                    == "explicit-client"
+            )
+        }
+    }
+
+    @Test
+    func derivesGrokClientIDFromAccountKeySuffix() throws {
+        try withFixtureDirectory { home in
+            try writeJSON(
+                ["account::suffix-client": ["key": "grok-token"]],
+                to: home.appending(path: ".grok/auth.json")
+            )
+            let discovery = fixtureDiscovery(
+                home: home,
+                keychain: AdditionalKeychain()
+            )
+
+            #expect(
+                try discovery.grok(now: .distantPast).oidcClientID
+                    == "suffix-client"
+            )
+        }
+    }
+
+    @Test
+    func fallsBackToPinnedGrokClientID() throws {
+        try withFixtureDirectory { home in
+            try writeJSON(
+                ["account": ["key": "grok-token"]],
+                to: home.appending(path: ".grok/auth.json")
+            )
+            let discovery = fixtureDiscovery(
+                home: home,
+                keychain: AdditionalKeychain()
+            )
+
+            #expect(
+                try discovery.grok(now: .distantPast).oidcClientID
+                    == "b1a00492-073a-47ea-816f-4c329264a828"
+            )
+        }
+    }
+
+    @Test
     func malformedOpenCodeCredentialStoreReportsFailure() throws {
         try withFixtureDirectory { home in
             try writeText(
