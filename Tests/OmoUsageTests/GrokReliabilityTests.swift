@@ -30,6 +30,84 @@ struct GrokReliabilityTests {
         }
     }
 
+    @Test(.timeLimit(.minutes(1)))
+    func cancellationOfOptionalSettingsPropagates() async throws {
+        try await HephaestusGrokReliabilityFixture.withDirectory { home in
+            let token = "grok-optional-settings-\(UUID().uuidString)"
+            let state = GrokOptionalSettingsState(outcome: .pending)
+            GrokOptionalSettingsRegistry.shared.register(
+                token: token,
+                state: state
+            )
+            defer {
+                GrokOptionalSettingsRegistry.shared.unregister(token: token)
+            }
+            try HephaestusGrokReliabilityFixture.writeCredential(
+                home: home,
+                accessToken: token
+            )
+            let task = Task {
+                try await HephaestusGrokReliabilityFixture.provider(
+                    home: home,
+                    retryPolicy: ProviderRetryPolicy(maximumAttempts: 1)
+                ).fetch(now: now)
+            }
+            await state.waitForSettingsStart()
+            await state.waitForBillingStop()
+
+            task.cancel()
+
+            await #expect(throws: CancellationError.self) {
+                try await task.value
+            }
+            #expect(state.billingRequests() == 1)
+            #expect(state.settingsRequests() == 1)
+        }
+    }
+
+    @Test(arguments: [
+        OptionalSettingsFailure.serverError,
+        .network,
+        .malformed
+    ])
+    func nonCancellationSettingsFailureRemainsOptional(
+        failure: OptionalSettingsFailure
+    ) async throws {
+        try await HephaestusGrokReliabilityFixture.withDirectory { home in
+            let token = "grok-optional-settings-\(UUID().uuidString)"
+            let state = GrokOptionalSettingsState(outcome: failure)
+            GrokOptionalSettingsRegistry.shared.register(
+                token: token,
+                state: state
+            )
+            defer {
+                GrokOptionalSettingsRegistry.shared.unregister(token: token)
+            }
+            try HephaestusGrokReliabilityFixture.writeCredential(
+                home: home,
+                accessToken: token
+            )
+
+            let usage = try await HephaestusGrokReliabilityFixture.provider(
+                home: home,
+                retryPolicy: ProviderRetryPolicy(maximumAttempts: 1)
+            ).fetch(now: now)
+
+            #expect(
+                usage.groups.first?.meters.first?.percentRemaining == 63
+            )
+            #expect(state.billingRequests() == 1)
+            #expect(state.settingsRequests() == 1)
+        }
+    }
+
+    enum OptionalSettingsFailure: String, Sendable {
+        case pending
+        case serverError
+        case network
+        case malformed
+    }
+
     @Test
     func expiredAccessTokenRefreshesAndPersistsRotatedCredentials() async throws {
         try await HephaestusGrokReliabilityFixture.withDirectory { home in
@@ -939,16 +1017,21 @@ private final class GrokRefreshURLProtocol: URLProtocol,
 }
 
 private enum HephaestusGrokReliabilityFixture {
-    static func provider(home: URL) -> GrokUsageProvider {
+    static func provider(
+        home: URL,
+        retryPolicy: ProviderRetryPolicy? = nil
+    ) -> GrokUsageProvider {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [
             HephaestusGrokReliabilityURLProtocol.self
         ]
+        let session = URLSession(configuration: configuration)
+        let http = retryPolicy.map {
+            providerHTTPTestClient(session: session, retryPolicy: $0)
+        } ?? ProviderHTTP(session: session)
         return GrokUsageProvider(
             discovery: discovery(home: home),
-            http: ProviderHTTP(
-                session: URLSession(configuration: configuration)
-            )
+            http: http
         )
     }
 
@@ -1028,6 +1111,160 @@ private struct HephaestusGrokReliabilityKeychain: KeychainReading {
     }
 }
 
+private final class GrokOptionalSettingsRegistry: @unchecked Sendable {
+    static let shared = GrokOptionalSettingsRegistry()
+
+    private let lock = NSLock()
+    private var states: [String: GrokOptionalSettingsState] = [:]
+
+    func register(token: String, state: GrokOptionalSettingsState) {
+        lock.withLock { states[token] = state }
+    }
+
+    func unregister(token: String) {
+        _ = lock.withLock { states.removeValue(forKey: token) }
+    }
+
+    func state(for request: URLRequest) -> GrokOptionalSettingsState? {
+        let prefix = "Bearer "
+        guard
+            let authorization = request.value(
+                forHTTPHeaderField: "Authorization"
+            ),
+            authorization.hasPrefix(prefix)
+        else {
+            return nil
+        }
+        let token = String(authorization.dropFirst(prefix.count))
+        return lock.withLock { states[token] }
+    }
+}
+
+private final class GrokOptionalSettingsState: @unchecked Sendable {
+    private let lock = NSLock()
+    private let outcome: GrokReliabilityTests.OptionalSettingsFailure
+    private var billingCount = 0
+    private var settingsCount = 0
+    private let settingsStarted: AsyncStream<Void>
+    private let settingsStartedContinuation:
+        AsyncStream<Void>.Continuation
+    private let billingStopped: AsyncStream<Void>
+    private let billingStoppedContinuation:
+        AsyncStream<Void>.Continuation
+
+    init(outcome: GrokReliabilityTests.OptionalSettingsFailure) {
+        self.outcome = outcome
+        (settingsStarted, settingsStartedContinuation) =
+            AsyncStream.makeStream(of: Void.self)
+        (billingStopped, billingStoppedContinuation) =
+            AsyncStream.makeStream(of: Void.self)
+    }
+
+    func start(
+        url: URL,
+        protocolInstance: URLProtocol
+    ) {
+        if url.path == "/v1/billing" {
+            lock.withLock { billingCount += 1 }
+            respond(
+                protocolInstance,
+                status: 200,
+                body: """
+                {
+                  "config": {
+                    "creditUsagePercent": 37,
+                    "currentPeriod": {
+                      "end": "2026-09-01T00:00:00Z"
+                    }
+                  }
+                }
+                """
+            )
+            return
+        }
+        guard url.path == "/v1/settings" else {
+            fail(protocolInstance, code: .unsupportedURL)
+            return
+        }
+        lock.withLock { settingsCount += 1 }
+        settingsStartedContinuation.yield()
+        settingsStartedContinuation.finish()
+        switch outcome {
+        case .pending:
+            break
+        case .serverError:
+            respond(
+                protocolInstance,
+                status: 500,
+                body: #"{"error":"settings unavailable"}"#
+            )
+        case .network:
+            fail(protocolInstance, code: .cannotConnectToHost)
+        case .malformed:
+            respond(protocolInstance, status: 200, body: "{")
+        }
+    }
+
+    func waitForSettingsStart() async {
+        var iterator = settingsStarted.makeAsyncIterator()
+        _ = await iterator.next()
+    }
+
+    func stop(url: URL) {
+        guard url.path == "/v1/billing" else { return }
+        billingStoppedContinuation.yield()
+        billingStoppedContinuation.finish()
+    }
+
+    func waitForBillingStop() async {
+        var iterator = billingStopped.makeAsyncIterator()
+        _ = await iterator.next()
+    }
+
+    func billingRequests() -> Int {
+        lock.withLock { billingCount }
+    }
+
+    func settingsRequests() -> Int {
+        lock.withLock { settingsCount }
+    }
+
+    private func respond(
+        _ protocolInstance: URLProtocol,
+        status: Int,
+        body: String
+    ) {
+        let response = HTTPURLResponse(
+            url: protocolInstance.request.url!,
+            statusCode: status,
+            httpVersion: nil,
+            headerFields: ["Content-Type": "application/json"]
+        )!
+        protocolInstance.client?.urlProtocol(
+            protocolInstance,
+            didReceive: response,
+            cacheStoragePolicy: .notAllowed
+        )
+        protocolInstance.client?.urlProtocol(
+            protocolInstance,
+            didLoad: Data(body.utf8)
+        )
+        protocolInstance.client?.urlProtocolDidFinishLoading(
+            protocolInstance
+        )
+    }
+
+    private func fail(
+        _ protocolInstance: URLProtocol,
+        code: URLError.Code
+    ) {
+        protocolInstance.client?.urlProtocol(
+            protocolInstance,
+            didFailWithError: URLError(code)
+        )
+    }
+}
+
 private final class HephaestusGrokReliabilityURLProtocol: URLProtocol,
     @unchecked Sendable
 {
@@ -1048,6 +1285,12 @@ private final class HephaestusGrokReliabilityURLProtocol: URLProtocol,
                 self,
                 didFailWithError: URLError(.badURL)
             )
+            return
+        }
+        if let state = GrokOptionalSettingsRegistry.shared.state(
+            for: request
+        ) {
+            state.start(url: url, protocolInstance: self)
             return
         }
         if url.host == "auth.grok.com" {
@@ -1174,5 +1417,15 @@ private final class HephaestusGrokReliabilityURLProtocol: URLProtocol,
         client?.urlProtocolDidFinishLoading(self)
     }
 
-    override func stopLoading() {}
+    override func stopLoading() {
+        guard
+            let url = request.url,
+            let state = GrokOptionalSettingsRegistry.shared.state(
+                for: request
+            )
+        else {
+            return
+        }
+        state.stop(url: url)
+    }
 }
