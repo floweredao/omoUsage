@@ -737,6 +737,52 @@ struct AdditionalCredentialDiscoveryTests {
         }
     }
 
+    @Test(arguments: OpenCodeKeylessAuthCase.allCases)
+    func validKeylessOpenCodeAuthWithoutDatabaseIsNotFound(
+        keyless: OpenCodeKeylessAuthCase
+    ) throws {
+        try withFixtureDirectory { home in
+            try writeText(
+                keyless.document,
+                to: home.appending(
+                    path: ".local/share/opencode/auth.json"
+                )
+            )
+            let discovery = fixtureDiscovery(
+                home: home,
+                keychain: AdditionalKeychain()
+            )
+
+            #expect(throws: CredentialDiscoveryError.notFound(.opencode)) {
+                try discovery.opencode()
+            }
+        }
+    }
+
+    @Test(arguments: OpenCodeKeylessAuthCase.allCases)
+    func validKeylessOpenCodeAuthFallsBackToLocalDatabase(
+        keyless: OpenCodeKeylessAuthCase
+    ) throws {
+        try withFixtureDirectory { home in
+            let directory = home.appending(
+                path: ".local/share/opencode"
+            )
+            try writeText(
+                keyless.document,
+                to: directory.appending(path: "auth.json")
+            )
+            try createOpenCodeDatabase(
+                directory.appending(path: "opencode.db")
+            )
+            let discovery = fixtureDiscovery(
+                home: home,
+                keychain: AdditionalKeychain()
+            )
+
+            #expect(try discovery.opencode().accessToken == "local")
+        }
+    }
+
     @Test
     func malformedOpenCodeCredentialStoreReportsFailure() throws {
         try withFixtureDirectory { home in
@@ -745,6 +791,27 @@ struct AdditionalCredentialDiscoveryTests {
                 to: home.appending(
                     path: ".local/share/opencode/auth.json"
                 )
+            )
+            let discovery = fixtureDiscovery(
+                home: home,
+                keychain: AdditionalKeychain()
+            )
+
+            #expect(throws: CredentialDiscoveryError.malformed(.opencode)) {
+                try discovery.opencode()
+            }
+        }
+    }
+
+    @Test
+    func unreadablePresentOpenCodeCredentialStoreReportsFailure() throws {
+        try withFixtureDirectory { home in
+            let auth = home.appending(
+                path: ".local/share/opencode/auth.json"
+            )
+            try FileManager.default.createDirectory(
+                at: auth,
+                withIntermediateDirectories: true
             )
             let discovery = fixtureDiscovery(
                 home: home,
@@ -991,33 +1058,121 @@ struct AdditionalCredentialDiscoveryTests {
     }
 
     @Test
-    func ignoresNonstandardOpenCodeDataDirectoryOverride() throws {
+    func usesAbsoluteOpenCodeDataDirectoryDirectlyForAuth() throws {
         try withFixtureDirectory { home in
+            let override = home.appending(path: "override-data")
             let xdgData = home.appending(path: "xdg-data")
-            try writeJSON(
-                [
-                    "opencode-go": [
-                        "type": "api",
-                        "key": "xdg-opencode-token"
-                    ]
-                ],
-                to: xdgData.appending(path: "opencode/auth.json")
+            try writeOpenCodeAuth(
+                token: "override-opencode-token",
+                in: override
             )
-            let unrelated = home.appending(path: "unrelated-opencode")
-            try writeJSON(
-                [
-                    "opencode-go": [
-                        "type": "api",
-                        "key": "wrong-token"
-                    ]
-                ],
-                to: unrelated.appending(path: "auth.json")
+            try writeOpenCodeAuth(
+                token: "nested-opencode-token",
+                in: override.appending(path: "opencode")
+            )
+            try writeOpenCodeAuth(
+                token: "xdg-opencode-token",
+                in: xdgData.appending(path: "opencode")
+            )
+            try writeOpenCodeAuth(
+                token: "default-opencode-token",
+                in: home.appending(path: ".local/share/opencode")
             )
             let discovery = fixtureDiscovery(
                 home: home,
                 environment: [
-                    "XDG_DATA_HOME": xdgData.path,
-                    "OPENCODE_DATA_DIR": unrelated.path
+                    "OPENCODE_DATA_DIR": override.path,
+                    "XDG_DATA_HOME": xdgData.path
+                ],
+                keychain: AdditionalKeychain()
+            )
+
+            #expect(
+                try discovery.opencode().accessToken
+                    == "override-opencode-token"
+            )
+        }
+    }
+
+    @Test
+    func usesSelectedOpenCodeDirectoryForCanonicalDatabase() throws {
+        try withFixtureDirectory { home in
+            let override = home.appending(path: "override-data")
+            let xdgDirectory = home.appending(path: "xdg-data/opencode")
+            let defaultDirectory = home.appending(
+                path: ".local/share/opencode"
+            )
+            try createOpenCodeDatabaseFixtures(in: override)
+            try createOpenCodeDatabase(
+                override.appending(path: "opencode/opencode.db")
+            )
+            try createOpenCodeDatabase(
+                xdgDirectory.appending(path: "opencode.db")
+            )
+            try createOpenCodeDatabase(
+                defaultDirectory.appending(path: "opencode.db")
+            )
+            let discovery = fixtureDiscovery(
+                home: home,
+                environment: [
+                    "OPENCODE_DATA_DIR": override.path,
+                    "XDG_DATA_HOME": xdgDirectory
+                        .deletingLastPathComponent().path
+                ],
+                keychain: AdditionalKeychain()
+            )
+            let expected = override.appending(path: "opencode.db")
+                .resolvingSymlinksInPath().standardizedFileURL
+
+            #expect(try discovery.openCodeDatabase() == expected)
+            #expect(try discovery.opencode().accessToken == "local")
+        }
+    }
+
+    @Test
+    func prefersAbsoluteXDGOpenCodeDirectoryOverDefault() throws {
+        try withFixtureDirectory { home in
+            let xdgData = home.appending(path: "xdg-data")
+            try writeOpenCodeAuth(
+                token: "xdg-opencode-token",
+                in: xdgData.appending(path: "opencode")
+            )
+            try writeOpenCodeAuth(
+                token: "default-opencode-token",
+                in: home.appending(path: ".local/share/opencode")
+            )
+            let discovery = fixtureDiscovery(
+                home: home,
+                environment: ["XDG_DATA_HOME": xdgData.path],
+                keychain: AdditionalKeychain()
+            )
+
+            #expect(
+                try discovery.opencode().accessToken
+                    == "xdg-opencode-token"
+            )
+        }
+    }
+
+    @Test(arguments: ["relative-data", "", " \t "])
+    func ignoresInvalidOpenCodeDataDirectoryOverride(
+        override: String
+    ) throws {
+        try withFixtureDirectory { home in
+            let xdgData = home.appending(path: "xdg-data")
+            try writeOpenCodeAuth(
+                token: "xdg-opencode-token",
+                in: xdgData.appending(path: "opencode")
+            )
+            try writeOpenCodeAuth(
+                token: "default-opencode-token",
+                in: home.appending(path: ".local/share/opencode")
+            )
+            let discovery = fixtureDiscovery(
+                home: home,
+                environment: [
+                    "OPENCODE_DATA_DIR": override,
+                    "XDG_DATA_HOME": xdgData.path
                 ],
                 keychain: AdditionalKeychain()
             )
@@ -1053,6 +1208,26 @@ struct AdditionalCredentialDiscoveryTests {
                 try discovery.opencode().accessToken
                     == "default-opencode-token"
             )
+        }
+    }
+
+    enum OpenCodeKeylessAuthCase: String, CaseIterable, Sendable {
+        case absentGoLogin
+        case emptyGoKey
+        case nonObjectGoLogin
+        case unrelatedSibling
+
+        var document: String {
+            switch self {
+            case .absentGoLogin:
+                "{}"
+            case .emptyGoKey:
+                #"{"opencode-go":{"key":""}}"#
+            case .nonObjectGoLogin:
+                #"{"opencode-go":"signed-out"}"#
+            case .unrelatedSibling:
+                #"{"other":{"key":"unrelated"}}"#
+            }
         }
     }
 
@@ -1094,6 +1269,21 @@ struct AdditionalCredentialDiscoveryTests {
         try Data(text.utf8).write(to: url)
     }
 
+    private func writeOpenCodeAuth(
+        token: String,
+        in directory: URL
+    ) throws {
+        try writeJSON(
+            [
+                "opencode-go": [
+                    "type": "api",
+                    "key": token
+                ]
+            ],
+            to: directory.appending(path: "auth.json")
+        )
+    }
+
     private func createOpenCodeDatabaseFixtures(
         in directory: URL
     ) throws {
@@ -1124,6 +1314,10 @@ struct AdditionalCredentialDiscoveryTests {
     }
 
     private func createOpenCodeDatabase(_ url: URL) throws {
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
         let process = Process()
         process.executableURL = URL(filePath: "/usr/bin/sqlite3")
         process.arguments = [
