@@ -1,6 +1,37 @@
 import OmoUsageCore
 import SwiftUI
 
+/// How a provider metadata row derives its foreground.
+///
+/// The side-notch panel is a nonactivating panel, so it never becomes key.
+/// System `.secondary` text therefore renders there permanently in its
+/// inactive, dimmed form over vibrant material and loses stem definition,
+/// while a primary-derived alpha keeps the same hierarchy at a legible
+/// weight in both the active and dimmed states.
+enum ProviderMetadataForegroundRole: Equatable, Sendable {
+    case systemSecondary
+    case primaryDerived
+}
+
+/// The provider metadata seam: meter reset lines and the freshness
+/// timestamp lines rendered beside them. Both stay subordinate to the
+/// value row's full primary and share one foreground so the seam cannot
+/// drift apart.
+enum ProviderMetadataVisualTokens {
+    static let role = ProviderMetadataForegroundRole.primaryDerived
+    static let opacity = 0.78
+    static let minimumOpacity = 0.72
+
+    static var foreground: Color {
+        switch role {
+        case .systemSecondary:
+            Color.secondary
+        case .primaryDerived:
+            Color.primary.opacity(opacity)
+        }
+    }
+}
+
 struct ProviderSectionView: View {
     let usage: ProviderUsage
     var showsAccountLabel = false
@@ -70,7 +101,9 @@ struct ProviderSectionView: View {
                         style: .provider
                     )
                         .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(
+                            ProviderMetadataVisualTokens.foreground
+                        )
                 }
 
                 if let attemptAt = freshness.attemptAt {
@@ -79,7 +112,9 @@ struct ProviderSectionView: View {
                         style: .footer
                     )
                         .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(
+                            ProviderMetadataVisualTokens.foreground
+                        )
                 }
             }
         }

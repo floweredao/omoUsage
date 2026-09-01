@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import Testing
 @testable import OmoUsage
 @testable import OmoUsageCore
@@ -23,6 +24,38 @@ struct DashboardVisualContractTests {
         )
         #expect(UsageMeterVisualTokens.trackOpacity == 0.16)
         #expect(SettingsRowVisualTokens.usesSemanticSystemColors)
+    }
+
+    @Test
+    func providerMetadataUsesPrimaryDerivedForegroundOverDimmedMaterial() {
+        // The side-notch panel never becomes key, so system secondary text
+        // renders there in its permanently dimmed form. Meter reset lines
+        // and the freshness timestamps beside them share one
+        // primary-derived foreground at a pinned alpha.
+        #expect(ProviderMetadataVisualTokens.role == .primaryDerived)
+        #expect(ProviderMetadataVisualTokens.role != .systemSecondary)
+        #expect(ProviderMetadataVisualTokens.opacity == 0.78)
+        #expect(
+            ProviderMetadataVisualTokens.foreground
+                == Color.primary.opacity(
+                    ProviderMetadataVisualTokens.opacity
+                )
+        )
+        #expect(
+            ProviderMetadataVisualTokens.foreground != Color.secondary
+        )
+
+        // Contrast floor for the dimmed state.
+        #expect(ProviderMetadataVisualTokens.minimumOpacity == 0.72)
+        #expect(
+            ProviderMetadataVisualTokens.opacity
+                >= ProviderMetadataVisualTokens.minimumOpacity
+        )
+
+        // Derived from primary, never opaque: hierarchy is preserved
+        // below the value row's full primary.
+        #expect(ProviderMetadataVisualTokens.opacity > 0)
+        #expect(ProviderMetadataVisualTokens.opacity < 1)
     }
 
     @Test
