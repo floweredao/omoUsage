@@ -68,16 +68,17 @@ other privileged controls remain native-only.
 - Standard meter: muted eucalyptus `#4C8577`; extra meter: muted amber
   `#B7793F`; track: primary at 9% opacity.
 - Provider metadata — meter reset lines and the freshness timestamp lines
-  beside them — is primary-derived rather than system `.secondary`. Both use
-  `ProviderMetadataVisualTokens.foreground`, the primary label color at
-  `opacity`, 0.78. The side-notch panel is nonactivating and never becomes
-  key, so secondary text would render there permanently in its inactive,
-  dimmed form and lose stem definition over vibrant material. That seam
-  stays at or above `minimumOpacity`, 0.72 of primary, and always below the
-  value row's full primary, so hierarchy survives without sacrificing
-  legibility in the dimmed state. Plan pills, account labels, availability
-  text, group titles, and credit text keep the system `.secondary`
-  hierarchy.
+  beside them — uses full semantic primary, not system `.secondary` and not
+  a reduced alpha. Both read `ProviderMetadataVisualTokens.foreground`,
+  which is `Color.primary` at `opacity` 1 with a `minimumOpacity` floor of
+  1. The side-notch panel is nonactivating and never becomes key, so
+  secondary text renders there permanently in its inactive, dimmed form;
+  measured contrast on that dimmed baseline puts every alpha below full
+  primary under 4.5:1, while full primary reaches 4.71:1. Hierarchy is
+  therefore carried by typography — 11 pt regular metadata against 12.5 pt
+  semibold values — rather than by opacity. Plan pills, account labels,
+  availability text, group titles, and credit text keep the system
+  `.secondary` hierarchy.
 - Footer controls share the same passive secondary foreground. No icon-only
   footer action receives a persistent filled background.
 - Provider colors identify brands without expanding the dashboard chrome.

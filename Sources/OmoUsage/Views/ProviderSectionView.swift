@@ -14,20 +14,22 @@ enum ProviderMetadataForegroundRole: Equatable, Sendable {
 }
 
 /// The provider metadata seam: meter reset lines and the freshness
-/// timestamp lines rendered beside them. Both stay subordinate to the
-/// value row's full primary and share one foreground so the seam cannot
-/// drift apart.
+/// timestamp lines rendered beside them. Both share one foreground so the
+/// seam cannot drift apart. Measured QA on the dimmed capture put every
+/// alpha below full primary under 4.5:1, so the seam carries no alpha at
+/// all: hierarchy comes from 11 pt regular type against the 12.5 pt
+/// semibold value row.
 enum ProviderMetadataVisualTokens {
     static let role = ProviderMetadataForegroundRole.primaryDerived
-    static let opacity = 0.78
-    static let minimumOpacity = 0.72
+    static let opacity = 1.0
+    static let minimumOpacity = 1.0
 
     static var foreground: Color {
         switch role {
         case .systemSecondary:
             Color.secondary
         case .primaryDerived:
-            Color.primary.opacity(opacity)
+            opacity < 1 ? Color.primary.opacity(opacity) : Color.primary
         }
     }
 }

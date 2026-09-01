@@ -34,28 +34,23 @@ struct DashboardVisualContractTests {
         // primary-derived foreground at a pinned alpha.
         #expect(ProviderMetadataVisualTokens.role == .primaryDerived)
         #expect(ProviderMetadataVisualTokens.role != .systemSecondary)
-        #expect(ProviderMetadataVisualTokens.opacity == 0.78)
+        #expect(ProviderMetadataVisualTokens.opacity == 1)
         #expect(
-            ProviderMetadataVisualTokens.foreground
-                == Color.primary.opacity(
-                    ProviderMetadataVisualTokens.opacity
-                )
+            ProviderMetadataVisualTokens.foreground == Color.primary
         )
         #expect(
             ProviderMetadataVisualTokens.foreground != Color.secondary
         )
 
-        // Contrast floor for the dimmed state.
-        #expect(ProviderMetadataVisualTokens.minimumOpacity == 0.72)
+        // Measured QA: nothing below full primary clears 4.5:1 on the
+        // dimmed baseline, so the floor is full strength.
+        #expect(ProviderMetadataVisualTokens.minimumOpacity == 1)
         #expect(
             ProviderMetadataVisualTokens.opacity
                 >= ProviderMetadataVisualTokens.minimumOpacity
         )
-
-        // Derived from primary, never opaque: hierarchy is preserved
-        // below the value row's full primary.
         #expect(ProviderMetadataVisualTokens.opacity > 0)
-        #expect(ProviderMetadataVisualTokens.opacity < 1)
+        #expect(ProviderMetadataVisualTokens.opacity <= 1)
     }
 
     @Test
