@@ -104,7 +104,7 @@ struct SettingsView: View {
                         }
                         .labelsHidden()
                         .pickerStyle(.segmented)
-                        .frame(width: 180)
+                        .fixedSize(horizontal: true, vertical: false)
                     }
                     .padding(10)
                     .background(
@@ -136,7 +136,7 @@ struct SettingsView: View {
                         }
                         .labelsHidden()
                         .pickerStyle(.segmented)
-                        .frame(width: 240)
+                        .fixedSize(horizontal: true, vertical: false)
                     }
                     .padding(10)
                     .background(
