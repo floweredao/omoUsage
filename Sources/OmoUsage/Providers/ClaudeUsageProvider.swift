@@ -120,11 +120,7 @@ struct ClaudeUsageProvider: UsageProvider {
             {
                 authFailure = error
             } catch {
-                return try await fetchDesktopUsage(
-                    now: now,
-                    cause: error,
-                    allowsCachedHistory: false
-                )
+                throw error
             }
         }
         return try await fetchDesktopUsage(
