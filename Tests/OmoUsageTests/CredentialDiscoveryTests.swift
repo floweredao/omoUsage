@@ -78,6 +78,120 @@ struct CredentialDiscoveryTests {
     }
 
     @Test
+    func acceptsFutureISO8601AntigravityExpiry() throws {
+        let discovery = antigravityDiscovery(
+            """
+            {
+              "access_token": "fixture-antigravity-access",
+              "refresh_token": "fixture-antigravity-refresh",
+              "expiry": "2026-09-01T00:00:00Z"
+            }
+            """
+        )
+
+        let credential = try discovery.antigravity(now: now)
+
+        #expect(credential.source == .keychain)
+        #expect(
+            credential.expiresAt
+                == Date(timeIntervalSince1970: 1_788_220_800)
+        )
+    }
+
+    @Test
+    func rejectsExpiredISO8601AntigravityExpiresAtAlias() {
+        let discovery = antigravityDiscovery(
+            """
+            {
+              "access_token": "fixture-antigravity-access",
+              "expires_at": "2026-01-01T00:00:00Z"
+            }
+            """
+        )
+
+        #expect(
+            throws: CredentialDiscoveryError.expired(.antigravity)
+        ) {
+            try discovery.antigravity(now: now)
+        }
+    }
+
+    @Test
+    func rejectsExpiredISO8601AntigravityExpiryDateAlias() {
+        let discovery = antigravityDiscovery(
+            """
+            {
+              "access_token": "fixture-antigravity-access",
+              "expiry_date": "2026-01-01T00:00:00Z"
+            }
+            """
+        )
+
+        #expect(
+            throws: CredentialDiscoveryError.expired(.antigravity)
+        ) {
+            try discovery.antigravity(now: now)
+        }
+    }
+
+    @Test
+    func acceptsFractionalISO8601AntigravityExpiry() throws {
+        let discovery = antigravityDiscovery(
+            """
+            {
+              "access_token": "fixture-antigravity-access",
+              "expiry": "2026-09-01T00:00:00.500Z"
+            }
+            """
+        )
+
+        let credential = try discovery.antigravity(now: now)
+
+        #expect(
+            credential.expiresAt
+                == Date(timeIntervalSince1970: 1_788_220_800.5)
+        )
+    }
+
+    @Test
+    func acceptsNumericMillisecondAntigravityExpiry() throws {
+        let discovery = antigravityDiscovery(
+            """
+            {
+              "access_token": "fixture-antigravity-access",
+              "expiry": 1785685000000
+            }
+            """
+        )
+
+        let credential = try discovery.antigravity(now: now)
+
+        #expect(
+            credential.expiresAt
+                == Date(timeIntervalSince1970: 1_785_685_000)
+        )
+    }
+
+    @Test
+    func treatsUnparsableAntigravityExpiryAsUnknown() throws {
+        let discovery = antigravityDiscovery(
+            """
+            {
+              "access_token": "fixture-antigravity-access",
+              "expiry": "not-a-timestamp"
+            }
+            """
+        )
+
+        let credential = try discovery.antigravity(now: now)
+
+        #expect(credential.expiresAt == nil)
+        #expect(
+            credential.accessToken == "fixture-antigravity-access"
+        )
+    }
+
+    @Test
     func distinguishesMissingMalformedAndExpired() throws {
         try withFixtureDirectory { directory in
             let missing = directory.appending(path: "missing.json")
@@ -172,6 +286,22 @@ struct CredentialDiscoveryTests {
         #expect(!diagnostic.contains("fixture-access"))
         #expect(!diagnostic.contains("fixture-refresh"))
         #expect(diagnostic.contains("<redacted>"))
+    }
+
+    private func antigravityDiscovery(
+        _ json: String
+    ) -> CredentialDiscovery {
+        let missing = URL(filePath: "/definitely/missing")
+        return CredentialDiscovery(
+            paths: CredentialPaths(claude: missing, codex: missing),
+            environment: [:],
+            keychain: StubKeychain(
+                values: [
+                    "gemini\u{0}antigravity":
+                        Data(json.utf8).base64EncodedString()
+                ]
+            )
+        )
     }
 
     private func makeDiscovery(

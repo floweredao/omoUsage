@@ -489,11 +489,13 @@ struct CredentialDiscovery: Sendable {
     }
 
     private func credentialDate(_ value: Any?) -> Date? {
-        guard var seconds = UsageJSON.number(value) else { return nil }
+        guard var seconds = UsageJSON.number(value) else {
+            return UsageJSON.date(value)
+        }
         if seconds > 10_000_000_000 {
             seconds /= 1_000
         }
-        return Date(timeIntervalSince1970: seconds)
+        return UsageJSON.date(timeIntervalSince1970: seconds)
     }
 }
 
