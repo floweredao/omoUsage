@@ -3,11 +3,25 @@ import Foundation
 
 struct DevinUsageProvider: UsageProvider {
     let id = ProviderID.devin
+    let accountID: AccountID
+    let accountLabel: String
     let discovery: CredentialDiscovery
     let http: ProviderHTTP
 
+    init(
+        discovery: CredentialDiscovery,
+        http: ProviderHTTP = ProviderHTTP(),
+        accountID: AccountID = .legacy,
+        accountLabel: String = AccountLabel.defaultValue
+    ) {
+        self.accountID = accountID
+        self.accountLabel = accountLabel
+        self.discovery = discovery
+        self.http = http
+    }
+
     func fetch(now: Date) async throws -> ProviderUsage {
-        let credential = try discovery.devin()
+        let credential = try discovery.devin(accountID: accountID)
         let endpoint = ProviderContractCatalog.endpoint(
             .devinUserStatus,
             for: id

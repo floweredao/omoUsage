@@ -3,11 +3,28 @@ import Foundation
 
 struct CursorUsageProvider: UsageProvider {
     let id = ProviderID.cursor
+    let accountID: AccountID
+    let accountLabel: String
     let discovery: CredentialDiscovery
     let http: ProviderHTTP
 
+    init(
+        discovery: CredentialDiscovery,
+        http: ProviderHTTP = ProviderHTTP(),
+        accountID: AccountID = .legacy,
+        accountLabel: String = AccountLabel.defaultValue
+    ) {
+        self.accountID = accountID
+        self.accountLabel = accountLabel
+        self.discovery = discovery
+        self.http = http
+    }
+
     func fetch(now: Date) async throws -> ProviderUsage {
-        let credential = try discovery.cursor(now: now)
+        let credential = try discovery.cursor(
+            accountID: accountID,
+            now: now
+        )
         async let usageData = get(
             "/api/usage-summary",
             purpose: .cursorUsageSummary,

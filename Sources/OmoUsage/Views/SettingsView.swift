@@ -15,9 +15,8 @@ struct SettingsView: View {
     let onRetryWebDashboard: () -> Void
     let onExportDiagnostics: () -> DiagnosticExportOutcome
     @State private var keyDrafts: [ProviderID: String] = [:]
-    @State private var newAccountProvider = ProviderID.openrouter
-    @State private var newAccountLabel = ""
-    @State private var newAccountKey = ""
+    @State private var newAccountLabels: [ProviderID: String] = [:]
+    @State private var newAccountKeys: [ProviderID: String] = [:]
     @State private var feedback: LocalizedText?
     @State private var setupError: ProviderSetupError?
     @State private var showsRegistryResetConfirmation = false
@@ -279,22 +278,24 @@ struct SettingsView: View {
                                         await viewModel.retryProvider(provider)
                                     }
                                 },
+                                accounts: accountRegistryController.accounts
+                                    .filter { $0.provider == provider },
+                                newAccountLabel: accountLabelBinding(
+                                    for: provider
+                                ),
+                                newAccountKey: accountKeyBinding(
+                                    for: provider
+                                ),
+                                onAddAccount: {
+                                    addAccount(for: provider)
+                                },
+                                onRemoveAccount: removeAccount,
                                 codexPlanMultiplier:
                                     provider == .codex
                                         ? $codexPlanMultiplier
                                         : nil
                             )
                         }
-
-                        APIKeyAccountsSection(
-                            accounts: accountRegistryController.apiKeyAccounts,
-                            provider: $newAccountProvider,
-                            label: $newAccountLabel,
-                            key: $newAccountKey,
-                            onAdd: addAPIKeyAccount,
-                            onRemove: removeAPIKeyAccount
-                        )
-                        .padding(.top, 4)
                     }
                 }
                 .padding(.vertical, 2)
@@ -399,6 +400,24 @@ struct SettingsView: View {
         )
     }
 
+    private func accountLabelBinding(
+        for provider: ProviderID
+    ) -> Binding<String> {
+        Binding(
+            get: { newAccountLabels[provider, default: ""] },
+            set: { newAccountLabels[provider] = $0 }
+        )
+    }
+
+    private func accountKeyBinding(
+        for provider: ProviderID
+    ) -> Binding<String> {
+        Binding(
+            get: { newAccountKeys[provider, default: ""] },
+            set: { newAccountKeys[provider] = $0 }
+        )
+    }
+
     private func startConnection(for provider: ProviderID) {
         let result = ProviderSetup.perform(for: provider)
         connectionCoordinator.record(result, for: provider)
@@ -473,18 +492,18 @@ struct SettingsView: View {
         }
     }
 
-    private func addAPIKeyAccount() {
+    private func addAccount(for provider: ProviderID) {
         do {
-            let identity = try accountRegistryController.addAPIKeyAccount(
-                provider: newAccountProvider,
-                label: newAccountLabel,
-                key: newAccountKey
+            let identity = try accountRegistryController.addAccount(
+                provider: provider,
+                label: newAccountLabels[provider, default: ""],
+                key: newAccountKeys[provider]
             )
-            let label = accountRegistryController.apiKeyAccounts.first {
+            let label = accountRegistryController.accounts.first {
                 $0.id == identity
             }?.label ?? AccountLabel.defaultValue
-            newAccountLabel = ""
-            newAccountKey = ""
+            newAccountLabels[provider] = ""
+            newAccountKeys[provider] = ""
             feedback = .formatted(.addedAccount, label)
             onRegistryChange()
         } catch {
@@ -492,12 +511,12 @@ struct SettingsView: View {
         }
     }
 
-    private func removeAPIKeyAccount(_ identity: AccountProviderID) {
-        let label = accountRegistryController.apiKeyAccounts.first {
+    private func removeAccount(_ identity: AccountProviderID) {
+        let label = accountRegistryController.accounts.first {
             $0.id == identity
         }?.label ?? AccountLabel.defaultValue
         do {
-            try accountRegistryController.removeAPIKeyAccount(identity)
+            try accountRegistryController.removeAccount(identity)
             feedback = .formatted(.removedAccount, label)
             onRegistryChange()
         } catch {
@@ -562,89 +581,22 @@ private struct AccountRegistryRecoveryBanner: View {
     }
 }
 
-private struct APIKeyAccountsSection: View {
-    let accounts: [ProviderAPIKeyAccountMetadata]
-    @Binding var provider: ProviderID
+private struct ProviderAccountsSection: View {
+    let provider: ProviderID
+    let accounts: [ProviderAccountMetadata]
     @Binding var label: String
     @Binding var key: String
     let onAdd: () -> Void
     let onRemove: (AccountProviderID) -> Void
     @Environment(\.appLocalization) private var localization
 
-    private let supportedProviders: [ProviderID] = [
-        .opencode, .openrouter, .zai
-    ]
-
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(localization.text(.apiKeyAccounts))
-                .font(.system(size: 14, weight: .bold))
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 8) {
-                    Menu {
-                        ForEach(supportedProviders, id: \.self) { option in
-                            Button(option.displayName) {
-                                provider = option
-                            }
-                        }
-                    } label: {
-                        Text(provider.displayName)
-                            .frame(
-                                maxWidth: .infinity,
-                                alignment: .leading
-                            )
-                    }
-                    .frame(width: 132)
-                    .accessibilityLabel(
-                        localization.text(.accountProvider)
-                    )
-                    .accessibilityValue(provider.displayName)
-
-                    TextField(
-                        localization.text(.accountAlias),
-                        text: $label
-                    )
-                    .textFieldStyle(.roundedBorder)
-                    .accessibilityLabel(
-                        localization.text(.accountAlias)
-                    )
-                }
-
-                HStack(spacing: 8) {
-                    SecureField(
-                        localization.text(.apiKey),
-                        text: $key
-                    )
-                    .textFieldStyle(.roundedBorder)
-                    Button(localization.text(.addAccount), action: onAdd)
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
-                        .disabled(!canAdd)
-                }
-            }
-            .padding(10)
-            .background(
-                Color(nsColor: .controlBackgroundColor),
-                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(SettingsRowVisualTokens.border, lineWidth: 0.5)
-            }
-
             ForEach(accounts) { account in
                 HStack(spacing: 10) {
-                    ProviderIcon(provider: account.provider)
-                        .frame(width: 24, height: 24)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(account.provider.displayName)
-                            .font(.system(size: 13.5, weight: .semibold))
                         Text(account.label)
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
+                            .font(.system(size: 13.5, weight: .semibold))
                         if let source = account.source {
                             Text(localization.text(source.stringKey))
                                 .font(.system(size: 10.5))
@@ -664,28 +616,45 @@ private struct APIKeyAccountsSection: View {
                         localization.format(.removeAccount, account.label)
                     )
                 }
-                .padding(10)
-                .background(
-                    Color(nsColor: .controlBackgroundColor),
-                    in: RoundedRectangle(
-                        cornerRadius: 10,
-                        style: .continuous
-                    )
+            }
+
+            HStack(spacing: 8) {
+                TextField(
+                    localization.text(.accountAlias),
+                    text: $label
                 )
-                .overlay {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(
-                            SettingsRowVisualTokens.border,
-                            lineWidth: 0.5
-                        )
+                .textFieldStyle(.roundedBorder)
+                .accessibilityLabel(localization.text(.accountAlias))
+
+                if acceptsAPIKey {
+                    SecureField(
+                        localization.text(.apiKey),
+                        text: $key
+                    )
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityLabel(localization.text(.apiKey))
                 }
+
+                Button(localization.text(.addAccount), action: onAdd)
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(!canAdd)
             }
         }
     }
 
+    private var acceptsAPIKey: Bool {
+        ProviderSetup.descriptor(for: provider)?.acceptsAPIKey == true
+    }
+
     private var canAdd: Bool {
         !label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && (
+                !acceptsAPIKey
+                    || !key.trimmingCharacters(
+                        in: .whitespacesAndNewlines
+                    ).isEmpty
+            )
     }
 }
 
@@ -922,6 +891,11 @@ private struct ProviderSettingsRow: View {
     let onDisconnect: () -> Void
     let onReconnect: () -> Void
     let onRetry: () -> Void
+    let accounts: [ProviderAccountMetadata]
+    @Binding var newAccountLabel: String
+    @Binding var newAccountKey: String
+    let onAddAccount: () -> Void
+    let onRemoveAccount: (AccountProviderID) -> Void
     let codexPlanMultiplier: Binding<CodexPlanMultiplier>?
 
     @State private var isHovered = false
@@ -1069,6 +1043,17 @@ private struct ProviderSettingsRow: View {
                         .controlSize(.small)
                 }
             }
+
+            Divider()
+
+            ProviderAccountsSection(
+                provider: provider,
+                accounts: accounts,
+                label: $newAccountLabel,
+                key: $newAccountKey,
+                onAdd: onAddAccount,
+                onRemove: onRemoveAccount
+            )
         }
         .padding(10)
         .background(

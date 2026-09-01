@@ -108,7 +108,7 @@ struct AccountStateMigrationAndSnapshotTests {
         let persisted = try Data(contentsOf: fixture.registryURL)
         let persistedText = String(decoding: persisted, as: UTF8.self)
 
-        #expect(registry.version == 2)
+        #expect(registry.version == ProviderAccountStore.currentVersion)
         #expect(registry.migrationVersion == 1)
         #expect(registry.accounts == [
             ProviderAccount(id: .legacy, label: "Default Account")
@@ -130,7 +130,7 @@ struct AccountStateMigrationAndSnapshotTests {
                 providerID: .claude
             )
         ])
-        #expect(registry.apiKeyReferences == [
+        #expect(Array(registry.providerReferences.suffix(1)) == [
             AccountProviderID(
                 accountID: .legacy,
                 providerID: .openrouter
@@ -160,7 +160,7 @@ struct AccountStateMigrationAndSnapshotTests {
 
         let registry = try store.loadOrMigrate()
 
-        #expect(registry.apiKeyReferences == [
+        #expect(Array(registry.providerReferences.suffix(1)) == [
             AccountProviderID(
                 accountID: .legacy,
                 providerID: .opencode
@@ -192,7 +192,7 @@ struct AccountStateMigrationAndSnapshotTests {
 
         let registry = try store.loadOrMigrate()
 
-        #expect(registry.apiKeyReferences.contains(
+        #expect(registry.providerReferences.contains(
             AccountProviderID(
                 accountID: .legacy,
                 providerID: .opencode
@@ -224,7 +224,7 @@ struct AccountStateMigrationAndSnapshotTests {
 
         let registry = try store.loadOrMigrate()
 
-        #expect(registry.apiKeyReferences.contains(
+        #expect(registry.providerReferences.contains(
             AccountProviderID(
                 accountID: .legacy,
                 providerID: .opencode
@@ -287,7 +287,7 @@ struct AccountStateMigrationAndSnapshotTests {
               "disconnected": [],
               "apiKeyReferences": [{
                 "accountID": "00000000-0000-0000-0000-000000000001",
-                "providerID": "codex"
+                "providerID": "unknown"
               }]
             }
             """.utf8
@@ -301,6 +301,50 @@ struct AccountStateMigrationAndSnapshotTests {
         #expect(throws: ProviderAccountStoreError.invalidRegistry) {
             try store.loadOrMigrate()
         }
+    }
+
+    @Test
+    func versionTwoRegistryMaterializesCompanionReferences() throws {
+        let fixture = try RegistryFixture()
+        defer { fixture.remove() }
+        try FileManager.default.createDirectory(
+            at: fixture.rootURL,
+            withIntermediateDirectories: true
+        )
+        try Data(
+            """
+            {
+              "version": 2,
+              "migrationVersion": 1,
+              "accounts": [{
+                "id": "00000000-0000-0000-0000-000000000001",
+                "label": "Default Account"
+              }],
+              "displayOrder": [],
+              "disconnected": [],
+              "apiKeyReferences": [{
+                "accountID": "00000000-0000-0000-0000-000000000001",
+                "providerID": "openrouter"
+              }]
+            }
+            """.utf8
+        ).write(to: fixture.registryURL)
+        let store = ProviderAccountStore(
+            registryURL: fixture.registryURL,
+            defaults: fixture.defaults,
+            legacyAPIKeyPresence: { _ in false }
+        )
+
+        let registry = try store.loadOrMigrate()
+
+        #expect(registry.version == ProviderAccountStore.currentVersion)
+        #expect(
+            registry.providerReferences.map(\.providerID)
+                == [
+                    .claude, .codex, .cursor, .antigravity,
+                    .copilot, .devin, .grok, .openrouter
+                ]
+        )
     }
 
     @Test

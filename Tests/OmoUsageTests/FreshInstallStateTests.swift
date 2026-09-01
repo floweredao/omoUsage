@@ -36,7 +36,15 @@ struct FreshInstallStateTests {
             AccountProviderID(accountID: .legacy, providerID: $0)
         })
         #expect(registry.disconnected.isEmpty)
-        #expect(registry.apiKeyReferences.isEmpty)
+        #expect(
+            registry.providerReferences
+                == ProviderID.allCases.prefix(7).map {
+                    AccountProviderID(
+                        accountID: .legacy,
+                        providerID: $0
+                    )
+                }
+        )
         #expect(try permissions(of: store.registryURL) == 0o600)
         #expect(
             try permissions(of: store.registryURL.deletingLastPathComponent())
@@ -79,7 +87,7 @@ struct FreshInstallStateTests {
                 ],
                 displayOrder: [],
                 disconnected: [],
-                apiKeyReferences: []
+                providerReferences: []
             )
         )
         try data.write(to: registryURL)

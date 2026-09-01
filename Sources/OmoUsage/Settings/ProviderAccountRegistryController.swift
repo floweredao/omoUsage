@@ -11,6 +11,7 @@ enum ProviderAccountRegistryControllerError: Error, Equatable {
     case persistenceUnavailable
     case keyStoreUnavailable
     case registryUnavailable
+    case credentialUnavailable
 }
 
 enum ProviderKeyStorageSource: Equatable, Sendable {
@@ -19,7 +20,7 @@ enum ProviderKeyStorageSource: Equatable, Sendable {
     case legacyFile
 }
 
-struct ProviderAPIKeyAccountMetadata: Identifiable, Equatable, Sendable {
+struct ProviderAccountMetadata: Identifiable, Equatable, Sendable {
     var id: AccountProviderID { accountProviderID }
     let accountProviderID: AccountProviderID
     let provider: ProviderID
@@ -65,6 +66,8 @@ final class ProviderAccountRegistryController {
     @ObservationIgnored
     private let makeAccountID: () -> AccountID
     @ObservationIgnored
+    private let captureCredential: (ProviderID) throws -> String
+    @ObservationIgnored
     private let persistenceEnabled: Bool
     @ObservationIgnored
     private let mutationCoordinator: ProviderMutationCoordinator
@@ -80,6 +83,12 @@ final class ProviderAccountRegistryController {
             ProviderAPIKeyStore.live(for: $0, accountID: $1)
         },
         makeAccountID: @escaping () -> AccountID = { AccountID() },
+        captureCredential: @escaping (ProviderID) throws -> String = {
+            try CredentialDiscovery.live().captureCredential(
+                for: $0,
+                now: Date()
+            )
+        },
         mutationAfterPhase: @escaping ProviderMutationCoordinator.PhaseHook = { _ in }
     ) {
         self.store = store
@@ -88,6 +97,7 @@ final class ProviderAccountRegistryController {
         self.persistenceEnabled = persistenceEnabled
         self.keyStore = keyStore
         self.makeAccountID = makeAccountID
+        self.captureCredential = captureCredential
         self.mutationCoordinator = ProviderMutationCoordinator(
             store: store,
             keyStore: keyStore,
@@ -102,6 +112,12 @@ final class ProviderAccountRegistryController {
             ProviderAPIKeyStore.live(for: $0, accountID: $1)
         },
         makeAccountID: @escaping () -> AccountID = { AccountID() },
+        captureCredential: @escaping (ProviderID) throws -> String = {
+            try CredentialDiscovery.live().captureCredential(
+                for: $0,
+                now: Date()
+            )
+        },
         mutationAfterPhase: @escaping ProviderMutationCoordinator.PhaseHook = { _ in }
     ) {
         self.store = store
@@ -110,6 +126,7 @@ final class ProviderAccountRegistryController {
         self.persistenceEnabled = true
         self.keyStore = keyStore
         self.makeAccountID = makeAccountID
+        self.captureCredential = captureCredential
         self.mutationCoordinator = ProviderMutationCoordinator(
             store: store,
             keyStore: keyStore,
@@ -117,19 +134,19 @@ final class ProviderAccountRegistryController {
         )
     }
 
-    var apiKeyAccounts: [ProviderAPIKeyAccountMetadata] {
+    var accounts: [ProviderAccountMetadata] {
         guard let registry else { return [] }
         let accounts = Dictionary(
             uniqueKeysWithValues: registry.accounts.map { ($0.id, $0) }
         )
-        return registry.apiKeyReferences.compactMap { identity in
+        return registry.providerReferences.compactMap { identity in
             guard
                 identity.accountID != .legacy,
                 let account = accounts[identity.accountID]
             else {
                 return nil
             }
-            return ProviderAPIKeyAccountMetadata(
+            return ProviderAccountMetadata(
                 accountProviderID: identity,
                 provider: identity.providerID,
                 label: AccountLabel.sanitized(account.label),
@@ -174,7 +191,7 @@ final class ProviderAccountRegistryController {
                 accounts: registry.accounts,
                 displayOrder: repaired,
                 disconnected: registry.disconnected,
-                apiKeyReferences: registry.apiKeyReferences
+                providerReferences: registry.providerReferences
             )
         }
     }
@@ -192,7 +209,7 @@ final class ProviderAccountRegistryController {
                 accounts: registry.accounts,
                 displayOrder: registry.displayOrder,
                 disconnected: ordered,
-                apiKeyReferences: registry.apiKeyReferences
+                providerReferences: registry.providerReferences
             )
         }
     }
@@ -205,7 +222,7 @@ final class ProviderAccountRegistryController {
             providerID: provider
         )
         try replaceRegistry { registry in
-            var references = registry.apiKeyReferences
+            var references = registry.providerReferences
             if !references.contains(identity) { references.append(identity) }
             var order = registry.displayOrder
             if !order.contains(identity) { order.append(identity) }
@@ -215,7 +232,7 @@ final class ProviderAccountRegistryController {
                 accounts: registry.accounts,
                 displayOrder: order,
                 disconnected: registry.disconnected.filter { $0 != identity },
-                apiKeyReferences: references
+                providerReferences: references
             )
         }
     }
@@ -235,7 +252,7 @@ final class ProviderAccountRegistryController {
         let identity = AccountProviderID(accountID: .legacy, providerID: provider)
         registry = try mutationCoordinator.writeSecret(identity: identity, key: key) {
             registry in
-            var references = registry.apiKeyReferences
+            var references = registry.providerReferences
             if !references.contains(identity) { references.append(identity) }
             var order = registry.displayOrder
             if !order.contains(identity) { order.append(identity) }
@@ -245,7 +262,7 @@ final class ProviderAccountRegistryController {
                 accounts: registry.accounts,
                 displayOrder: order,
                 disconnected: registry.disconnected.filter { $0 != identity },
-                apiKeyReferences: references
+                providerReferences: references
             )
         }
         recoveryState = .ready
@@ -269,20 +286,19 @@ final class ProviderAccountRegistryController {
                 accounts: current.accounts,
                 displayOrder: current.displayOrder,
                 disconnected: current.disconnected.filter { $0 != identity },
-                apiKeyReferences: current.apiKeyReferences.filter { $0 != identity }
+                providerReferences: current.providerReferences.filter { $0 != identity }
             )
         }
         recoveryState = .ready
     }
 
     @discardableResult
-    func addAPIKeyAccount(
+    func addAccount(
         provider: ProviderID,
         label rawLabel: String,
-        key rawKey: String
+        key rawKey: String?
     ) throws -> AccountProviderID {
         _ = try requireRegistry()
-        try requireAPIKeyProvider(provider)
         let trimmedLabel = rawLabel.trimmingCharacters(
             in: .whitespacesAndNewlines
         )
@@ -293,9 +309,24 @@ final class ProviderAccountRegistryController {
         else {
             throw ProviderAccountRegistryControllerError.invalidLabel
         }
-        let key = rawKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !key.isEmpty else {
-            throw ProviderAccountRegistryControllerError.emptyKey
+        let acceptsAPIKey = ProviderSetup.descriptor(for: provider)?
+            .acceptsAPIKey == true
+        let key: String
+        if acceptsAPIKey {
+            let trimmedKey = rawKey?.trimmingCharacters(
+                in: .whitespacesAndNewlines
+            ) ?? ""
+            guard !trimmedKey.isEmpty else {
+                throw ProviderAccountRegistryControllerError.emptyKey
+            }
+            key = trimmedKey
+        } else {
+            do {
+                key = try captureCredential(provider)
+            } catch {
+                throw ProviderAccountRegistryControllerError
+                    .credentialUnavailable
+            }
         }
 
         let accountID = makeAccountID()
@@ -316,7 +347,7 @@ final class ProviderAccountRegistryController {
             let accountsByID = Dictionary(
                 uniqueKeysWithValues: current.accounts.map { ($0.id, $0) }
             )
-            let duplicate = current.apiKeyReferences.contains { reference in
+            let duplicate = current.providerReferences.contains { reference in
                 guard reference.providerID == provider,
                       let account = accountsByID[reference.accountID]
                 else { return false }
@@ -331,19 +362,28 @@ final class ProviderAccountRegistryController {
                 accounts: current.accounts + [ProviderAccount(id: accountID, label: label)],
                 displayOrder: current.displayOrder + [identity],
                 disconnected: current.disconnected,
-                apiKeyReferences: current.apiKeyReferences + [identity]
+                providerReferences: current.providerReferences + [identity]
             )
         }
         recoveryState = .ready
         return identity
     }
 
-    func removeAPIKeyAccount(_ identity: AccountProviderID) throws {
+    @discardableResult
+    func addAPIKeyAccount(
+        provider: ProviderID,
+        label: String,
+        key: String
+    ) throws -> AccountProviderID {
+        try addAccount(provider: provider, label: label, key: key)
+    }
+
+    func removeAccount(_ identity: AccountProviderID) throws {
         let registry = try requireRegistry()
         guard identity.accountID != .legacy else {
             throw ProviderAccountRegistryControllerError.cannotRemoveLegacy
         }
-        guard registry.apiKeyReferences.contains(identity) else {
+        guard registry.providerReferences.contains(identity) else {
             throw ProviderAccountRegistryControllerError.accountNotFound
         }
         guard let secretStore = keyStore(
@@ -359,10 +399,10 @@ final class ProviderAccountRegistryController {
         }
         self.registry = try mutationCoordinator.removeSecret(identity: identity) {
             current in
-            guard current.apiKeyReferences.contains(identity) else {
+            guard current.providerReferences.contains(identity) else {
                 throw ProviderAccountRegistryControllerError.accountNotFound
             }
-            let remainingReferences = current.apiKeyReferences.filter { $0 != identity }
+            let remainingReferences = current.providerReferences.filter { $0 != identity }
             let accountStillReferenced = remainingReferences.contains {
                 $0.accountID == identity.accountID
             }
@@ -374,10 +414,14 @@ final class ProviderAccountRegistryController {
                 },
                 displayOrder: current.displayOrder.filter { $0 != identity },
                 disconnected: current.disconnected.filter { $0 != identity },
-                apiKeyReferences: remainingReferences
+                providerReferences: remainingReferences
             )
         }
         recoveryState = .ready
+    }
+
+    func removeAPIKeyAccount(_ identity: AccountProviderID) throws {
+        try removeAccount(identity)
     }
 
     func restoreBackup() throws {

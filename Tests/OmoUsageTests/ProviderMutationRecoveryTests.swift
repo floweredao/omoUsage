@@ -56,7 +56,7 @@ struct ProviderMutationRecoveryTests {
             }
 
             let recovered = fixture.coordinator().loadOrRecover()
-            #expect(recovered.registry?.apiKeyReferences.contains(identity) == true)
+        #expect(recovered.registry?.providerReferences.contains(identity) == true)
             let value = ProviderAPIKeyStore.live(
                 for: identity.providerID,
                 accountID: identity.accountID,
@@ -240,7 +240,7 @@ private final class MutationRecoveryFixture {
         registry: ProviderAccountRegistry,
         identity: AccountProviderID
     ) {
-        let referenced = registry.apiKeyReferences.contains(identity)
+        let referenced = registry.providerReferences.contains(identity)
         let secretExists = ProviderAPIKeyStore.live(
             for: identity.providerID,
             accountID: identity.accountID,
@@ -482,9 +482,9 @@ private extension ProviderAccountRegistry {
                 ? displayOrder
                 : displayOrder + [identity],
             disconnected: disconnected,
-            apiKeyReferences: apiKeyReferences.contains(identity)
-                ? apiKeyReferences
-                : apiKeyReferences + [identity]
+            providerReferences: providerReferences.contains(identity)
+                ? providerReferences
+                : providerReferences + [identity]
         )
     }
 }

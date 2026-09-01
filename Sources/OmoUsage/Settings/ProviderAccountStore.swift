@@ -30,7 +30,7 @@ struct ProviderAccountRegistry: Equatable, Codable, Sendable {
     let accounts: [ProviderAccount]
     let displayOrder: [AccountProviderID]
     let disconnected: [AccountProviderID]
-    let apiKeyReferences: [AccountProviderID]
+    let providerReferences: [AccountProviderID]
 }
 
 enum ProviderAccountStoreError: Error, Equatable {
@@ -86,7 +86,7 @@ struct ProviderAccountLoadResult: Equatable, Sendable {
 }
 
 struct ProviderAccountStore {
-    static let currentVersion = 2
+    static let currentVersion = 3
     static let currentMigrationVersion = 1
 
     let registryURL: URL
@@ -344,7 +344,7 @@ struct ProviderAccountStore {
                 accounts: registry.accounts,
                 displayOrder: repaired,
                 disconnected: registry.disconnected,
-                apiKeyReferences: registry.apiKeyReferences
+                providerReferences: registry.providerReferences
             )
         )
     }
@@ -360,6 +360,15 @@ struct ProviderAccountStore {
 
     private struct VersionOneRegistry: Decodable {
         let version: Int
+        let accounts: [ProviderAccount]
+        let displayOrder: [AccountProviderID]
+        let disconnected: [AccountProviderID]
+        let apiKeyReferences: [AccountProviderID]
+    }
+
+    private struct VersionTwoRegistry: Decodable {
+        let version: Int
+        let migrationVersion: Int
         let accounts: [ProviderAccount]
         let displayOrder: [AccountProviderID]
         let disconnected: [AccountProviderID]
@@ -391,7 +400,21 @@ struct ProviderAccountStore {
                     accounts: old.accounts,
                     displayOrder: old.displayOrder,
                     disconnected: old.disconnected,
-                    apiKeyReferences: old.apiKeyReferences
+                    providerReferences: migratedReferences(
+                        from: old.apiKeyReferences
+                    )
+                )
+            case 2:
+                let old = try JSONDecoder().decode(VersionTwoRegistry.self, from: data)
+                registry = ProviderAccountRegistry(
+                    version: Self.currentVersion,
+                    migrationVersion: old.migrationVersion,
+                    accounts: old.accounts,
+                    displayOrder: old.displayOrder,
+                    disconnected: old.disconnected,
+                    providerReferences: migratedReferences(
+                        from: old.apiKeyReferences
+                    )
                 )
             case Self.currentVersion:
                 registry = try JSONDecoder().decode(ProviderAccountRegistry.self, from: data)
@@ -429,10 +452,16 @@ struct ProviderAccountStore {
                 ? AccountProviderID(accountID: .legacy, providerID: provider)
                 : nil
         }
-        let apiKeyReferences = try ProviderID.allCases.compactMap {
-            try legacyAPIKeyPresence($0)
-                ? AccountProviderID(accountID: .legacy, providerID: $0)
-                : nil
+        let providerReferences = try ProviderID.allCases.compactMap {
+            provider -> AccountProviderID? in
+            let identity = AccountProviderID(
+                accountID: .legacy,
+                providerID: provider
+            )
+            if Self.companionProviders.contains(provider) {
+                return identity
+            }
+            return try legacyAPIKeyPresence(provider) ? identity : nil
         }
         return ProviderAccountRegistry(
             version: Self.currentVersion,
@@ -440,8 +469,29 @@ struct ProviderAccountStore {
             accounts: [ProviderAccount(id: .legacy, label: AccountLabel.defaultValue)],
             displayOrder: order,
             disconnected: disconnected,
-            apiKeyReferences: apiKeyReferences
+            providerReferences: providerReferences
         )
+    }
+
+    private static let companionProviders: Set<ProviderID> = [
+        .claude, .codex, .cursor, .antigravity,
+        .copilot, .devin, .grok
+    ]
+
+    private func migratedReferences(
+        from apiKeyReferences: [AccountProviderID]
+    ) -> [AccountProviderID] {
+        let companionReferences = ProviderID.allCases.compactMap {
+            Self.companionProviders.contains($0)
+                ? AccountProviderID(
+                    accountID: .legacy,
+                    providerID: $0
+                )
+                : nil
+        }
+        return companionReferences + apiKeyReferences.filter {
+            !companionReferences.contains($0)
+        }
     }
 
     private func strictProviders(_ rawValues: [String]) throws -> Set<ProviderID> {
@@ -470,12 +520,7 @@ struct ProviderAccountStore {
             accountIDs.contains(.legacy),
             validReferences(registry.displayOrder, accountIDs: accountIDs),
             validReferences(registry.disconnected, accountIDs: accountIDs),
-            validReferences(registry.apiKeyReferences, accountIDs: accountIDs),
-            registry.apiKeyReferences.allSatisfy({
-                $0.providerID == .opencode
-                    || $0.providerID == .openrouter
-                    || $0.providerID == .zai
-            })
+            validReferences(registry.providerReferences, accountIDs: accountIDs)
         else {
             throw ProviderAccountStoreError.invalidRegistry
         }

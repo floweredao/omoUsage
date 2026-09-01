@@ -7,6 +7,32 @@ import Testing
 @MainActor
 struct ProviderAccountRegistryControllerTests {
     @Test
+    func addsCapturedAccountsForEveryCompanionProvider() throws {
+        let fixture = try ControllerFixture()
+        defer { fixture.remove() }
+        let controller = try fixture.makeController(
+            captureCredential: { "captured-\($0.rawValue)" }
+        )
+        let companionProviders = ProviderID.allCases.filter {
+            ProviderSetup.descriptor(for: $0)?.acceptsAPIKey == false
+        }
+
+        for provider in companionProviders {
+            let identity = try controller.addAccount(
+                provider: provider,
+                label: "\(provider.displayName) Account",
+                key: nil
+            )
+            #expect(
+                fixture.keyStore(provider, identity.accountID)?.load()
+                    == "captured-\(provider.rawValue)"
+            )
+        }
+
+        #expect(controller.accounts.map(\.provider) == companionProviders)
+    }
+
+    @Test
     func addsTwoAccountsForOneProviderWithDistinctPrivateKeysAndLabels() throws {
         let fixture = try ControllerFixture()
         defer { fixture.remove() }
@@ -24,8 +50,8 @@ struct ProviderAccountRegistryControllerTests {
         )
 
         #expect(first != second)
-        #expect(controller.apiKeyAccounts.map(\.label) == ["Work", "Personal"])
-        #expect(controller.apiKeyAccounts.map(\.provider) == [.openrouter, .openrouter])
+        #expect(controller.accounts.map(\.label) == ["Work", "Personal"])
+        #expect(controller.accounts.map(\.provider) == [.openrouter, .openrouter])
         #expect(fixture.keyStore(.openrouter, first.accountID)?.load() == "first-secret")
         #expect(fixture.keyStore(.openrouter, second.accountID)?.load() == "second-secret")
         #expect(
@@ -60,7 +86,7 @@ struct ProviderAccountRegistryControllerTests {
         }
 
         #expect(fixture.keyStore(.zai, accountID)?.load() == nil)
-        #expect(controller.apiKeyAccounts.isEmpty)
+        #expect(controller.accounts.isEmpty)
     }
 
     @Test
@@ -83,7 +109,7 @@ struct ProviderAccountRegistryControllerTests {
 
         #expect(fixture.keyStore(.opencode, first.accountID)?.load() == nil)
         #expect(fixture.keyStore(.opencode, second.accountID)?.load() == "second-key")
-        #expect(controller.apiKeyAccounts.map(\.id) == [second])
+        #expect(controller.accounts.map(\.id) == [second])
         #expect(throws: ProviderAccountRegistryControllerError.cannotRemoveLegacy) {
             try controller.removeAPIKeyAccount(
                 AccountProviderID(accountID: .legacy, providerID: .opencode)
@@ -103,12 +129,12 @@ struct ProviderAccountRegistryControllerTests {
 
         let persisted = try fixture.store.loadOrMigrate()
         #expect(
-            persisted.apiKeyReferences.contains(
+            persisted.providerReferences.contains(
                 AccountProviderID(accountID: .legacy, providerID: .openrouter)
             )
         )
         #expect(
-            persisted.apiKeyReferences.contains(
+            persisted.providerReferences.contains(
                 AccountProviderID(accountID: .legacy, providerID: .zai)
             )
         )
@@ -126,7 +152,7 @@ struct ProviderAccountRegistryControllerTests {
         try controller.saveDisconnected([identity])
 
         let persisted = try fixture.store.loadOrMigrate()
-        #expect(persisted.apiKeyReferences.contains(identity))
+        #expect(persisted.providerReferences.contains(identity))
         #expect(persisted.displayOrder.first == identity)
         #expect(persisted.disconnected == [identity])
     }
@@ -208,7 +234,7 @@ struct ProviderAccountRegistryControllerTests {
             }
         }
 
-        #expect(controller.apiKeyAccounts.isEmpty)
+        #expect(controller.accounts.isEmpty)
         #expect(
             fixture.keyStore(
                 .openrouter,
@@ -239,7 +265,7 @@ struct ProviderAccountRegistryControllerTests {
             )
         }
 
-        #expect(controller.apiKeyAccounts.map(\.label) == ["Team"])
+        #expect(controller.accounts.map(\.label) == ["Team"])
         #expect(
             fixture.keyStore(
                 .openrouter,
@@ -258,7 +284,7 @@ struct AccountCompositionTests {
         let identity = AccountProviderID(accountID: account, providerID: .openrouter)
         let legacy = AccountProviderID(accountID: .legacy, providerID: .claude)
         let registry = ProviderAccountRegistry(
-            version: 2,
+            version: ProviderAccountStore.currentVersion,
             migrationVersion: 1,
             accounts: [
                 ProviderAccount(id: .legacy, label: "Default Account"),
@@ -266,7 +292,7 @@ struct AccountCompositionTests {
             ],
             displayOrder: [identity, legacy],
             disconnected: [identity],
-            apiKeyReferences: [identity]
+            providerReferences: [identity]
         )
         var received: ProviderAccountRegistry?
 
@@ -324,7 +350,10 @@ private final class ControllerFixture {
     @MainActor
     func makeController(
         persistenceEnabled: Bool = true,
-        failingAfter phase: ProviderMutationPhase? = nil
+        failingAfter phase: ProviderMutationPhase? = nil,
+        captureCredential: @escaping (ProviderID) throws -> String = {
+            _ in "captured-credential"
+        }
     ) throws -> ProviderAccountRegistryController {
         ProviderAccountRegistryController(
             store: store,
@@ -337,6 +366,7 @@ private final class ControllerFixture {
                 defer { self.accountIndex += 1 }
                 return self.nextAccountIDs[self.accountIndex]
             },
+            captureCredential: captureCredential,
             mutationAfterPhase: { reached in
                 if reached == phase { throw ControllerMutationFailure() }
             }

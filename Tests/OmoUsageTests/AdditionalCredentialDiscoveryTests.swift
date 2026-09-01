@@ -947,6 +947,75 @@ struct AdditionalCredentialDiscoveryTests {
     }
 
     @Test
+    func companionSnapshotsStayScopedToTheirAccount() throws {
+        try withFixtureDirectory { home in
+            let firstID = AccountID()
+            let secondID = AccountID()
+            let providerKeychain = AdditionalProviderKeychain()
+            let snapshotStore = ProviderCredentialSnapshotStore(
+                keychain: providerKeychain
+            )
+            let firstIdentity = AccountProviderID(
+                accountID: firstID,
+                providerID: .cursor
+            )
+            let secondIdentity = AccountProviderID(
+                accountID: secondID,
+                providerID: .cursor
+            )
+            try snapshotStore.save(
+                CredentialSnapshot(
+                    provider: .cursor,
+                    accessToken: "first-cursor-token",
+                    refreshToken: "first-refresh-token",
+                    accountReference: "first-provider-account",
+                    planName: nil,
+                    expiresAt: nil,
+                    source: .keychain
+                ),
+                for: firstIdentity
+            )
+            try snapshotStore.save(
+                CredentialSnapshot(
+                    provider: .cursor,
+                    accessToken: "second-cursor-token",
+                    refreshToken: "second-refresh-token",
+                    accountReference: "second-provider-account",
+                    planName: nil,
+                    expiresAt: nil,
+                    source: .keychain
+                ),
+                for: secondIdentity
+            )
+            let discovery = CredentialDiscovery(
+                paths: CredentialPaths(
+                    claude: home.appending(path: ".claude/credentials.json"),
+                    codex: home.appending(path: ".codex/auth.json")
+                ),
+                environment: [:],
+                keychain: AdditionalKeychain(),
+                providerKeychain: providerKeychain,
+                homeDirectory: home,
+                commandPaths: []
+            )
+            let now = Date(timeIntervalSince1970: 1_800_000_000)
+
+            #expect(
+                try discovery.cursor(
+                    accountID: firstID,
+                    now: now
+                ).accessToken == "first-cursor-token"
+            )
+            #expect(
+                try discovery.cursor(
+                    accountID: secondID,
+                    now: now
+                ).accessToken == "second-cursor-token"
+            )
+        }
+    }
+
+    @Test
     func nonLegacyOpenCodeDoesNotUseCompanionAuthOrDatabase() throws {
         try withFixtureDirectory { home in
             let dataDirectory = home.appending(

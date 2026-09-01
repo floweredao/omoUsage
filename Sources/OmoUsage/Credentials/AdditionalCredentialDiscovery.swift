@@ -8,7 +8,25 @@ extension CredentialDiscovery {
     static let grokDefaultClientID =
         "b1a00492-073a-47ea-816f-4c329264a828"
 
-    func cursor(now: Date) throws -> DiscoveredCredential {
+    func cursor(
+        accountID: AccountID = .legacy,
+        now: Date
+    ) throws -> DiscoveredCredential {
+        guard accountID == .legacy else {
+            let credential = try snapshotCredential(
+                for: .cursor,
+                accountID: accountID,
+                now: now
+            )
+            // Cursor states the deadline inside the token, which is what
+            // the local path enforces; the snapshot enforces the same.
+            try rejectExpiredJWT(
+                credential.accessToken,
+                provider: .cursor,
+                now: now
+            )
+            return credential
+        }
         let database = home.appending(
             components: "Library",
             "Application Support",
@@ -71,7 +89,19 @@ extension CredentialDiscovery {
         )
     }
 
-    func copilot() throws -> DiscoveredCredential {
+    func copilot(
+        accountID: AccountID = .legacy
+    ) throws -> DiscoveredCredential {
+        guard accountID == .legacy else {
+            // A GitHub token carries no deadline the app can read, so the
+            // snapshot is used as captured until the API rejects it.
+            return try snapshotCredential(
+                for: .copilot,
+                accountID: accountID,
+                now: .distantPast,
+                allowingExpired: true
+            )
+        }
         for name in [
             "COPILOT_GITHUB_TOKEN",
             "GH_TOKEN",
@@ -149,7 +179,19 @@ extension CredentialDiscovery {
         throw CredentialDiscoveryError.notFound(.copilot)
     }
 
-    func devin() throws -> DiscoveredCredential {
+    func devin(
+        accountID: AccountID = .legacy
+    ) throws -> DiscoveredCredential {
+        guard accountID == .legacy else {
+            // The captured snapshot keeps the account's own server URL in
+            // `accountID`, so a self-hosted account keeps its host.
+            return try snapshotCredential(
+                for: .devin,
+                accountID: accountID,
+                now: .distantPast,
+                allowingExpired: true
+            )
+        }
         let dataDirectory: URL
         if
             let value = environment["XDG_DATA_HOME"]?.nonBlank,
@@ -234,7 +276,16 @@ extension CredentialDiscovery {
         throw CredentialDiscoveryError.notFound(.devin)
     }
 
-    func grok(now: Date) throws -> DiscoveredCredential {
+    func grok(
+        accountID: AccountID = .legacy,
+        now: Date
+    ) throws -> DiscoveredCredential {
+        guard accountID == .legacy else {
+            return try grokSnapshotCredential(
+                accountID: accountID,
+                now: now
+            )
+        }
         let resolution = try resolveGrokCandidates(now: now)
         if let best = resolution.candidates.first {
             return best
@@ -247,8 +298,39 @@ extension CredentialDiscovery {
 
     /// Every usable account, in the sorted key order the runtime should
     /// try them. `grok(now:)` returns the first of these.
-    func grokCandidates(now: Date) -> [DiscoveredCredential] {
-        ((try? resolveGrokCandidates(now: now))?.candidates) ?? []
+    func grokCandidates(
+        accountID: AccountID = .legacy,
+        now: Date
+    ) -> [DiscoveredCredential] {
+        guard accountID == .legacy else {
+            return (try? grokSnapshotCredential(
+                accountID: accountID,
+                now: now
+            )).map { [$0] } ?? []
+        }
+        return ((try? resolveGrokCandidates(now: now))?.candidates) ?? []
+    }
+
+    /// Mirrors the local store's rule: an expired entry is only usable
+    /// when a refresh token can revive it.
+    private func grokSnapshotCredential(
+        accountID: AccountID,
+        now: Date
+    ) throws -> DiscoveredCredential {
+        let credential = try snapshotCredential(
+            for: .grok,
+            accountID: accountID,
+            now: now,
+            allowingExpired: true
+        )
+        if
+            let expiresAt = credential.expiresAt,
+            expiresAt <= now,
+            credential.refreshToken == nil
+        {
+            throw CredentialDiscoveryError.expired(.grok)
+        }
+        return credential
     }
 
     private func resolveGrokCandidates(

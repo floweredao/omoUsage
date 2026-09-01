@@ -521,6 +521,7 @@ private struct SideNotchProviderButton: View {
                             width: SideNotchPanelLayout.providerIconSize,
                             height: SideNotchPanelLayout.providerIconSize
                         )
+                        .clipShape(Circle())
 
                     if
                         showsAccountLabel,
@@ -668,12 +669,9 @@ private struct SideNotchProviderButton: View {
     }
 
     private var summaryMeter: UsageMeter {
-        let meters = usage.groups.flatMap(\.meters)
-        return meters.first {
-            $0.metric.kind == .quotaRemaining && $0.period != .extra
-        } ?? meters.first {
-            $0.metric.kind == .quotaRemaining
-        } ?? meters.first
+        SideNotchSummaryMeterPolicy.select(
+            from: usage.groups.flatMap(\.meters)
+        )
             ?? UsageMeter(
                 id: "unavailable",
                 title: "",
@@ -687,6 +685,18 @@ private struct SideNotchProviderButton: View {
             + localization.metricValue(summaryMeter.metric)
         guard usage.freshness == .stale else { return value }
         return "\(value), \(localization.staleBadgeText())"
+    }
+}
+
+enum SideNotchSummaryMeterPolicy {
+    static func select(from meters: [UsageMeter]) -> UsageMeter? {
+        meters.first {
+            $0.metric.kind == .quotaRemaining && $0.period == .session
+        } ?? meters.first {
+            $0.metric.kind == .quotaRemaining && $0.period != .extra
+        } ?? meters.first {
+            $0.metric.kind == .quotaRemaining
+        } ?? meters.first
     }
 }
 
@@ -751,7 +761,8 @@ private struct SideNotchDetailView: View {
         ScrollView {
             ProviderSectionView(
                 usage: usage,
-                showsAccountLabel: showsAccountLabel
+                showsAccountLabel: showsAccountLabel,
+                usesCircularProviderIcon: true
             )
                 .padding(SideNotchPanelLayout.detailContentPadding)
         }

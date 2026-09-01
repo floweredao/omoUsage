@@ -77,7 +77,11 @@ struct ClaudeUsageProvider: UsageProvider {
     func fetch(now: Date) async throws -> ProviderUsage {
         let stored: DiscoveredCredential
         do {
-            stored = try discovery.claude(now: now, allowingExpired: true)
+            stored = try discovery.claude(
+                accountID: accountID,
+                now: now,
+                allowingExpired: true
+            )
         } catch let discoveryError as CredentialDiscoveryError {
             return try await fetchDesktopUsage(
                 now: now,
@@ -100,6 +104,7 @@ struct ClaudeUsageProvider: UsageProvider {
         // facts about the request, so replaying them against every other
         // stored credential just multiplies the damage.
         var candidates = discovery.claudeCandidates(
+            accountID: accountID,
             now: now,
             allowingExpired: true
         )

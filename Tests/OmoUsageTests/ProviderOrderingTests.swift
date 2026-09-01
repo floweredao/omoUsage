@@ -250,7 +250,7 @@ struct ProviderOrderingTests {
             disconnected: [
                 AccountProviderID(accountID: .legacy, providerID: .codex)
             ],
-            apiKeyReferences: [
+            providerReferences: [
                 AccountProviderID(accountID: .legacy, providerID: .openrouter)
             ]
         )
@@ -279,7 +279,7 @@ struct ProviderOrderingTests {
         ])
         #expect(updated.accounts == original.accounts)
         #expect(updated.disconnected == original.disconnected)
-        #expect(updated.apiKeyReferences == original.apiKeyReferences)
+        #expect(updated.providerReferences == original.providerReferences)
     }
 
     private func configuredProviders() -> [any UsageProvider] {

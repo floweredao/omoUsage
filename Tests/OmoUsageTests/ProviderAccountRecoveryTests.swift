@@ -255,7 +255,7 @@ private final class RecoveryFixture {
             accounts: [ProviderAccount(id: .legacy, label: label)],
             displayOrder: [],
             disconnected: [],
-            apiKeyReferences: []
+            providerReferences: []
         )
     }
 

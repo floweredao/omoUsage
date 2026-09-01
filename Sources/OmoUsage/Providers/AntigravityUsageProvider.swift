@@ -3,19 +3,28 @@ import Foundation
 
 struct AntigravityUsageProvider: UsageProvider {
     let id = ProviderID.antigravity
+    let accountID: AccountID
+    let accountLabel: String
     let discovery: CredentialDiscovery
     let http: ProviderHTTP
 
     init(
         discovery: CredentialDiscovery = .live(),
-        http: ProviderHTTP = ProviderHTTP()
+        http: ProviderHTTP = ProviderHTTP(),
+        accountID: AccountID = .legacy,
+        accountLabel: String = AccountLabel.defaultValue
     ) {
+        self.accountID = accountID
+        self.accountLabel = accountLabel
         self.discovery = discovery
         self.http = http
     }
 
     func fetch(now: Date) async throws -> ProviderUsage {
-        let credential = try discovery.antigravity(now: now)
+        let credential = try discovery.antigravity(
+            accountID: accountID,
+            now: now
+        )
         let endpoint = ProviderContractCatalog.endpoint(
             .antigravityAvailableModels,
             for: id
