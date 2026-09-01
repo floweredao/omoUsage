@@ -32,7 +32,7 @@ struct OpenRouterUsageProvider: UsageProvider {
             purpose: .openRouterKey,
             token: credential.accessToken
         )
-        let attempts = await [credits, key]
+        let attempts = try await [credits, key]
         let data = attempts.map(\.data)
         if data.allSatisfy({ $0 == nil }) {
             if attempts.contains(where: { $0.authenticationFailed }) {
@@ -57,7 +57,7 @@ struct OpenRouterUsageProvider: UsageProvider {
         _ url: String,
         purpose: ProviderEndpointPurpose,
         token: String
-    ) async -> OpenRouterAttempt {
+    ) async throws -> OpenRouterAttempt {
         do {
             return OpenRouterAttempt(
                 data: try await get(
@@ -69,8 +69,10 @@ struct OpenRouterUsageProvider: UsageProvider {
             )
         } catch let error as ProviderTransportError {
             return OpenRouterAttempt(data: nil, error: error)
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
-            return OpenRouterAttempt(data: nil, error: nil)
+            throw error
         }
     }
 

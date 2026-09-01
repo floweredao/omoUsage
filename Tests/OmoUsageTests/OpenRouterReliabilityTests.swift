@@ -68,6 +68,74 @@ struct OpenRouterReliabilityTests {
         #expect(meters.map(\.percentRemaining) == [40])
     }
 
+    @Test(.timeLimit(.minutes(1)))
+    func cancellationWhileRequestsAreInFlightPropagates() async {
+        let synchronization = HephaestusOpenRouterSynchronization()
+        let task = Task {
+            try await HephaestusOpenRouterFixture.fetch(
+                scenario: .init(
+                    credits: .pending,
+                    key: .pending,
+                    synchronization: synchronization
+                ),
+                now: now
+            )
+        }
+        await synchronization.waitForStartedRequests(count: 2)
+
+        task.cancel()
+
+        await #expect(throws: CancellationError.self) {
+            try await task.value
+        }
+    }
+
+    @Test(arguments: OpenRouterEndpoint.allCases)
+    func nontransientGenericEndpointFailurePropagates(
+        endpoint: OpenRouterEndpoint
+    ) async {
+        let credits: HephaestusOpenRouterOutcome
+        let key: HephaestusOpenRouterOutcome
+        switch endpoint {
+        case .credits:
+            credits = .failure(.unsupportedURL)
+            key = .response(
+                status: 200,
+                body: #"{"data":{"limit":100,"usage":20}}"#
+            )
+        case .key:
+            credits = .response(
+                status: 200,
+                body: #"{"data":{"total_credits":100,"total_usage":20}}"#
+            )
+            key = .failure(.unsupportedURL)
+        }
+
+        await #expect(throws: URLError.self) {
+            try await HephaestusOpenRouterFixture.fetch(
+                scenario: .init(credits: credits, key: key),
+                now: now
+            )
+        }
+    }
+
+    @Test
+    func dualRetryableFailuresRemainTypedTransportFailure() async {
+        await #expect(
+            throws: ProviderTransportError.requestFailed(.openrouter, 503)
+        ) {
+            try await HephaestusOpenRouterFixture.fetch(
+                scenario: .init(
+                    creditsStatus: 503,
+                    creditsBody: #"{"error":"temporarily unavailable"}"#,
+                    keyStatus: 503,
+                    keyBody: #"{"error":"temporarily unavailable"}"#
+                ),
+                now: now
+            )
+        }
+    }
+
     @Test
     func allAuthenticationFailuresRemainAuthenticationFailures() async {
         do {
@@ -87,6 +155,11 @@ struct OpenRouterReliabilityTests {
                     == .authenticationRequired(.openrouter)
             )
         }
+    }
+
+    enum OpenRouterEndpoint: String, CaseIterable, Sendable {
+        case credits
+        case key
     }
 }
 
@@ -148,11 +221,57 @@ private struct HephaestusOpenRouterMissingKeychain: KeychainReading {
     }
 }
 
+private enum HephaestusOpenRouterOutcome: Sendable {
+    case response(status: Int, body: String)
+    case failure(URLError.Code)
+    case pending
+}
+
 private struct HephaestusOpenRouterScenario: Sendable {
-    let creditsStatus: Int
-    let creditsBody: String
-    let keyStatus: Int
-    let keyBody: String
+    let credits: HephaestusOpenRouterOutcome
+    let key: HephaestusOpenRouterOutcome
+    let synchronization: HephaestusOpenRouterSynchronization?
+
+    init(
+        creditsStatus: Int,
+        creditsBody: String,
+        keyStatus: Int,
+        keyBody: String
+    ) {
+        credits = .response(status: creditsStatus, body: creditsBody)
+        key = .response(status: keyStatus, body: keyBody)
+        synchronization = nil
+    }
+
+    init(
+        credits: HephaestusOpenRouterOutcome,
+        key: HephaestusOpenRouterOutcome,
+        synchronization: HephaestusOpenRouterSynchronization? = nil
+    ) {
+        self.credits = credits
+        self.key = key
+        self.synchronization = synchronization
+    }
+}
+
+private final class HephaestusOpenRouterSynchronization: @unchecked Sendable {
+    private let started: AsyncStream<Void>
+    private let continuation: AsyncStream<Void>.Continuation
+
+    init() {
+        (started, continuation) = AsyncStream.makeStream(of: Void.self)
+    }
+
+    func recordRequestStarted() {
+        continuation.yield()
+    }
+
+    func waitForStartedRequests(count: Int) async {
+        var iterator = started.makeAsyncIterator()
+        for _ in 0..<count {
+            _ = await iterator.next()
+        }
+    }
 }
 
 private final class HephaestusOpenRouterScenarioStore: @unchecked Sendable {
@@ -223,12 +342,12 @@ private final class HephaestusOpenRouterURLProtocol: URLProtocol,
             )
             return
         }
-        let result: (status: Int, body: String)
+        let outcome: HephaestusOpenRouterOutcome
         switch url.path {
         case "/api/v1/credits":
-            result = (scenario.creditsStatus, scenario.creditsBody)
+            outcome = scenario.credits
         case "/api/v1/key":
-            result = (scenario.keyStatus, scenario.keyBody)
+            outcome = scenario.key
         default:
             client?.urlProtocol(
                 self,
@@ -236,19 +355,27 @@ private final class HephaestusOpenRouterURLProtocol: URLProtocol,
             )
             return
         }
-        let response = HTTPURLResponse(
-            url: url,
-            statusCode: result.status,
-            httpVersion: nil,
-            headerFields: ["Content-Type": "application/json"]
-        )!
-        client?.urlProtocol(
-            self,
-            didReceive: response,
-            cacheStoragePolicy: .notAllowed
-        )
-        client?.urlProtocol(self, didLoad: Data(result.body.utf8))
-        client?.urlProtocolDidFinishLoading(self)
+        scenario.synchronization?.recordRequestStarted()
+        switch outcome {
+        case let .response(status, body):
+            let response = HTTPURLResponse(
+                url: url,
+                statusCode: status,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            client?.urlProtocol(
+                self,
+                didReceive: response,
+                cacheStoragePolicy: .notAllowed
+            )
+            client?.urlProtocol(self, didLoad: Data(body.utf8))
+            client?.urlProtocolDidFinishLoading(self)
+        case let .failure(code):
+            client?.urlProtocol(self, didFailWithError: URLError(code))
+        case .pending:
+            break
+        }
     }
 
     override func stopLoading() {}

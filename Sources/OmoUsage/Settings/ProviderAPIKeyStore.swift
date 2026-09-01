@@ -25,6 +25,7 @@ struct ProviderAPIKeyStore: Sendable {
     let accountID: AccountID
     let serviceName: String
     let legacyURL: URL
+    let legacyURLs: [URL]
     let environment: [String: String]
     let environmentNames: [String]
     let keychain: any ProviderKeychain
@@ -59,12 +60,14 @@ struct ProviderAPIKeyStore: Sendable {
         environment: [String: String],
         environmentNames: [String],
         keychain: any ProviderKeychain,
-        legacyFileSystem: any ProviderLegacyFileSystem
+        legacyFileSystem: any ProviderLegacyFileSystem,
+        legacyURLs: [URL]? = nil
     ) {
         self.provider = provider
         self.accountID = accountID
         self.serviceName = serviceName
         self.legacyURL = legacyURL
+        self.legacyURLs = legacyURLs ?? [legacyURL]
         self.environment = environment
         self.environmentNames = environmentNames
         self.keychain = keychain
@@ -154,19 +157,48 @@ struct ProviderAPIKeyStore: Sendable {
     }
 
     func legacyCredential() -> String? {
-        guard legacyFileSystem.exists(at: legacyURL),
-              let data = try? legacyFileSystem.data(at: legacyURL),
-              let object = try? UsageJSON.object(data)
-        else { return nil }
-        for key in ["apiKey", "api_key", "key"] {
-            if let value = (object[key] as? String)?.trimmedNonEmpty { return value }
+        for url in legacyURLs where legacyFileSystem.exists(at: url) {
+            guard let data = try? legacyFileSystem.data(at: url) else {
+                continue
+            }
+            if let object = try? UsageJSON.object(data) {
+                for key in ["apiKey", "api_key", "key"] {
+                    if let value = (object[key] as? String)?.trimmedNonEmpty {
+                        return value
+                    }
+                }
+                continue
+            }
+            guard
+                provider == .openrouter || provider == .zai,
+                let value = String(data: data, encoding: .utf8)?
+                    .trimmedNonEmpty,
+                !value.hasPrefix("{"),
+                !value.hasPrefix("["),
+                !value.hasPrefix("\"")
+            else {
+                continue
+            }
+            return value
         }
         return nil
     }
 
-    var legacyExists: Bool { legacyFileSystem.exists(at: legacyURL) }
+    var legacyExists: Bool {
+        legacyURLs.contains(where: legacyFileSystem.exists(at:))
+    }
 
-    func removeLegacy() throws { try legacyFileSystem.remove(at: legacyURL) }
+    func removeLegacy() throws {
+        var firstError: (any Error)?
+        for url in legacyURLs {
+            do {
+                try legacyFileSystem.remove(at: url)
+            } catch {
+                if firstError == nil { firstError = error }
+            }
+        }
+        if let firstError { throw firstError }
+    }
 
     private func stagingAccount(_ transactionID: UUID) -> String {
         "\(account)#staging#\(transactionID.uuidString.lowercased())"
@@ -224,6 +256,20 @@ struct ProviderAPIKeyStore: Sendable {
             legacyURL.append(path: "accounts/\(accountID.rawValue)", directoryHint: .isDirectory)
         }
         legacyURL.append(path: fileName)
+        let legacyURLs: [URL]
+        if provider == .openrouter, accountID == .legacy {
+            legacyURLs = [
+                legacyURL,
+                configHome.appending(path: "openrouter/key.json")
+            ]
+        } else if provider == .zai, accountID == .legacy {
+            legacyURLs = [
+                legacyURL,
+                configHome.appending(path: "zai/key.json")
+            ]
+        } else {
+            legacyURLs = [legacyURL]
+        }
 #if OMO_USAGE_FIXTURES
         let serviceName = environment["OMO_USAGE_KEY_MIGRATION_QA"] == "1"
             ? environment["OMO_USAGE_PROVIDER_KEYCHAIN_SERVICE"]?.trimmedNonEmpty
@@ -240,7 +286,8 @@ struct ProviderAPIKeyStore: Sendable {
             environment: environment,
             environmentNames: accountID == .legacy ? environmentNames : [],
             keychain: keychain,
-            legacyFileSystem: legacyFileSystem
+            legacyFileSystem: legacyFileSystem,
+            legacyURLs: legacyURLs
         )
     }
 }
