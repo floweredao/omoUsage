@@ -59,6 +59,37 @@ struct DashboardVisualContractTests {
     }
 
     @Test
+    func sideNotchDetailUsesRestrainedDownwardElevation() throws {
+        // The captured recipe was black 0.16 / radius 10 / y 4: a blur two
+        // and a half times the offset, so it read as an omnidirectional
+        // bloom that lightened the dark backdrop instead of a lit edge.
+        #expect(SideNotchDetailElevationTokens.shadowOpacity == 0.12)
+        #expect(SideNotchDetailElevationTokens.shadowOpacity < 0.16)
+        #expect(SideNotchDetailElevationTokens.shadowRadius == 4)
+        #expect(SideNotchDetailElevationTokens.shadowRadius < 10)
+        #expect(SideNotchDetailElevationTokens.shadowOffsetY == 2)
+        #expect(SideNotchDetailElevationTokens.shadowOffsetY > 0)
+        #expect(SideNotchDetailElevationTokens.shadowOffsetY < 4)
+
+        // Blur never swamps the offset, so elevation stays directional.
+        #expect(
+            SideNotchDetailElevationTokens.shadowRadius
+                <= SideNotchDetailElevationTokens.shadowOffsetY * 2
+        )
+
+        // Dark in both appearances: the card can only darken its backdrop,
+        // never glow against it.
+        let shadow = try #require(
+            NSColor(SideNotchDetailElevationTokens.shadowColor)
+                .usingColorSpace(.sRGB)
+        )
+        #expect(shadow.brightnessComponent <= 0.05)
+        #expect(shadow.redComponent <= 0.05)
+        #expect(shadow.greenComponent <= 0.05)
+        #expect(shadow.blueComponent <= 0.05)
+    }
+
+    @Test
     func providerUsageIdentityAndDashboardAliasAreAccountScoped() {
         let account = AccountID(
             rawValue: "00000000-0000-0000-0000-00000000000a"
