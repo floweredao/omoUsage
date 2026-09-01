@@ -208,7 +208,7 @@ enum OmoUsageApp {
                 )
                 guard let registry = result.registry,
                       let secretStore = keyStore(provider, identity.accountID),
-                      registry.apiKeyReferences.contains(identity)
+                      registry.providerReferences.contains(identity)
                           == (secretStore.load() != nil)
                 else {
                     Darwin.exit(EXIT_FAILURE)
@@ -229,7 +229,7 @@ enum OmoUsageApp {
                         disconnected: registry.disconnected.contains(identity)
                             ? registry.disconnected
                             : registry.disconnected + [identity],
-                        apiKeyReferences: registry.apiKeyReferences
+                        providerReferences: registry.providerReferences
                     )
                 }
                 writeFixtureEvent("completed")
@@ -354,7 +354,7 @@ enum OmoUsageApp {
             )
             writeFixtureEvent("file-exists=\(keyStore.legacyExists)")
             writeFixtureEvent("item-exists=\(migratedKey != nil)")
-            guard result.registry?.apiKeyReferences.contains(identity) == true,
+            guard result.registry?.providerReferences.contains(identity) == true,
                   migratedKey == secret,
                   !keyStore.legacyExists
             else {

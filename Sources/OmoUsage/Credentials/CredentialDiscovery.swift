@@ -2,7 +2,7 @@ import OmoUsageCore
 import Foundation
 import Darwin
 
-enum CredentialSource: Equatable, Sendable {
+enum CredentialSource: String, Equatable, Codable, Sendable {
     case environment
     case file
     case keychain
@@ -13,6 +13,10 @@ enum CredentialSource: Equatable, Sendable {
 enum CredentialStorage: Equatable, Sendable {
     case file(URL)
     case keychain(service: String, account: String)
+    /// An OmoUsage-owned snapshot secret, addressed by the account that
+    /// captured it. A rotation lands on exactly this account's Keychain
+    /// item and never touches the companion tool's own store.
+    case accountSnapshot(AccountProviderID)
 }
 
 struct DiscoveredCredential: Equatable, Sendable, CustomStringConvertible {
@@ -66,6 +70,215 @@ enum CredentialDiscoveryError: Error, Equatable {
     case notFound(ProviderID)
     case malformed(ProviderID)
     case expired(ProviderID)
+}
+
+/// App-owned copy of one account's companion credential, captured when the
+/// account is added and read back on every later fetch. Without it a second
+/// account would re-run discovery and land on whichever credential the
+/// companion CLI happens to hold right now, which is the first account's.
+struct CredentialSnapshot: Codable, Equatable, Sendable,
+    CustomStringConvertible, CustomDebugStringConvertible
+{
+    static let currentVersion = 1
+
+    let version: Int
+    let provider: ProviderID
+    let accessToken: String
+    let refreshToken: String?
+    /// The provider's own account identifier (Codex `account_id`, Grok
+    /// auth-store key, Devin server URL), not the app's `AccountID`.
+    let accountReference: String?
+    let planName: String?
+    let expiresAt: Date?
+    let source: CredentialSource
+    let oidcIssuer: String?
+    let oidcClientID: String?
+    let principalType: String?
+    let principalID: String?
+
+    init(
+        version: Int = CredentialSnapshot.currentVersion,
+        provider: ProviderID,
+        accessToken: String,
+        refreshToken: String?,
+        accountReference: String?,
+        planName: String?,
+        expiresAt: Date?,
+        source: CredentialSource,
+        oidcIssuer: String? = nil,
+        oidcClientID: String? = nil,
+        principalType: String? = nil,
+        principalID: String? = nil
+    ) {
+        self.version = version
+        self.provider = provider
+        self.accessToken = accessToken
+        self.refreshToken = refreshToken
+        self.accountReference = accountReference
+        self.planName = planName
+        self.expiresAt = expiresAt
+        self.source = source
+        self.oidcIssuer = oidcIssuer
+        self.oidcClientID = oidcClientID
+        self.principalType = principalType
+        self.principalID = principalID
+    }
+
+    init(_ credential: DiscoveredCredential) {
+        self.init(
+            provider: credential.provider,
+            accessToken: credential.accessToken,
+            refreshToken: credential.refreshToken,
+            accountReference: credential.accountID,
+            planName: credential.planName,
+            expiresAt: credential.expiresAt,
+            source: credential.source,
+            oidcIssuer: credential.oidcIssuer,
+            oidcClientID: credential.oidcClientID,
+            principalType: credential.principalType,
+            principalID: credential.principalID
+        )
+    }
+
+    /// Decodes a stored secret. A snapshot that does not describe the
+    /// provider being asked for is malformed rather than usable, so a
+    /// misfiled item can never authenticate somewhere else.
+    init(encodedSecret: String, provider: ProviderID) throws {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .secondsSince1970
+        guard
+            let decoded = try? decoder.decode(
+                CredentialSnapshot.self,
+                from: Data(encodedSecret.utf8)
+            ),
+            decoded.version == Self.currentVersion,
+            decoded.provider == provider,
+            !decoded.accessToken.isEmpty
+        else {
+            throw CredentialDiscoveryError.malformed(provider)
+        }
+        self = decoded
+    }
+
+    func encodedSecret() throws -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        encoder.dateEncodingStrategy = .secondsSince1970
+        guard
+            let data = try? encoder.encode(self),
+            let text = String(data: data, encoding: .utf8)
+        else {
+            throw CredentialDiscoveryError.malformed(provider)
+        }
+        return text
+    }
+
+    func credential(storage: CredentialStorage) -> DiscoveredCredential {
+        DiscoveredCredential(
+            provider: provider,
+            accessToken: accessToken,
+            refreshToken: refreshToken,
+            accountID: accountReference,
+            planName: planName,
+            expiresAt: expiresAt,
+            source: source,
+            oidcIssuer: oidcIssuer,
+            oidcClientID: oidcClientID,
+            principalType: principalType,
+            principalID: principalID,
+            storage: storage
+        )
+    }
+
+    /// Everything the provider owns (issuer, client id, principal, plan)
+    /// survives a rotation; only the token material moves.
+    func rotated(
+        accessToken: String,
+        refreshToken: String?,
+        expiresAt: Date?
+    ) -> CredentialSnapshot {
+        CredentialSnapshot(
+            provider: provider,
+            accessToken: accessToken,
+            refreshToken: refreshToken,
+            accountReference: accountReference,
+            planName: planName,
+            expiresAt: expiresAt,
+            source: source,
+            oidcIssuer: oidcIssuer,
+            oidcClientID: oidcClientID,
+            principalType: principalType,
+            principalID: principalID
+        )
+    }
+
+    var description: String {
+        "\(provider.displayName) credential snapshot (<redacted>)"
+    }
+
+    var debugDescription: String { description }
+}
+
+/// Reads and writes snapshot secrets under the Keychain identity
+/// `ProviderAPIKeyStore` already owns: one generic-password item per
+/// account/provider pair, so every account's secret is addressable on its
+/// own and a write can only ever land on one of them.
+struct ProviderCredentialSnapshotStore: Sendable {
+    let keychain: any ProviderKeychain
+    let serviceName: String
+
+    init(
+        keychain: any ProviderKeychain,
+        serviceName: String = ProviderAPIKeyStore.serviceName
+    ) {
+        self.keychain = keychain
+        self.serviceName = serviceName
+    }
+
+    static func account(for identity: AccountProviderID) -> String {
+        "\(identity.providerID.rawValue)/\(identity.accountID.rawValue)"
+    }
+
+    func snapshot(
+        for identity: AccountProviderID
+    ) throws -> CredentialSnapshot? {
+        let stored: String?
+        do {
+            stored = try keychain.value(
+                service: serviceName,
+                account: Self.account(for: identity)
+            )
+        } catch {
+            // A denied or ambiguous exact lookup must not widen into a
+            // different account's secret, and must not fall back to
+            // whatever the companion CLI is holding.
+            throw CredentialDiscoveryError.notFound(identity.providerID)
+        }
+        guard let stored, !stored.isEmpty else { return nil }
+        return try CredentialSnapshot(
+            encodedSecret: stored,
+            provider: identity.providerID
+        )
+    }
+
+    func save(
+        _ snapshot: CredentialSnapshot,
+        for identity: AccountProviderID
+    ) throws {
+        guard snapshot.provider == identity.providerID else {
+            throw CredentialDiscoveryError.malformed(identity.providerID)
+        }
+        let secret = try snapshot.encodedSecret()
+        do {
+            try keychain.set(
+                secret,
+                service: serviceName,
+                account: Self.account(for: identity)
+            )
+        } catch {
+            throw CredentialDiscoveryError.malformed(identity.providerID)
+        }
+    }
 }
 
 struct CredentialPaths: Sendable {
@@ -126,9 +339,18 @@ struct CredentialDiscovery: Sendable {
     }
 
     func claude(
+        accountID: AccountID = .legacy,
         now: Date,
         allowingExpired: Bool = false
     ) throws -> DiscoveredCredential {
+        guard accountID == .legacy else {
+            return try snapshotCredential(
+                for: .claude,
+                accountID: accountID,
+                now: now,
+                allowingExpired: allowingExpired
+            )
+        }
         let resolution = resolveClaudeCandidates(
             now: now,
             allowingExpired: allowingExpired
@@ -146,10 +368,22 @@ struct CredentialDiscovery: Sendable {
     /// try them. `claude(now:)` returns the first of these; a caller that
     /// can tell an auth rejection from a transport failure walks the rest.
     func claudeCandidates(
+        accountID: AccountID = .legacy,
         now: Date,
         allowingExpired: Bool = false
     ) -> [DiscoveredCredential] {
-        resolveClaudeCandidates(
+        guard accountID == .legacy else {
+            // A nonlegacy account has exactly one credential: its own
+            // snapshot. Walking the local stores here would hand it the
+            // credential another account already claimed.
+            return (try? snapshotCredential(
+                for: .claude,
+                accountID: accountID,
+                now: now,
+                allowingExpired: allowingExpired
+            )).map { [$0] } ?? []
+        }
+        return resolveClaudeCandidates(
             now: now,
             allowingExpired: allowingExpired
         ).candidates
@@ -278,6 +512,15 @@ struct CredentialDiscovery: Sendable {
         source: CredentialSource,
         storage: CredentialStorage? = nil
     ) throws {
+        if case let .accountSnapshot(identity) = storage {
+            try rotateSnapshot(
+                identity,
+                accessToken: accessToken,
+                refreshToken: refreshToken,
+                expiresAt: expiresAt
+            )
+            return
+        }
         guard
             let location = storage ?? defaultClaudeStorage(for: source)
         else {
@@ -298,6 +541,10 @@ struct CredentialDiscovery: Sendable {
                 throw CredentialDiscoveryError.malformed(.claude)
             }
             raw = data
+        case .accountSnapshot:
+            // Handled above; a snapshot rotation never reaches the
+            // companion tool's own credential file.
+            throw CredentialDiscoveryError.malformed(.claude)
         }
         guard
             var root = try? UsageJSON.object(raw),
@@ -332,6 +579,8 @@ struct CredentialDiscovery: Sendable {
             )
         case let .file(url):
             try writeAtomically(encoded, to: url)
+        case .accountSnapshot:
+            throw CredentialDiscoveryError.malformed(.claude)
         }
     }
 
@@ -351,7 +600,16 @@ struct CredentialDiscovery: Sendable {
         }
     }
 
-    func codex(now: Date) throws -> DiscoveredCredential {
+    func codex(
+        accountID: AccountID = .legacy,
+        now: Date
+    ) throws -> DiscoveredCredential {
+        guard accountID == .legacy else {
+            return try codexSnapshotCredential(
+                accountID: accountID,
+                now: now
+            )
+        }
         let resolution = resolveCodexCandidates(now: now)
         if let best = resolution.candidates.first {
             return best
@@ -362,8 +620,32 @@ struct CredentialDiscovery: Sendable {
         throw CredentialDiscoveryError.notFound(.codex)
     }
 
-    func codexCandidates(now: Date) -> [DiscoveredCredential] {
-        resolveCodexCandidates(now: now).candidates
+    func codexCandidates(
+        accountID: AccountID = .legacy,
+        now: Date
+    ) -> [DiscoveredCredential] {
+        guard accountID == .legacy else {
+            return (try? codexSnapshotCredential(
+                accountID: accountID,
+                now: now
+            )).map { [$0] } ?? []
+        }
+        return resolveCodexCandidates(now: now).candidates
+    }
+
+    /// The stored Codex credential carries its deadline inside the access
+    /// token, and the local store hands back expired tokens for the refresh
+    /// path to revive; the snapshot keeps that rule.
+    private func codexSnapshotCredential(
+        accountID: AccountID,
+        now: Date
+    ) throws -> DiscoveredCredential {
+        try snapshotCredential(
+            for: .codex,
+            accountID: accountID,
+            now: now,
+            allowingExpired: true
+        )
     }
 
     private func resolveCodexCandidates(
@@ -431,6 +713,16 @@ struct CredentialDiscovery: Sendable {
         guard let storage else {
             throw CredentialDiscoveryError.malformed(.codex)
         }
+        if case let .accountSnapshot(identity) = storage {
+            try rotateSnapshot(
+                identity,
+                accessToken: accessToken,
+                refreshToken: refreshToken,
+                // Codex states the new deadline inside the token itself.
+                expiresAt: codexJWTExpiration(accessToken)
+            )
+            return
+        }
         let raw: Data
         switch storage {
         case let .file(url):
@@ -446,6 +738,8 @@ struct CredentialDiscovery: Sendable {
                 throw CredentialDiscoveryError.malformed(.codex)
             }
             raw = Data(text.utf8)
+        case .accountSnapshot:
+            throw CredentialDiscoveryError.malformed(.codex)
         }
         guard
             var root = try? UsageJSON.object(raw),
@@ -489,10 +783,22 @@ struct CredentialDiscovery: Sendable {
             } catch {
                 throw CredentialDiscoveryError.malformed(.codex)
             }
+        case .accountSnapshot:
+            throw CredentialDiscoveryError.malformed(.codex)
         }
     }
 
-    func antigravity(now: Date) throws -> DiscoveredCredential {
+    func antigravity(
+        accountID: AccountID = .legacy,
+        now: Date
+    ) throws -> DiscoveredCredential {
+        guard accountID == .legacy else {
+            return try snapshotCredential(
+                for: .antigravity,
+                accountID: accountID,
+                now: now
+            )
+        }
         guard let raw = try keychain.value(
             service: "gemini",
             account: "antigravity"
@@ -508,8 +814,18 @@ struct CredentialDiscovery: Sendable {
         accessToken: String,
         refreshToken: String,
         expiresAt: Date,
-        idToken: String? = nil
+        idToken: String? = nil,
+        storage: CredentialStorage? = nil
     ) throws {
+        if case let .accountSnapshot(identity) = storage {
+            try rotateSnapshot(
+                identity,
+                accessToken: accessToken,
+                refreshToken: refreshToken,
+                expiresAt: expiresAt
+            )
+            return
+        }
         let url = grokHome.appending(path: "auth.json")
         guard
             let data = try? Data(contentsOf: url),
@@ -549,6 +865,106 @@ struct CredentialDiscovery: Sendable {
         defer { try? FileManager.default.removeItem(at: temporaryURL) }
         guard rename(temporaryURL.path, url.path) == 0 else {
             throw CredentialDiscoveryError.malformed(.grok)
+        }
+    }
+
+    var snapshotStore: ProviderCredentialSnapshotStore {
+        ProviderCredentialSnapshotStore(keychain: providerKeychain)
+    }
+
+    /// Encodes whichever credential the companion tool holds right now, so
+    /// the caller can store it as one account's own secret. Returning the
+    /// encoded secret rather than writing it keeps the ownership of the
+    /// Keychain item with the registry that knows the account identity.
+    func captureCredential(
+        for provider: ProviderID,
+        now: Date
+    ) throws -> String {
+        try CredentialSnapshot(
+            currentCredential(for: provider, now: now)
+        ).encodedSecret()
+    }
+
+    /// The one credential a nonlegacy account may use. Any failure here is
+    /// terminal on purpose: falling back to local discovery would hand this
+    /// account the credential another account already captured.
+    func snapshotCredential(
+        for provider: ProviderID,
+        accountID: AccountID,
+        now: Date,
+        allowingExpired: Bool = false
+    ) throws -> DiscoveredCredential {
+        let identity = AccountProviderID(
+            accountID: accountID,
+            providerID: provider
+        )
+        guard let snapshot = try snapshotStore.snapshot(for: identity) else {
+            throw CredentialDiscoveryError.notFound(provider)
+        }
+        let credential = snapshot.credential(
+            storage: .accountSnapshot(identity)
+        )
+        if
+            !allowingExpired,
+            let expiresAt = credential.expiresAt,
+            expiresAt <= now
+        {
+            throw CredentialDiscoveryError.expired(provider)
+        }
+        return credential
+    }
+
+    /// Rewrites one account's snapshot in place. A rotation whose snapshot
+    /// has gone missing fails loudly: the old grant is already spent, so
+    /// silently dropping the new one would strand the account.
+    /// `refreshToken: nil` keeps the stored token; `expiresAt` always
+    /// replaces, because an unknown deadline must not read as the old one.
+    func rotateSnapshot(
+        _ identity: AccountProviderID,
+        accessToken: String,
+        refreshToken: String?,
+        expiresAt: Date?
+    ) throws {
+        guard let stored = try snapshotStore.snapshot(for: identity) else {
+            throw CredentialDiscoveryError.malformed(identity.providerID)
+        }
+        try snapshotStore.save(
+            stored.rotated(
+                accessToken: accessToken,
+                refreshToken: refreshToken ?? stored.refreshToken,
+                expiresAt: expiresAt
+            ),
+            for: identity
+        )
+    }
+
+    private func currentCredential(
+        for provider: ProviderID,
+        now: Date
+    ) throws -> DiscoveredCredential {
+        switch provider {
+        case .claude:
+            // Capturing an account whose token is merely stale is normal;
+            // the refresh path revives it on the first fetch.
+            try claude(now: now, allowingExpired: true)
+        case .codex:
+            try codex(now: now)
+        case .cursor:
+            try cursor(now: now)
+        case .antigravity:
+            try antigravity(now: now)
+        case .copilot:
+            try copilot()
+        case .devin:
+            try devin()
+        case .grok:
+            try grok(now: now)
+        case .opencode:
+            try opencode()
+        case .openrouter:
+            try openrouter()
+        case .zai:
+            try zai()
         }
     }
 

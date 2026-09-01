@@ -25,9 +25,10 @@
 
 OmoUsage is a compact, native macOS status utility. The dashboard contains
 only providers with usable authenticated data. Settings reports local
-credential discovery and owns API-key entry for providers that upstream
-OpenUsage configures in-app. It also launches each companion provider's
-official connection flow without owning or rewriting third-party credentials.
+credential discovery, owns API-key entry where required, and launches each
+companion provider's official connection flow. Adding a non-default account
+captures that provider's currently authenticated credential into an isolated
+OmoUsage Keychain item without rewriting the companion's credential store.
 
 The native dashboard offers two mutually exclusive presentation styles.
 `Popover` is the default and preserves the status-item-anchored 320 pt
@@ -90,7 +91,9 @@ other privileged controls remain native-only.
   radius, or typography token.
 - The side-notch rail and detail card use regular system material, semantic
   borders, and the existing eucalyptus/amber usage palette. Provider branding
-  remains inside the existing icon tiles.
+  remains inside the existing icon artwork, clipped to a circle only on the
+  side-notch rail and detail card; popover, Settings, web, and mobile icons keep
+  their existing shape.
 - The detail card is elevated by one shadow, never a bloom.
   `SideNotchDetailElevationTokens` uses `NSColor.shadowColor` at 0.12
   opacity, a 4 pt blur radius, and a 2 pt downward offset. The color is dark
@@ -183,7 +186,7 @@ other privileged controls remain native-only.
   row count (row height times count) rather than a fixed viewport fraction, so
   a wheel gesture anywhere in Settings always moves the same surface.
 - This follows StyleGallery `scroll-body-shell`: the settings header and footer
-  remain stable while the named outer body owns vertical scrolling. API-key
+  remain stable while the named outer body owns vertical scrolling. Per-provider
   account forms and account rows participate in ordinary body flow and never
   introduce another `List` or `ScrollView`.
 - `Dashboard Order` sits between the presentation settings group and the
@@ -209,11 +212,12 @@ other privileged controls remain native-only.
   OpenCode Go uses an OmoUsage-owned API-key field and still discovers official
   `auth.json` and local usage as lower-priority fallbacks.
 - API-key fields appear only for OpenCode Go, OpenRouter, and Z.ai.
-- `API Key Accounts` follows Provider Authentication. Its compact form has a
-  provider picker, sanitized account-alias field, secure key field, and one
-  Add Account action. Existing non-default references are intrinsic-height
-  rows with provider icon, provider name, account alias, and a destructive
-  Remove action. Keys and account UUIDs are never rendered.
+- Every provider authentication row ends with its own account-alias field and
+  Add Account action. API-key providers also show a secure key field; companion
+  providers capture the credential from their completed official login.
+  Existing non-default accounts remain inside that provider row with their
+  sanitized alias and one targeted destructive Remove action. Keys, tokens,
+  and account UUIDs are never rendered.
 - Meter rows render the period title, typed semantic value, and reset text.
   Quota-remaining metrics alone add the percentage track and remaining
   language; spend, credit, count, and informational metrics never impersonate
@@ -257,8 +261,9 @@ other privileged controls remain native-only.
 - `ProviderSectionView`: authenticated provider usage only.
 - `ProviderSettingsRow`: icon, name, connection status, native help, and
   provider-appropriate connection controls; API-key providers expose editable
-  authentication controls instead. It owns authentication only and carries no
-  ordering affordance.
+  authentication controls instead. Every row embeds its provider-specific
+  account manager. It owns authentication only and carries no ordering
+  affordance.
 - `ProviderOrderingView`: the `Dashboard Order` surface. A native SwiftUI
   `List` in `.plain` style with an explicit draggable SF Symbol handle and
   account-qualified row drop destinations. A targeted row receives the native
@@ -271,13 +276,11 @@ other privileged controls remain native-only.
   `ProviderIcon`, provider name, optional sanitized account alias, and
   `N of M` position text. Never renders credentials, account UUIDs, or
   credential-source paths.
-- `APIKeyAccountsSection`: native multi-account management for OpenCode,
-  OpenRouter, and Z.ai. The add action is disabled until alias and key are both
-  nonempty; success clears both drafts, while failure preserves them for
-  correction and reports localized status without echoing the key.
-- `APIKeyAccountRow`: provider icon, provider name, sanitized alias, and one
-  targeted Remove action. It represents only non-default account-provider
-  references; legacy API-key editing stays in `ProviderSettingsRow`.
+- `ProviderAccountsSection`: native multi-account management embedded once in
+  every provider row. The add action requires a sanitized alias and additionally
+  requires a key only for API-key providers. Success clears that provider's
+  drafts; failure preserves them and reports localized status without echoing
+  any credential. Existing rows show the alias and one targeted Remove action.
 - `DashboardAccountIdentityRule`: shows a sanitized alias beside the provider
   name whenever the account is non-default or the current snapshot contains
   more than one row for that provider. The alias uses secondary system text
@@ -428,8 +431,9 @@ other privileged controls remain native-only.
   accessibility text, and remain independently keyed by account and provider.
 - Dashboard provider headings include the visible account alias in their
   accessibility label whenever `DashboardAccountIdentityRule` shows it.
-- API-key account controls have explicit provider, alias, key, add, and remove
-  labels. Validation and persistence feedback is textual, localized, and
+- Account controls have explicit alias, add, and remove labels; API-key
+  providers additionally label the secure key field. Validation and persistence
+  feedback is textual, localized, and
   announced by the native settings hierarchy; color is never the only signal.
 - Opening a hover preview must not steal keyboard focus from the frontmost
   application; typing in another app continues uninterrupted while a preview
@@ -502,8 +506,11 @@ other privileged controls remain native-only.
   retain the legacy provider projection until registry wiring; the composite
   compatibility projections only; the native composition and ordering surface
   are registry-owned and use composite account-provider identity throughout.
-- Companion providers keep upstream-style local credential discovery while
-  OmoUsage launches only their installed official authentication flow.
+- Companion providers keep upstream-style local credential discovery for the
+  legacy account while OmoUsage launches only their installed official
+  authentication flow. A user-requested additional account snapshots the
+  currently authenticated credential into its own app-owned Keychain item, and
+  subsequent refresh and token rotation remain scoped to that item.
 - Provider help may link to official documentation. The main Settings row
   starts authentication for missing, malformed, or expired credentials and
   offers refresh retry for transient provider failures while keeping
@@ -522,7 +529,10 @@ other privileged controls remain native-only.
   exact OmoUsage-owned generic-password items in the macOS Keychain; values
   are never rendered after save or written to diagnostics. Legacy plaintext
   config files are read only for one-time migration.
-- Adding, replacing, removing, or migrating an API-key account runs under the
+- Captured companion credentials use the same exact account-qualified Keychain
+  boundary and are never written to the registry, diagnostics, snapshots, or
+  iCloud.
+- Adding, replacing, removing, or migrating any account credential runs under the
   provider-mutation advisory lock and a secret-free intent journal. New values
   stage in Keychain before the atomic registry update and promote only after
   registry persistence/readback succeeds. Removal deletes only the targeted

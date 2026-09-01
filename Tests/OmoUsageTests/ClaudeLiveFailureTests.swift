@@ -220,7 +220,8 @@ private enum ClaudeUsageCooldownFixtures {
             discovery: CredentialDiscovery(
                 paths: CredentialPaths(claude: missing, codex: missing),
                 environment: [:],
-                keychain: StoredClaudeCooldownKeychain()
+                keychain: StoredClaudeCooldownKeychain(),
+                providerKeychain: StoredClaudeCooldownKeychain()
             ),
             http: providerHTTPTestClient(
                 session: URLSession(configuration: configuration),
@@ -234,12 +235,30 @@ private enum ClaudeUsageCooldownFixtures {
     }
 }
 
-private struct StoredClaudeCooldownKeychain: KeychainReading {
+private struct StoredClaudeCooldownKeychain:
+    KeychainReading,
+    ProviderKeychain
+{
     func value(service: String, account: String) throws -> String? {
-        service == "Claude Code-credentials"
+        if service == ProviderAPIKeyStore.serviceName {
+            return try CredentialSnapshot(
+                provider: .claude,
+                accessToken: "cooldown-access-token",
+                refreshToken: "cooldown-refresh-token",
+                accountReference: nil,
+                planName: "Max",
+                expiresAt: Date(timeIntervalSince1970: 1_790_000_000),
+                source: .keychain
+            ).encodedSecret()
+        }
+        return service == "Claude Code-credentials"
             ? ClaudeUsageCooldownFixtures.storedCredential
             : nil
     }
+
+    func set(_ value: String, service: String, account: String) throws {}
+
+    func remove(service: String, account: String) throws {}
 }
 
 private final class ClaudeUsageCooldownExchange: @unchecked Sendable {
@@ -797,7 +816,7 @@ private enum ClaudeFallbackFixtures {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [ClaudeFallbackURLProtocol.self]
         return ClaudeUsageProvider(
-            accountID: AccountID(),
+            accountID: .legacy,
             discovery: CredentialDiscovery(
                 paths: CredentialPaths(
                     claude: claudeURL,

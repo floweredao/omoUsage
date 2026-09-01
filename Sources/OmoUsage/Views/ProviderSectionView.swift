@@ -37,6 +37,7 @@ enum ProviderMetadataVisualTokens {
 struct ProviderSectionView: View {
     let usage: ProviderUsage
     var showsAccountLabel = false
+    var usesCircularProviderIcon = false
     @Environment(\.appLocalization)
     private var localization
 
@@ -45,6 +46,12 @@ struct ProviderSectionView: View {
             HStack(spacing: 9) {
                 ProviderIcon(provider: usage.provider)
                     .frame(width: 20, height: 20)
+                    .clipShape(
+                        RoundedRectangle(
+                            cornerRadius: usesCircularProviderIcon ? 10 : 0,
+                            style: .continuous
+                        )
+                    )
 
                 VStack(alignment: .leading, spacing: 1) {
                     Text(usage.provider.displayName)

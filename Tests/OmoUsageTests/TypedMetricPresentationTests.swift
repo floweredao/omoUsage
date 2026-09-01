@@ -80,6 +80,27 @@ struct TypedMetricPresentationTests {
     }
 
     @Test
+    func sideNotchRailPrefersFiveHourSessionOverWeeklyQuota() {
+        let weekly = UsageMeter(
+            id: "claude.week",
+            title: "Weekly",
+            period: .week,
+            percentRemaining: 91
+        )
+        let session = UsageMeter(
+            id: "claude.session",
+            title: "Session (5 hours)",
+            period: .session,
+            percentRemaining: 63
+        )
+
+        #expect(
+            SideNotchSummaryMeterPolicy.select(from: [weekly, session])?.id
+                == "claude.session"
+        )
+    }
+
+    @Test
     func everyShippedSurfaceBranchesOnMetricKind() throws {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

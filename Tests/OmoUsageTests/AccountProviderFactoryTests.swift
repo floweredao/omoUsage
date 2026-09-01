@@ -6,84 +6,44 @@ import Testing
 @Suite
 struct AccountProviderFactoryTests {
     @Test
-    func registryCreatesReferencedAPIKeyAccountsAndOneCompanionRoster() {
-        let openCode = AccountID()
-        let firstRouter = AccountID()
-        let secondRouter = AccountID()
-        let zai = AccountID()
-        let unreferenced = AccountID()
+    func registryCreatesReferencedAccountsForEveryProvider() {
+        let accountIDs = Dictionary(
+            uniqueKeysWithValues: ProviderID.allCases.map {
+                ($0, AccountID())
+            }
+        )
+        let references = ProviderID.allCases.map {
+            AccountProviderID(
+                accountID: accountIDs[$0]!,
+                providerID: $0
+            )
+        }
         let registry = ProviderAccountRegistry(
             version: ProviderAccountStore.currentVersion,
             migrationVersion: ProviderAccountStore.currentMigrationVersion,
-            accounts: [
-                ProviderAccount(id: .legacy, label: "Legacy Alias"),
-                ProviderAccount(id: openCode, label: "OpenCode Account"),
-                ProviderAccount(id: firstRouter, label: "First Router"),
-                ProviderAccount(id: secondRouter, label: "Second Router"),
-                ProviderAccount(id: zai, label: "Z.ai Account"),
-                ProviderAccount(id: unreferenced, label: "Unreferenced")
-            ],
+            accounts: [ProviderAccount(id: .legacy, label: "Legacy Alias")]
+                + ProviderID.allCases.map {
+                    ProviderAccount(
+                        id: accountIDs[$0]!,
+                        label: "\($0.displayName) Account"
+                    )
+                },
             displayOrder: [],
             disconnected: [],
-            apiKeyReferences: [
-                AccountProviderID(accountID: zai, providerID: .zai),
-                AccountProviderID(
-                    accountID: secondRouter,
-                    providerID: .openrouter
-                ),
-                AccountProviderID(accountID: openCode, providerID: .opencode),
-                AccountProviderID(
-                    accountID: firstRouter,
-                    providerID: .openrouter
-                )
-            ]
+            providerReferences: references
         )
 
         let providers = ProviderFactory.current(
             registry: registry,
-            environment: [:]
+            environment: ["OMO_USAGE_FIXTURE_MODE": "1"]
         )
-        let companionIDs: [ProviderID] = [
-            .claude, .codex, .cursor, .antigravity,
-            .copilot, .devin, .grok
-        ]
-        let companions = providers.filter { companionIDs.contains($0.id) }
 
-        for providerID in companionIDs {
-            let matches = companions.filter { $0.id == providerID }
-            #expect(matches.count == 1)
-            #expect(matches.first?.accountID == .legacy)
-            #expect(matches.first?.accountLabel == "Legacy Alias")
-        }
+        #expect(providers.map(\.accountProviderID) == references)
         #expect(
-            providers.filter { !companionIDs.contains($0.id) }
-                .map(\.accountProviderID) == [
-                    AccountProviderID(
-                        accountID: openCode,
-                        providerID: .opencode
-                    ),
-                    AccountProviderID(
-                        accountID: firstRouter,
-                        providerID: .openrouter
-                    ),
-                    AccountProviderID(
-                        accountID: secondRouter,
-                        providerID: .openrouter
-                    ),
-                    AccountProviderID(accountID: zai, providerID: .zai)
-                ]
+            providers.map(\.accountLabel)
+                == ProviderID.allCases.map { "\($0.displayName) Account" }
         )
-        #expect(
-            providers.filter { !companionIDs.contains($0.id) }
-                .map(\.accountLabel) == [
-                    "OpenCode Account",
-                    "First Router",
-                    "Second Router",
-                    "Z.ai Account"
-                ]
-        )
-        #expect(providers.allSatisfy { $0.accountID != unreferenced })
-        #expect(providers.count == 11)
+        #expect(providers.count == ProviderID.allCases.count)
     }
 
     @Test

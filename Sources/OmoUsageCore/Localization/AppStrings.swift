@@ -67,14 +67,12 @@ public enum AppStringKey: String, CaseIterable, Sendable {
     case reconnectProvider
     case codexUsageTier
     case apiKey
-    case apiKeyAccounts
     case keySourceEnvironment
     case keySourceKeychain
     case keySourceLegacyFile
     case retryLegacyKeyCleanup
     case legacyKeyCleanupSucceeded
     case legacyKeyCleanupFailed
-    case accountProvider
     case accountAlias
     case addAccount
     case removeAccount
@@ -227,14 +225,12 @@ public struct AppStrings: Sendable {
         .reconnectProvider: "다시 연결",
         .codexUsageTier: "Codex 사용량 등급",
         .apiKey: "API 키",
-        .apiKeyAccounts: "API 키 계정",
         .keySourceEnvironment: "소스: 환경 변수",
         .keySourceKeychain: "소스: 키체인",
         .keySourceLegacyFile: "소스: 이전 키 파일",
         .retryLegacyKeyCleanup: "이전 파일 정리 다시 시도",
         .legacyKeyCleanupSucceeded: "이전 키 파일을 정리했습니다.",
         .legacyKeyCleanupFailed: "이전 키 파일을 정리하지 못했습니다.",
-        .accountProvider: "프로바이더",
         .accountAlias: "계정 별칭",
         .addAccount: "계정 추가",
         .removeAccount: "%@ 계정 삭제",
@@ -375,14 +371,12 @@ public struct AppStrings: Sendable {
         .reconnectProvider: "Reconnect",
         .codexUsageTier: "Codex Usage Tier",
         .apiKey: "API Key",
-        .apiKeyAccounts: "API Key Accounts",
         .keySourceEnvironment: "Source: Environment",
         .keySourceKeychain: "Source: Keychain",
         .keySourceLegacyFile: "Source: Legacy key file",
         .retryLegacyKeyCleanup: "Retry Legacy File Cleanup",
         .legacyKeyCleanupSucceeded: "Removed the legacy key file.",
         .legacyKeyCleanupFailed: "Could not remove the legacy key file.",
-        .accountProvider: "Provider",
         .accountAlias: "Account Alias",
         .addAccount: "Add Account",
         .removeAccount: "Remove %@ account",

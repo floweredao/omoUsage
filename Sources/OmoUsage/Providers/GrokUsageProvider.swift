@@ -19,16 +19,36 @@ struct GrokUsageProvider: UsageProvider {
     }()
 
     let id = ProviderID.grok
+    let accountID: AccountID
+    let accountLabel: String
     let discovery: CredentialDiscovery
     let http: ProviderHTTP
 
+    init(
+        discovery: CredentialDiscovery,
+        http: ProviderHTTP = ProviderHTTP(),
+        accountID: AccountID = .legacy,
+        accountLabel: String = AccountLabel.defaultValue
+    ) {
+        self.accountID = accountID
+        self.accountLabel = accountLabel
+        self.discovery = discovery
+        self.http = http
+    }
+
     func fetch(now: Date) async throws -> ProviderUsage {
-        let discovered = try discovery.grok(now: now)
+        let discovered = try discovery.grok(
+            accountID: accountID,
+            now: now
+        )
         // Only an auth rejection says the *account* is the problem. A 500,
         // a 429, a malformed payload or a failed write-back are facts about
         // the request, and replaying them across every stored account just
         // multiplies the damage.
-        var candidates = discovery.grokCandidates(now: now)
+        var candidates = discovery.grokCandidates(
+            accountID: accountID,
+            now: now
+        )
         if candidates.isEmpty {
             candidates = [discovered]
         }
@@ -258,7 +278,10 @@ struct GrokUsageProvider: UsageProvider {
             idToken: ProviderPayload.text(
                 tokenPayload,
                 paths: [["id_token"]]
-            )
+            ),
+            // A captured account rotates inside its own snapshot; only a
+            // legacy read may write the shared auth store.
+            storage: credential.storage
         )
         return DiscoveredCredential(
             provider: id,
@@ -271,7 +294,8 @@ struct GrokUsageProvider: UsageProvider {
             oidcIssuer: credential.oidcIssuer,
             oidcClientID: clientID,
             principalType: credential.principalType,
-            principalID: credential.principalID
+            principalID: credential.principalID,
+            storage: credential.storage
         )
     }
 

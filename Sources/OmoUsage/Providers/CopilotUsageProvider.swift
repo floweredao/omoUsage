@@ -3,11 +3,25 @@ import Foundation
 
 struct CopilotUsageProvider: UsageProvider {
     let id = ProviderID.copilot
+    let accountID: AccountID
+    let accountLabel: String
     let discovery: CredentialDiscovery
     let http: ProviderHTTP
 
+    init(
+        discovery: CredentialDiscovery,
+        http: ProviderHTTP = ProviderHTTP(),
+        accountID: AccountID = .legacy,
+        accountLabel: String = AccountLabel.defaultValue
+    ) {
+        self.accountID = accountID
+        self.accountLabel = accountLabel
+        self.discovery = discovery
+        self.http = http
+    }
+
     func fetch(now: Date) async throws -> ProviderUsage {
-        let credential = try discovery.copilot()
+        let credential = try discovery.copilot(accountID: accountID)
         let endpoint = ProviderContractCatalog.endpoint(.copilotUser, for: id)
         var request = URLRequest(
             url: URL(

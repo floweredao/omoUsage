@@ -193,14 +193,14 @@ struct ProviderMutationCoordinator {
                 accounts: registry.accounts + [ProviderAccount(id: accountID, label: label)],
                 displayOrder: registry.displayOrder + [identity],
                 disconnected: registry.disconnected,
-                apiKeyReferences: registry.apiKeyReferences + [identity]
+                providerReferences: registry.providerReferences + [identity]
             )
         }
     }
 
     func removeAPIKeyAccount(_ identity: AccountProviderID) throws {
         _ = try removeSecret(identity: identity) { registry in
-            let references = registry.apiKeyReferences.filter { $0 != identity }
+            let references = registry.providerReferences.filter { $0 != identity }
             let accountStillReferenced = references.contains {
                 $0.accountID == identity.accountID
             }
@@ -212,7 +212,7 @@ struct ProviderMutationCoordinator {
                 },
                 displayOrder: registry.displayOrder.filter { $0 != identity },
                 disconnected: registry.disconnected.filter { $0 != identity },
-                apiKeyReferences: references
+                providerReferences: references
             )
         }
     }
@@ -272,7 +272,13 @@ struct ProviderMutationCoordinator {
             current = recovered
         }
 
-        for identity in current.apiKeyReferences {
+        for identity in current.providerReferences {
+            guard identity.providerID == .opencode
+                || identity.providerID == .openrouter
+                || identity.providerID == .zai
+            else {
+                continue
+            }
             guard let secretStore = keyStore(identity.providerID, identity.accountID),
                   secretStore.legacyExists
             else { continue }

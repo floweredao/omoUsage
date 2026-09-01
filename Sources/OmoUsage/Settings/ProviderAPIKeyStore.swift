@@ -242,7 +242,9 @@ struct ProviderAPIKeyStore: Sendable {
             fileName = "zai.json"
             environmentNames = ["ZAI_API_KEY", "GLM_API_KEY"]
         default:
-            return nil
+            guard accountID != .legacy else { return nil }
+            fileName = "\(provider.rawValue).json"
+            environmentNames = []
         }
         let configHome: URL
         if let value = environment["XDG_CONFIG_HOME"]?.trimmedNonEmpty,

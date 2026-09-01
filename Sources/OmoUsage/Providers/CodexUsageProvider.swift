@@ -3,6 +3,8 @@ import Foundation
 
 struct CodexUsageProvider: UsageProvider {
     let id = ProviderID.codex
+    let accountID: AccountID
+    let accountLabel: String
     let discovery: CredentialDiscovery
     let http: ProviderHTTP
 
@@ -15,16 +17,26 @@ struct CodexUsageProvider: UsageProvider {
 
     init(
         discovery: CredentialDiscovery = .live(),
-        http: ProviderHTTP = ProviderHTTP()
+        http: ProviderHTTP = ProviderHTTP(),
+        accountID: AccountID = .legacy,
+        accountLabel: String = AccountLabel.defaultValue
     ) {
+        self.accountID = accountID
+        self.accountLabel = accountLabel
         self.discovery = discovery
         self.http = http
     }
 
     func fetch(now: Date) async throws -> ProviderUsage {
-        let candidates = discovery.codexCandidates(now: now)
+        let candidates = discovery.codexCandidates(
+            accountID: accountID,
+            now: now
+        )
         guard !candidates.isEmpty else {
-            let credential = try discovery.codex(now: now)
+            let credential = try discovery.codex(
+                accountID: accountID,
+                now: now
+            )
             return try await fetch(
                 credential: credential,
                 now: now
