@@ -86,6 +86,33 @@ enum SideNotchPanelLayout {
             + detailCardMargin * 2
     }
 
+    /// Rail height for `providerCount` rows: padding, rows, footer
+    /// clearance, and footer.
+    static func naturalRailHeight(providerCount: Int) -> CGFloat {
+        verticalPadding
+            + CGFloat(providerCount) * providerRowHeight
+            + footerClearance
+            + footerHeight
+    }
+
+    /// Height the rail view occupies inside `containerHeight`.
+    ///
+    /// A populated rail never stretches past its natural height, so the
+    /// taller detail container cannot open a blank material band between
+    /// the last provider row and the footer. The zero-provider checking
+    /// state and a rail too crowded for the panel take the container and
+    /// scroll inside it.
+    static func railContentHeight(
+        providerCount: Int,
+        containerHeight: CGFloat
+    ) -> CGFloat {
+        guard providerCount > 0 else { return containerHeight }
+        return min(
+            naturalRailHeight(providerCount: providerCount),
+            containerHeight
+        )
+    }
+
     static func presentationFrame(
         in visibleFrame: NSRect,
         providers: [ProviderUsage],
@@ -147,10 +174,7 @@ enum SideNotchPanelLayout {
 
         let railHeight = max(
             minimumHeight,
-            verticalPadding
-                + CGFloat(providerCount) * providerRowHeight
-                + footerClearance
-                + footerHeight
+            naturalRailHeight(providerCount: providerCount)
         )
         let desiredHeight = max(
             railHeight,

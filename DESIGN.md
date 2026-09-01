@@ -148,11 +148,17 @@ other privileged controls remain native-only.
   plus a 58 pt vertically stacked footer defines the rail's natural height,
   and the revealed rail uses exactly that height. It never reserves detail
   height, so no blank material band appears between the last provider row
-  and the footer. Only provider detail reserves the largest visible provider
-  detail height plus 12 pt top and bottom margins: the panel resizes once on
-  entering or leaving detail and never while moving between providers inside
-  it. Both states stay centered on the same reveal anchor, keep the same
-  right edge, and stay within the 128 pt minimum and 540 pt maximum height.
+  and the footer. The rail view is capped the same way in every presented
+  mode: `SideNotchPanelLayout.railContentHeight` is the smaller of that
+  natural height and the container, top-aligned, so a populated rail keeps
+  its own height inside the taller detail container. Only the zero-provider
+  checking state and a rail too crowded for the panel take the full
+  container and scroll inside it. Only provider detail reserves the largest
+  visible provider detail height plus 12 pt top and bottom margins: the
+  panel resizes once on entering or leaving detail and never while moving
+  between providers inside it. Both states stay centered on the same reveal
+  anchor, keep the same right edge, and stay within the 128 pt minimum and
+  540 pt maximum height.
 - The side-notch detail card is 280 pt wide and at most 320 pt high. It uses
   the existing provider section, applies 14 pt content padding, and scrolls
   only when that provider's complete usage content exceeds the cap.

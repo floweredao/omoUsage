@@ -92,9 +92,17 @@ struct SideNotchPanelView: View {
                         )
                         .frame(
                             width:
-                                SideNotchPanelLayout.collapsedWidth
+                                SideNotchPanelLayout.collapsedWidth,
+                            height:
+                                SideNotchPanelLayout.railContentHeight(
+                                    providerCount:
+                                        viewModel.snapshot.providers
+                                        .count,
+                                    containerHeight:
+                                        geometry.size.height
+                                ),
+                            alignment: .top
                         )
-                        .frame(maxHeight: .infinity)
                     }
                     .frame(
                         width: geometry.size.width,
