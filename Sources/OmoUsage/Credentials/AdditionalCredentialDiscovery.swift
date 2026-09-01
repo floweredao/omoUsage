@@ -375,7 +375,6 @@ extension CredentialDiscovery {
                         source: .file
                     )
                 }
-                candidateError = .malformed(.opencode)
             } catch {
                 candidateError = .malformed(.opencode)
             }
@@ -431,6 +430,12 @@ extension CredentialDiscovery {
     }
 
     var openCodeDataDirectory: URL {
+        if
+            let value = environment["OPENCODE_DATA_DIR"]?.nonBlank,
+            value.hasPrefix("/")
+        {
+            return URL(filePath: value, directoryHint: .isDirectory)
+        }
         if
             let value = environment["XDG_DATA_HOME"]?.nonBlank,
             value.hasPrefix("/")
