@@ -1,9 +1,10 @@
 import Foundation
+import Observation
 import Security
 
 enum WebDashboardAccessMode: Equatable, Sendable {
     case local(port: UInt16)
-    case tailscale(host: String)
+    case tailscale(host: String, httpsPort: UInt16)
 
     static func resolve(
         environment: [String: String],
@@ -15,15 +16,21 @@ enum WebDashboardAccessMode: Equatable, Sendable {
         else {
             return .local(port: port)
         }
-        return .tailscale(host: host)
+        return .tailscale(host: host, httpsPort: 443)
     }
 
     var bootstrapBaseURL: URL {
         switch self {
         case .local(let port):
-            URL(string: "http://127.0.0.1:\(port)")!
-        case .tailscale(let host):
-            URL(string: "https://\(host)")!
+            return URL(string: "http://127.0.0.1:\(port)")!
+        case .tailscale(let host, let httpsPort):
+            var components = URLComponents()
+            components.scheme = "https"
+            components.host = host
+            if httpsPort != 443 {
+                components.port = Int(httpsPort)
+            }
+            return components.url!
         }
     }
 
@@ -32,8 +39,11 @@ enum WebDashboardAccessMode: Equatable, Sendable {
         case .local(let port):
             host == "127.0.0.1:\(port)"
                 || host == "localhost:\(port)"
-        case .tailscale(let expectedHost):
-            host == expectedHost
+        case .tailscale(let expectedHost, let httpsPort):
+            host == Self.authority(
+                host: expectedHost,
+                httpsPort: httpsPort
+            )
         }
     }
 
@@ -63,7 +73,7 @@ enum WebDashboardAccessMode: Equatable, Sendable {
         return true
     }
 
-    private static func isValidTailscaleHost(_ host: String) -> Bool {
+    static func isValidTailscaleHost(_ host: String) -> Bool {
         guard
             isSyntacticallyValidHost(host),
             host == host.lowercased(),
@@ -89,6 +99,13 @@ enum WebDashboardAccessMode: Equatable, Sendable {
                     || $0 == 0x2d
             }
         }
+    }
+
+    private static func authority(
+        host: String,
+        httpsPort: UInt16
+    ) -> String {
+        httpsPort == 443 ? host : "\(host):\(httpsPort)"
     }
 }
 
@@ -123,10 +140,9 @@ enum FixtureWebBootstrapExporter {
 final class WebDashboardAccessStore: @unchecked Sendable {
     static let sessionCookieName = "omo_session"
 
-    let mode: WebDashboardAccessMode
-
     private let lock = NSLock()
     private let tokenGenerator: @Sendable () throws -> String
+    private var currentMode: WebDashboardAccessMode
     private var bootstrapToken: String?
     private var sessions: [String] = []
     private let maximumSessionCount = 16
@@ -137,14 +153,28 @@ final class WebDashboardAccessStore: @unchecked Sendable {
             try WebDashboardAccessStore.secureToken()
         }
     ) {
-        self.mode = mode
+        currentMode = mode
         self.tokenGenerator = tokenGenerator
+    }
+
+    var mode: WebDashboardAccessMode {
+        lock.withLock { currentMode }
+    }
+
+    func updateMode(_ mode: WebDashboardAccessMode) {
+        lock.withLock {
+            guard currentMode != mode else { return }
+            currentMode = mode
+            bootstrapToken = nil
+            sessions.removeAll()
+        }
     }
 
     func makeBootstrapURL() throws -> URL {
         let token = "b_\(try tokenGenerator())"
-        lock.withLock {
+        let mode = lock.withLock {
             bootstrapToken = token
+            return currentMode
         }
         guard var components = URLComponents(
             url: mode.bootstrapBaseURL.appending(path: "bootstrap"),
@@ -160,6 +190,7 @@ final class WebDashboardAccessStore: @unchecked Sendable {
     }
 
     func consumeBootstrapToken(_ candidate: String) throws -> String? {
+        let session = "s_\(try tokenGenerator())"
         let matched = lock.withLock {
             guard
                 let bootstrapToken,
@@ -168,17 +199,13 @@ final class WebDashboardAccessStore: @unchecked Sendable {
                 return false
             }
             self.bootstrapToken = nil
-            return true
-        }
-        guard matched else { return nil }
-
-        let session = "s_\(try tokenGenerator())"
-        lock.withLock {
             sessions.append(session)
             if sessions.count > maximumSessionCount {
                 sessions.removeFirst(sessions.count - maximumSessionCount)
             }
+            return true
         }
+        guard matched else { return nil }
         return session
     }
 
@@ -248,18 +275,19 @@ struct WebDashboardAccessGateway: Sendable {
     func response(
         request: WebDashboardHTTPRequest
     ) -> WebDashboardHTTPResponse {
+        let mode = accessStore.mode
         guard let host = request.headers["host"] else {
             return plainResponse(statusCode: 400, reasonPhrase: "Bad Request")
         }
         guard WebDashboardAccessMode.isSyntacticallyValidHost(host) else {
             return plainResponse(statusCode: 400, reasonPhrase: "Bad Request")
         }
-        guard accessStore.mode.accepts(host: host) else {
+        guard mode.accepts(host: host) else {
             return plainResponse(statusCode: 403, reasonPhrase: "Forbidden")
         }
 
         if request.method == "GET", request.path == "/bootstrap" {
-            return bootstrapResponse(for: request)
+            return bootstrapResponse(for: request, mode: mode)
         }
 
         guard accessStore.authenticates(
@@ -270,7 +298,7 @@ struct WebDashboardAccessGateway: Sendable {
 
         if request.method == "POST" {
             guard
-                let expectedOrigin = accessStore.mode.expectedOrigin(for: host),
+                let expectedOrigin = mode.expectedOrigin(for: host),
                 request.headers["origin"] == expectedOrigin
             else {
                 return plainResponse(statusCode: 403, reasonPhrase: "Forbidden")
@@ -280,7 +308,8 @@ struct WebDashboardAccessGateway: Sendable {
     }
 
     private func bootstrapResponse(
-        for request: WebDashboardHTTPRequest
+        for request: WebDashboardHTTPRequest,
+        mode: WebDashboardAccessMode
     ) -> WebDashboardHTTPResponse {
         guard
             let token = bootstrapToken(from: request.query),
@@ -289,7 +318,7 @@ struct WebDashboardAccessGateway: Sendable {
             return plainResponse(statusCode: 401, reasonPhrase: "Unauthorized")
         }
         let secureAttribute: String
-        switch accessStore.mode {
+        switch mode {
         case .local:
             secureAttribute = ""
         case .tailscale:
@@ -352,5 +381,417 @@ struct WebDashboardAccessGateway: Sendable {
             "Referrer-Policy": "no-referrer",
             "X-Content-Type-Options": "nosniff"
         ]
+    }
+}
+
+struct TailscaleCommandResult: Sendable {
+    let status: Int32
+    let standardOutput: Data
+    let standardError: Data
+}
+
+enum TailscaleDashboardFailure: Error, Equatable, Sendable {
+    case commandFailed
+    case invalidStatus
+    case verificationFailed
+}
+
+enum TailscaleDashboardInspection: Equatable, Sendable {
+    case unavailable
+    case signedOut
+    case available(host: String)
+    case ready(host: String)
+}
+
+protocol TailscaleDashboardServing: Sendable {
+    func inspect(
+        dashboardPort: UInt16
+    ) throws -> TailscaleDashboardInspection
+    func enable(dashboardPort: UInt16) throws
+    func disable() throws
+}
+
+enum TailscaleDashboardServiceFactory {
+    static func current(
+        environment: [String: String] =
+            ProcessInfo.processInfo.environment
+    ) -> any TailscaleDashboardServing {
+#if OMO_USAGE_FIXTURES
+        if
+            environment["OMO_USAGE_FIXTURE_MODE"] == "1",
+            let host = environment[
+                "OMO_USAGE_TAILSCALE_FIXTURE_HOST"
+            ],
+            WebDashboardAccessMode.isValidTailscaleHost(host)
+        {
+            return FixtureTailscaleDashboardService(host: host)
+        }
+#endif
+        return TailscaleCLIService()
+    }
+}
+
+#if OMO_USAGE_FIXTURES
+private struct FixtureTailscaleDashboardService:
+    TailscaleDashboardServing
+{
+    let host: String
+
+    func inspect(
+        dashboardPort: UInt16
+    ) throws -> TailscaleDashboardInspection {
+        .ready(host: host)
+    }
+
+    func enable(dashboardPort: UInt16) throws {}
+    func disable() throws {}
+}
+#endif
+
+struct TailscaleCLIService: TailscaleDashboardServing, Sendable {
+    static let httpsPort: UInt16 = 8_443
+
+    typealias Execute = @Sendable (
+        _ executable: URL,
+        _ arguments: [String]
+    ) throws -> TailscaleCommandResult
+
+    let executable: URL?
+    private let execute: Execute
+
+    init(
+        executable: URL? = Self.resolveExecutable(),
+        execute: @escaping Execute = Self.executeCommand
+    ) {
+        self.executable = executable
+        self.execute = execute
+    }
+
+    func inspect(
+        dashboardPort: UInt16
+    ) throws -> TailscaleDashboardInspection {
+        guard let executable else { return .unavailable }
+        let status = try execute(
+            executable,
+            ["status", "--json", "--peers=false"]
+        )
+        guard status.status == 0 else { return .signedOut }
+        let node = try Self.nodeStatus(status.standardOutput)
+        guard
+            node.backendState == "Running",
+            node.isOnline,
+            let host = Self.normalizedHost(node.dnsName)
+        else {
+            return .signedOut
+        }
+
+        let serve = try execute(
+            executable,
+            ["serve", "status", "--json"]
+        )
+        guard serve.status == 0 else {
+            throw TailscaleDashboardFailure.commandFailed
+        }
+        return try Self.servesDashboard(
+            serve.standardOutput,
+            dashboardPort: dashboardPort
+        )
+            ? .ready(host: host)
+            : .available(host: host)
+    }
+
+    func enable(dashboardPort: UInt16) throws {
+        guard let executable else {
+            throw TailscaleDashboardFailure.commandFailed
+        }
+        let result = try execute(
+            executable,
+            [
+                "serve",
+                "--bg",
+                "--yes",
+                "--https=\(Self.httpsPort)",
+                String(dashboardPort)
+            ]
+        )
+        guard result.status == 0 else {
+            throw TailscaleDashboardFailure.commandFailed
+        }
+    }
+
+    func disable() throws {
+        guard let executable else {
+            throw TailscaleDashboardFailure.commandFailed
+        }
+        let result = try execute(
+            executable,
+            [
+                "serve",
+                "--https=\(Self.httpsPort)",
+                "off"
+            ]
+        )
+        guard result.status == 0 else {
+            throw TailscaleDashboardFailure.commandFailed
+        }
+    }
+
+    static func resolveExecutable(
+        isExecutable: (String) -> Bool = {
+            FileManager.default.isExecutableFile(atPath: $0)
+        }
+    ) -> URL? {
+        let candidates = [
+            URL(filePath: "/usr/local/bin/tailscale"),
+            URL(filePath: "/opt/homebrew/bin/tailscale")
+        ]
+        return candidates.first {
+            isExecutable($0.path)
+        }
+    }
+
+    private static func executeCommand(
+        _ executable: URL,
+        _ arguments: [String]
+    ) throws -> TailscaleCommandResult {
+        let result = try BoundedProcessRunner().run(
+            executable: executable,
+            arguments: arguments,
+            timeout: 10
+        )
+        return TailscaleCommandResult(
+            status: result.status,
+            standardOutput: result.standardOutput,
+            standardError: result.standardError
+        )
+    }
+
+    private struct NodeStatus: Decodable {
+        struct Node: Decodable {
+            let dnsName: String
+            let isOnline: Bool
+
+            enum CodingKeys: String, CodingKey {
+                case dnsName = "DNSName"
+                case isOnline = "Online"
+            }
+        }
+
+        let backendState: String
+        let node: Node?
+
+        enum CodingKeys: String, CodingKey {
+            case backendState = "BackendState"
+            case node = "Self"
+        }
+
+        var dnsName: String? { node?.dnsName }
+        var isOnline: Bool { node?.isOnline == true }
+    }
+
+    private static func nodeStatus(_ data: Data) throws -> NodeStatus {
+        do {
+            return try JSONDecoder().decode(NodeStatus.self, from: data)
+        } catch {
+            throw TailscaleDashboardFailure.invalidStatus
+        }
+    }
+
+    private static func normalizedHost(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let host = value.hasSuffix(".")
+            ? String(value.dropLast())
+            : value
+        return WebDashboardAccessMode.isValidTailscaleHost(host)
+            ? host
+            : nil
+    }
+
+    private static func servesDashboard(
+        _ data: Data,
+        dashboardPort: UInt16
+    ) throws -> Bool {
+        let object: Any
+        do {
+            object = try JSONSerialization.jsonObject(with: data)
+        } catch {
+            throw TailscaleDashboardFailure.invalidStatus
+        }
+        let values = flattenedStrings(object)
+        let port = String(Self.httpsPort)
+        return values.contains {
+            $0 == port || $0.hasSuffix(":\(port)")
+        }
+            && values.contains(
+                "http://127.0.0.1:\(dashboardPort)"
+            )
+    }
+
+    private static func flattenedStrings(_ value: Any) -> Set<String> {
+        if let text = value as? String {
+            return [text]
+        }
+        if let dictionary = value as? [String: Any] {
+            return dictionary.reduce(into: Set(dictionary.keys)) {
+                result,
+                element in
+                result.formUnion(flattenedStrings(element.value))
+            }
+        }
+        if let array = value as? [Any] {
+            return array.reduce(into: []) {
+                $0.formUnion(flattenedStrings($1))
+            }
+        }
+        return []
+    }
+}
+
+enum TailscaleDashboardState: Equatable, Sendable {
+    case checking
+    case unavailable
+    case signedOut
+    case available(host: String)
+    case enabling(host: String)
+    case ready(host: String)
+    case disabling(host: String)
+    case failed(TailscaleDashboardFailure)
+}
+
+@Observable
+@MainActor
+final class TailscaleDashboardController {
+    private(set) var state: TailscaleDashboardState = .checking
+
+    private let service: any TailscaleDashboardServing
+    private let dashboardPort: UInt16
+    private let accessStore: WebDashboardAccessStore
+    private let statusStore: WebDashboardStatusStore
+
+    init(
+        service: any TailscaleDashboardServing,
+        dashboardPort: UInt16,
+        accessStore: WebDashboardAccessStore,
+        statusStore: WebDashboardStatusStore
+    ) {
+        self.service = service
+        self.dashboardPort = dashboardPort
+        self.accessStore = accessStore
+        self.statusStore = statusStore
+    }
+
+    func refresh() async {
+        state = .checking
+        switch await inspect() {
+        case .success(let inspection):
+            apply(inspection)
+        case .failure(let failure):
+            state = .failed(failure)
+        }
+    }
+
+    func enable() async {
+        guard case .available(let host) = state else { return }
+        state = .enabling(host: host)
+        let service = self.service
+        let dashboardPort = self.dashboardPort
+        let result = await Task.detached(priority: .utility) {
+            do {
+                try service.enable(dashboardPort: dashboardPort)
+                return Result<TailscaleDashboardInspection,
+                    TailscaleDashboardFailure>.success(
+                        try service.inspect(
+                            dashboardPort: dashboardPort
+                        )
+                    )
+            } catch let failure as TailscaleDashboardFailure {
+                return .failure(failure)
+            } catch {
+                return .failure(.commandFailed)
+            }
+        }.value
+        switch result {
+        case .success(.ready(let readyHost)):
+            apply(.ready(host: readyHost))
+        case .success:
+            state = .failed(.verificationFailed)
+        case .failure(let failure):
+            state = .failed(failure)
+        }
+    }
+
+    func disable() async {
+        guard case .ready(let host) = state else { return }
+        state = .disabling(host: host)
+        let service = self.service
+        let dashboardPort = self.dashboardPort
+        let result = await Task.detached(priority: .utility) {
+            do {
+                try service.disable()
+                return Result<TailscaleDashboardInspection,
+                    TailscaleDashboardFailure>.success(
+                        try service.inspect(
+                            dashboardPort: dashboardPort
+                        )
+                    )
+            } catch let failure as TailscaleDashboardFailure {
+                return .failure(failure)
+            } catch {
+                return .failure(.commandFailed)
+            }
+        }.value
+        switch result {
+        case .success(let inspection):
+            apply(inspection)
+        case .failure(let failure):
+            state = .failed(failure)
+        }
+    }
+
+    private func inspect() async -> Result<
+        TailscaleDashboardInspection,
+        TailscaleDashboardFailure
+    > {
+        let service = self.service
+        let dashboardPort = self.dashboardPort
+        return await Task.detached(priority: .utility) {
+            do {
+                return .success(
+                    try service.inspect(dashboardPort: dashboardPort)
+                )
+            } catch let failure as TailscaleDashboardFailure {
+                return .failure(failure)
+            } catch {
+                return .failure(.commandFailed)
+            }
+        }.value
+    }
+
+    private func apply(_ inspection: TailscaleDashboardInspection) {
+        switch inspection {
+        case .unavailable:
+            publishLocalMode()
+            state = .unavailable
+        case .signedOut:
+            publishLocalMode()
+            state = .signedOut
+        case .available(let host):
+            publishLocalMode()
+            state = .available(host: host)
+        case .ready(let host):
+            let mode = WebDashboardAccessMode.tailscale(
+                host: host,
+                httpsPort: TailscaleCLIService.httpsPort
+            )
+            accessStore.updateMode(mode)
+            statusStore.publishAccessMode(mode)
+            state = .ready(host: host)
+        }
+    }
+
+    private func publishLocalMode() {
+        let mode = WebDashboardAccessMode.local(port: dashboardPort)
+        accessStore.updateMode(mode)
+        statusStore.publishAccessMode(mode)
     }
 }

@@ -45,9 +45,25 @@ public enum AppStringKey: String, CaseIterable, Sendable {
     case webDashboardReady
     case webDashboardFailed
     case webDashboardEndpointDetails
+    case webDashboardTailscaleEndpointDetails
     case webDashboardPortInUse
     case webDashboardPermissionDenied
     case webDashboardUnavailable
+    case phoneAccess
+    case phoneAccessDescription
+    case phoneAccessUnavailable
+    case phoneAccessSignedOut
+    case phoneAccessAvailable
+    case phoneAccessReady
+    case phoneAccessChecking
+    case phoneAccessFailed
+    case enablePhoneAccess
+    case disablePhoneAccess
+    case pairPhone
+    case phonePairingTitle
+    case phonePairingDescription
+    case phonePairingQRCodeLabel
+    case phonePairingFailed
     case diagnostics
     case diagnosticsDescription
     case exportDiagnostics
@@ -199,12 +215,32 @@ public struct AppStrings: Sendable {
         .webDashboardReady: "준비됨",
         .webDashboardFailed: "실패",
         .webDashboardEndpointDetails: "포트 %d · 루프백 전용",
+        .webDashboardTailscaleEndpointDetails:
+            "Tailscale 전용 HTTPS %d · 로컬 포트 %d",
         .webDashboardPortInUse:
             "포트 %d이(가) 이미 사용 중입니다. 해당 포트를 사용하는 앱을 종료한 후 다시 시도하세요.",
         .webDashboardPermissionDenied:
             "macOS에서 포트 %d 접근을 거부했습니다. 보안 설정을 확인한 후 다시 시도하세요.",
         .webDashboardUnavailable:
             "포트 %d에서 로컬 대시보드를 시작하지 못했습니다. 다시 시도하거나 OmoUsage를 재시작하세요.",
+        .phoneAccess: "휴대폰 접속",
+        .phoneAccessDescription:
+            "Tailscale로 휴대폰에서 이 Mac의 웹 대시보드를 안전하게 엽니다.",
+        .phoneAccessUnavailable: "Tailscale CLI 없음",
+        .phoneAccessSignedOut: "Tailscale 연결 필요",
+        .phoneAccessAvailable: "설정 가능",
+        .phoneAccessReady: "준비됨",
+        .phoneAccessChecking: "확인 중",
+        .phoneAccessFailed: "설정 실패",
+        .enablePhoneAccess: "휴대폰 접속 켜기",
+        .disablePhoneAccess: "휴대폰 접속 끄기",
+        .pairPhone: "휴대폰 연결",
+        .phonePairingTitle: "휴대폰 연결",
+        .phonePairingDescription:
+            "같은 tailnet에 연결된 휴대폰으로 QR 코드를 스캔하세요. 이 링크는 한 번만 사용할 수 있습니다.",
+        .phonePairingQRCodeLabel:
+            "한 번만 사용할 수 있는 휴대폰 연결 QR 코드",
+        .phonePairingFailed: "휴대폰 연결 링크를 만들지 못했습니다.",
         .diagnostics: "진단 정보",
         .diagnosticsDescription:
             "민감한 내용을 제외한 기계 판독용 진단 정보를 내보냅니다.",
@@ -345,12 +381,32 @@ public struct AppStrings: Sendable {
         .webDashboardReady: "Ready",
         .webDashboardFailed: "Failed",
         .webDashboardEndpointDetails: "Port %d · Loopback only",
+        .webDashboardTailscaleEndpointDetails:
+            "Tailscale-only HTTPS %d · local port %d",
         .webDashboardPortInUse:
             "Port %d is already in use. Close the app using it, then retry.",
         .webDashboardPermissionDenied:
             "macOS denied access to port %d. Check security settings, then retry.",
         .webDashboardUnavailable:
             "The local dashboard could not start on port %d. Retry, or restart OmoUsage.",
+        .phoneAccess: "Phone Access",
+        .phoneAccessDescription:
+            "Open this Mac's web dashboard securely from your phone through Tailscale.",
+        .phoneAccessUnavailable: "Tailscale CLI Missing",
+        .phoneAccessSignedOut: "Connect Tailscale",
+        .phoneAccessAvailable: "Available",
+        .phoneAccessReady: "Ready",
+        .phoneAccessChecking: "Checking",
+        .phoneAccessFailed: "Setup Failed",
+        .enablePhoneAccess: "Enable Phone Access",
+        .disablePhoneAccess: "Disable Phone Access",
+        .pairPhone: "Pair Phone",
+        .phonePairingTitle: "Pair Phone",
+        .phonePairingDescription:
+            "Scan this QR code with a phone on the same tailnet. The link works once.",
+        .phonePairingQRCodeLabel:
+            "One-use phone pairing QR code",
+        .phonePairingFailed: "Could not create a phone pairing link.",
         .diagnostics: "Diagnostics",
         .diagnosticsDescription:
             "Export machine-readable diagnostics with sensitive data excluded.",

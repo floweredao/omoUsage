@@ -886,6 +886,15 @@ final class WebDashboardStatusStore {
             bindMode: status.bindMode
         )
     }
+
+    func publishAccessMode(_ mode: WebDashboardAccessMode) {
+        status = WebDashboardStatus(
+            state: status.state,
+            url: mode.bootstrapBaseURL,
+            port: status.port,
+            bindMode: status.bindMode
+        )
+    }
 }
 
 enum WebDashboardListenerState: Sendable {

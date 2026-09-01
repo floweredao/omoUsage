@@ -1,5 +1,6 @@
 import OmoUsageCore
 import AppKit
+import CoreImage
 import SwiftUI
 
 struct SettingsView: View {
@@ -11,7 +12,10 @@ struct SettingsView: View {
     let onPresentationStyleChange: (DashboardPresentationStyle) -> Void
     let onSideNotchHideDelayChange: (SideNotchHideDelay) -> Void
     @Bindable var webDashboardStatusStore: WebDashboardStatusStore
+    @Bindable var tailscaleDashboardController:
+        TailscaleDashboardController
     let onOpenWebDashboard: () -> Bool
+    let onCreatePhonePairingURL: () -> URL?
     let onRetryWebDashboard: () -> Void
     let onExportDiagnostics: () -> DiagnosticExportOutcome
     @State private var keyDrafts: [ProviderID: String] = [:]
@@ -27,6 +31,8 @@ struct SettingsView: View {
     ).load()
     @State private var presentationStyle: DashboardPresentationStyle
     @State private var sideNotchHideDelay: SideNotchHideDelay
+    @State private var phonePairingURL: URL?
+    @State private var showsPhonePairing = false
 
     init(
         viewModel: UsageDashboardViewModel,
@@ -41,7 +47,10 @@ struct SettingsView: View {
         onSideNotchHideDelayChange:
             @escaping (SideNotchHideDelay) -> Void,
         webDashboardStatusStore: WebDashboardStatusStore,
+        tailscaleDashboardController:
+            TailscaleDashboardController,
         onOpenWebDashboard: @escaping () -> Bool,
+        onCreatePhonePairingURL: @escaping () -> URL?,
         onRetryWebDashboard: @escaping () -> Void,
         onExportDiagnostics: @escaping () -> DiagnosticExportOutcome
     ) {
@@ -54,7 +63,10 @@ struct SettingsView: View {
         self.onSideNotchHideDelayChange =
             onSideNotchHideDelayChange
         self.webDashboardStatusStore = webDashboardStatusStore
+        self.tailscaleDashboardController =
+            tailscaleDashboardController
         self.onOpenWebDashboard = onOpenWebDashboard
+        self.onCreatePhonePairingURL = onCreatePhonePairingURL
         self.onRetryWebDashboard = onRetryWebDashboard
         self.onExportDiagnostics = onExportDiagnostics
         _presentationStyle = State(initialValue: presentationStyle)
@@ -219,6 +231,20 @@ struct SettingsView: View {
                         onRetry: onRetryWebDashboard
                     )
 
+                    TailscalePhoneAccessRow(
+                        controller: tailscaleDashboardController,
+                        onPair: {
+                            guard
+                                let url = onCreatePhonePairingURL()
+                            else {
+                                feedback = .key(.phonePairingFailed)
+                                return
+                            }
+                            phonePairingURL = url
+                            showsPhonePairing = true
+                        }
+                    )
+
                     DiagnosticsSettingsRow {
                         switch onExportDiagnostics() {
                         case .exported:
@@ -324,6 +350,15 @@ struct SettingsView: View {
             idealHeight: 560
         )
         .environment(\.appLocalization, localization.context)
+        .sheet(isPresented: $showsPhonePairing) {
+            if let phonePairingURL {
+                TailscalePhonePairingView(url: phonePairingURL)
+                    .environment(
+                        \.appLocalization,
+                        localization.context
+                    )
+            }
+        }
         .onReceive(
             NotificationCenter.default.publisher(
                 for: NSApplication.didBecomeActiveNotification
@@ -658,6 +693,223 @@ private struct ProviderAccountsSection: View {
     }
 }
 
+private struct TailscalePhoneAccessRow: View {
+    @Bindable var controller: TailscaleDashboardController
+    let onPair: () -> Void
+    @Environment(\.appLocalization) private var localization
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "iphone.and.arrow.forward")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(statusColor)
+                .frame(width: 24, height: 24)
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(localization.text(.phoneAccess))
+                        .font(.system(size: 13.5, weight: .semibold))
+                    Text(statusLabel)
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .foregroundStyle(statusColor)
+                }
+                Text(localization.text(.phoneAccessDescription))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if case .ready(let host) = controller.state {
+                    Text(verbatim:
+                        "https://\(host):\(TailscaleCLIService.httpsPort)"
+                    )
+                        .font(.system(size: 11, design: .monospaced))
+                        .textSelection(.enabled)
+                }
+            }
+
+            Spacer(minLength: 8)
+
+            VStack(alignment: .trailing, spacing: 6) {
+                Button(primaryButtonTitle, action: primaryAction)
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(isBusy)
+
+                if case .ready = controller.state {
+                    Button(localization.text(.disablePhoneAccess)) {
+                        Task { await controller.disable() }
+                    }
+                    .buttonStyle(.borderless)
+                    .controlSize(.small)
+                }
+            }
+        }
+        .padding(10)
+        .background(
+            Color(nsColor: .controlBackgroundColor),
+            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(
+                    Color(nsColor: .separatorColor),
+                    lineWidth: 0.5
+                )
+        }
+    }
+
+    private var statusLabel: String {
+        switch controller.state {
+        case .checking:
+            localization.text(.phoneAccessChecking)
+        case .unavailable:
+            localization.text(.phoneAccessUnavailable)
+        case .signedOut:
+            localization.text(.phoneAccessSignedOut)
+        case .available:
+            localization.text(.phoneAccessAvailable)
+        case .enabling, .disabling:
+            localization.text(.inProgress)
+        case .ready:
+            localization.text(.phoneAccessReady)
+        case .failed:
+            localization.text(.phoneAccessFailed)
+        }
+    }
+
+    private var statusColor: Color {
+        switch controller.state {
+        case .ready: .green
+        case .failed: .orange
+        case .checking, .unavailable, .signedOut, .available,
+             .enabling, .disabling:
+            .secondary
+        }
+    }
+
+    private var primaryButtonTitle: String {
+        switch controller.state {
+        case .available:
+            localization.text(.enablePhoneAccess)
+        case .ready:
+            localization.text(.pairPhone)
+        case .checking, .enabling, .disabling:
+            localization.text(.inProgress)
+        case .unavailable, .signedOut, .failed:
+            localization.text(.retry)
+        }
+    }
+
+    private var primaryAction: () -> Void {
+        switch controller.state {
+        case .available:
+            { Task { await controller.enable() } }
+        case .ready:
+            onPair
+        case .unavailable, .signedOut, .failed:
+            { Task { await controller.refresh() } }
+        case .checking, .enabling, .disabling:
+            {}
+        }
+    }
+
+    private var isBusy: Bool {
+        switch controller.state {
+        case .checking, .enabling, .disabling:
+            true
+        case .unavailable, .signedOut, .available, .ready, .failed:
+            false
+        }
+    }
+}
+
+private struct TailscalePhonePairingView: View {
+    let url: URL
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.appLocalization) private var localization
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Text(localization.text(.phonePairingTitle))
+                .font(.system(size: 18, weight: .bold))
+
+            if let qrCode {
+                Image(nsImage: qrCode)
+                    .resizable()
+                    .interpolation(.none)
+                    .aspectRatio(1, contentMode: .fit)
+                    .frame(width: 184, height: 184)
+                    .accessibilityLabel(
+                        localization.text(.phonePairingQRCodeLabel)
+                    )
+            }
+
+            Text(localization.text(.phonePairingDescription))
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text(url.absoluteString)
+                .font(.system(size: 10.5, design: .monospaced))
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Button(localization.text(.confirm)) {
+                dismiss()
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+        }
+        .padding(20)
+        .frame(width: 320)
+    }
+
+    private var qrCode: NSImage? {
+        guard
+            let filter = CIFilter(name: "CIQRCodeGenerator")
+        else {
+            return nil
+        }
+        filter.setValue(
+            Data(url.absoluteString.utf8),
+            forKey: "inputMessage"
+        )
+        filter.setValue("Q", forKey: "inputCorrectionLevel")
+        guard let output = filter.outputImage else { return nil }
+        let quietZone =
+            TailscaleQRCodeVisualTokens.quietZoneModules
+        let canvas = CGRect(
+            x: 0,
+            y: 0,
+            width: output.extent.width + quietZone * 2,
+            height: output.extent.height + quietZone * 2
+        )
+        let translated = output.transformed(
+            by: CGAffineTransform(
+                translationX: quietZone,
+                y: quietZone
+            )
+        )
+        let background = CIImage(
+            color: CIColor(red: 1, green: 1, blue: 1)
+        ).cropped(to: canvas)
+        let padded = translated.composited(over: background)
+        let scale = TailscaleQRCodeVisualTokens.moduleScale
+        let scaled = padded.transformed(
+            by: CGAffineTransform(scaleX: scale, y: scale)
+        )
+        let representation = NSCIImageRep(ciImage: scaled)
+        let image = NSImage(size: representation.size)
+        image.addRepresentation(representation)
+        return image
+    }
+}
+
+enum TailscaleQRCodeVisualTokens {
+    static let quietZoneModules: CGFloat = 4
+    static let moduleScale: CGFloat = 8
+}
+
 private struct WebDashboardSettingsRow: View {
     let status: WebDashboardStatus
     let onOpen: () -> Void
@@ -682,12 +934,7 @@ private struct WebDashboardSettingsRow: View {
                 Text(status.url.absoluteString)
                     .font(.system(size: 11.5, design: .monospaced))
                     .textSelection(.enabled)
-                Text(
-                    localization.format(
-                        .webDashboardEndpointDetails,
-                        Int(status.port)
-                    )
-                )
+                Text(endpointDetails)
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                 if let failure = status.failure {
@@ -762,6 +1009,20 @@ private struct WebDashboardSettingsRow: View {
 
     private var buttonAction: () -> Void {
         status.state == .ready ? onOpen : onRetry
+    }
+
+    private var endpointDetails: String {
+        if status.url.scheme == "https" {
+            return localization.format(
+                .webDashboardTailscaleEndpointDetails,
+                status.url.port ?? 443,
+                Int(status.port)
+            )
+        }
+        return localization.format(
+            .webDashboardEndpointDetails,
+            Int(status.port)
+        )
     }
 
     private func failureMessage(

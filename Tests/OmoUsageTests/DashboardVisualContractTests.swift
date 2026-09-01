@@ -27,6 +27,14 @@ struct DashboardVisualContractTests {
     }
 
     @Test
+    func tailscaleQRCodeKeepsScannableQuietZone() {
+        #expect(
+            TailscaleQRCodeVisualTokens.quietZoneModules >= 4
+        )
+        #expect(TailscaleQRCodeVisualTokens.moduleScale >= 1)
+    }
+
+    @Test
     func providerMetadataUsesPrimaryDerivedForegroundOverDimmedMaterial() {
         // The side-notch panel never becomes key, so system secondary text
         // renders there in its permanently dimmed form. Meter reset lines
