@@ -119,6 +119,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let webDashboardAccessStore: WebDashboardAccessStore
     private let webDashboardStatusStore: WebDashboardStatusStore
     private let webDashboardServer: WebDashboardServer
+    private let tailscaleDashboardController: TailscaleDashboardController
     private let presentationStyleStore: DashboardPresentationStyleStore
     private var presentationStyle: DashboardPresentationStyle
     private let sideNotchHideDelayStore: SideNotchHideDelayStore
@@ -240,6 +241,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         let webDashboardStatusStore = WebDashboardStatusStore(
             port: webDashboardPort
         )
+        webDashboardStatusStore.publishAccessMode(
+            webDashboardAccessStore.mode
+        )
+        let tailscaleDashboardController = TailscaleDashboardController(
+            service: TailscaleDashboardServiceFactory.current(
+                environment: environment
+            ),
+            dashboardPort: webDashboardPort,
+            accessStore: webDashboardAccessStore,
+            statusStore: webDashboardStatusStore
+        )
         let mutationNonce = UUID().uuidString.replacingOccurrences(
             of: "-",
             with: ""
@@ -324,6 +336,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         self.webDashboardAccessStore = webDashboardAccessStore
         self.webDashboardStatusStore = webDashboardStatusStore
         self.webDashboardServer = webDashboardServer
+        self.tailscaleDashboardController =
+            tailscaleDashboardController
         self.presentationStyleStore = presentationStyleStore
         self.presentationStyle = presentationStyle
         self.sideNotchHideDelayStore = sideNotchHideDelayStore
@@ -348,14 +362,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         refreshScheduler.start()
         do {
             try webDashboardServer.start()
-            try FixtureWebBootstrapExporter.exportIfRequested(
-                accessStore: webDashboardAccessStore
-            )
         } catch {
             DiagnosticStore.shared.record(
                 error: error,
                 category: .webServer
             )
+        }
+        Task {
+            await tailscaleDashboardController.refresh()
+            do {
+                try FixtureWebBootstrapExporter.exportIfRequested(
+                    accessStore: webDashboardAccessStore
+                )
+            } catch {
+                DiagnosticStore.shared.record(
+                    error: error,
+                    category: .webServer
+                )
+            }
         }
 
         hasFinishedLaunching = true
@@ -540,6 +564,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                     self?.setSideNotchHideDelay(delay)
                 },
                 webDashboardStatusStore: webDashboardStatusStore,
+                tailscaleDashboardController:
+                    tailscaleDashboardController,
                 onOpenWebDashboard: { [weak self] in
                     guard let self else { return false }
                     do {
@@ -549,6 +575,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                     } catch {
                         return false
                     }
+                },
+                onCreatePhonePairingURL: { [weak self] in
+                    guard let self else { return nil }
+                    return try? webDashboardAccessStore
+                        .makeBootstrapURL()
                 },
                 onRetryWebDashboard: { [weak self] in
                     guard let self else { return }

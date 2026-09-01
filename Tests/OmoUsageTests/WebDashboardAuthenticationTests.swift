@@ -223,7 +223,8 @@ struct WebDashboardAuthenticationTests {
         #expect(!local.accepts(host: "[::1]:7827"))
         #expect(
             remote == .tailscale(
-                host: "fixture-device.fixture-tailnet.ts.net"
+                host: "fixture-device.fixture-tailnet.ts.net",
+                httpsPort: 443
             )
         )
         #expect(invalidRemote == .local(port: 7_827))
@@ -260,6 +261,154 @@ struct WebDashboardAuthenticationTests {
             )
         )
         #expect(bootstrap.headers["Set-Cookie"]?.contains("; Secure") == true)
+    }
+
+    @Test
+    func switchingAccessModeInvalidatesSessionsAndUsesDedicatedHTTPSPort()
+        throws
+    {
+        let store = makeStore()
+        let localURL = try store.makeBootstrapURL()
+        let localToken = try #require(
+            URLComponents(url: localURL, resolvingAgainstBaseURL: false)?
+                .queryItems?.first?.value
+        )
+        let localSession = try #require(
+            try store.consumeBootstrapToken(localToken)
+        )
+        #expect(
+            store.authenticates(
+                cookieHeader:
+                    "\(WebDashboardAccessStore.sessionCookieName)=\(localSession)"
+            )
+        )
+
+        store.updateMode(
+            .tailscale(
+                host: "fixture-device.fixture-tailnet.ts.net",
+                httpsPort: 8_443
+            )
+        )
+
+        #expect(!store.authenticates(
+            cookieHeader:
+                "\(WebDashboardAccessStore.sessionCookieName)=\(localSession)"
+        ))
+        #expect(
+            try store.makeBootstrapURL().absoluteString.hasPrefix(
+                "https://fixture-device.fixture-tailnet.ts.net:8443/bootstrap?"
+            )
+        )
+    }
+
+    @Test
+    func tailscaleCLIUsesPrivateDedicatedServePort() throws {
+        let recorder = TailscaleCommandRecorder(responses: [
+            TailscaleCommandResult(
+                status: 0,
+                standardOutput: Data(
+                    """
+                    {
+                      "BackendState": "Running",
+                      "Self": {
+                        "DNSName": "fixture-device.fixture-tailnet.ts.net.",
+                        "Online": true
+                      }
+                    }
+                    """.utf8
+                ),
+                standardError: Data()
+            ),
+            TailscaleCommandResult(
+                status: 0,
+                standardOutput: Data("{}".utf8),
+                standardError: Data()
+            ),
+            TailscaleCommandResult(
+                status: 0,
+                standardOutput: Data(),
+                standardError: Data()
+            ),
+            TailscaleCommandResult(
+                status: 0,
+                standardOutput: Data(),
+                standardError: Data()
+            )
+        ])
+        let client = TailscaleCLIService(
+            executable: URL(filePath: "/fixture/tailscale"),
+            execute: recorder.run
+        )
+
+        #expect(
+            try client.inspect(dashboardPort: 7_827)
+                == .available(
+                    host: "fixture-device.fixture-tailnet.ts.net"
+                )
+        )
+        try client.enable(dashboardPort: 7_827)
+        try client.disable()
+
+        #expect(recorder.arguments() == [
+            ["status", "--json", "--peers=false"],
+            ["serve", "status", "--json"],
+            [
+                "serve", "--bg", "--yes", "--https=8443",
+                "7827"
+            ],
+            ["serve", "--https=8443", "off"]
+        ])
+    }
+
+    @Test
+    func tailscaleCLIRecognizesItsExistingServeMapping() throws {
+        let recorder = TailscaleCommandRecorder(responses: [
+            TailscaleCommandResult(
+                status: 0,
+                standardOutput: Data(
+                    """
+                    {
+                      "BackendState": "Running",
+                      "Self": {
+                        "DNSName": "fixture-device.fixture-tailnet.ts.net.",
+                        "Online": true
+                      }
+                    }
+                    """.utf8
+                ),
+                standardError: Data()
+            ),
+            TailscaleCommandResult(
+                status: 0,
+                standardOutput: Data(
+                    """
+                    {
+                      "Web": {
+                        "fixture-device.fixture-tailnet.ts.net:8443": {
+                          "Handlers": {
+                            "/": {
+                              "Proxy": "http://127.0.0.1:7827"
+                            }
+                          }
+                        }
+                      }
+                    }
+                    """.utf8
+                ),
+                standardError: Data()
+            )
+        ])
+        let client = TailscaleCLIService(
+            executable: URL(filePath: "/fixture/tailscale"),
+            execute: recorder.run
+        )
+
+        #expect(
+            try client.inspect(dashboardPort: 7_827)
+                == .ready(
+                    host: "fixture-device.fixture-tailnet.ts.net"
+                )
+        )
     }
 
     private func makeStore() -> WebDashboardAccessStore {
@@ -320,5 +469,29 @@ struct WebDashboardAuthenticationTests {
                 uniquingKeysWith: { _, new in new }
             )
         )
+    }
+}
+
+private final class TailscaleCommandRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var responses: [TailscaleCommandResult]
+    private var calls: [[String]] = []
+
+    init(responses: [TailscaleCommandResult]) {
+        self.responses = responses
+    }
+
+    func run(
+        executable: URL,
+        arguments: [String]
+    ) throws -> TailscaleCommandResult {
+        lock.withLock {
+            calls.append(arguments)
+            return responses.removeFirst()
+        }
+    }
+
+    func arguments() -> [[String]] {
+        lock.withLock { calls }
     }
 }

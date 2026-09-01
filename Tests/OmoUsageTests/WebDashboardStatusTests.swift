@@ -161,6 +161,62 @@ struct WebDashboardStatusTests {
         )
     }
 
+    @Test
+    func enablingPhoneAccessPublishesRemoteURLAndInvalidatesLocalMode()
+        async throws
+    {
+        let service = StubTailscaleDashboardService(
+            inspections: [
+                .available(
+                    host: "fixture-device.fixture-tailnet.ts.net"
+                ),
+                .ready(
+                    host: "fixture-device.fixture-tailnet.ts.net"
+                )
+            ]
+        )
+        let accessStore = WebDashboardAccessStore(
+            mode: .local(port: 7_827)
+        )
+        let statusStore = WebDashboardStatusStore(port: 7_827)
+        statusStore.publish(.ready)
+        let controller = TailscaleDashboardController(
+            service: service,
+            dashboardPort: 7_827,
+            accessStore: accessStore,
+            statusStore: statusStore
+        )
+
+        await controller.refresh()
+        #expect(
+            controller.state
+                == .available(
+                    host: "fixture-device.fixture-tailnet.ts.net"
+                )
+        )
+
+        await controller.enable()
+
+        #expect(
+            controller.state
+                == .ready(
+                    host: "fixture-device.fixture-tailnet.ts.net"
+                )
+        )
+        #expect(
+            accessStore.mode
+                == .tailscale(
+                    host: "fixture-device.fixture-tailnet.ts.net",
+                    httpsPort: 8_443
+                )
+        )
+        #expect(
+            statusStore.status.url.absoluteString
+                == "https://fixture-device.fixture-tailnet.ts.net:8443"
+        )
+        #expect(service.enableCount == 1)
+    }
+
     private func requireFailure(
         _ states: AsyncStream<WebDashboardListenerState>
     ) async throws -> WebDashboardListenerFailure {
@@ -200,6 +256,31 @@ struct WebDashboardStatusTests {
             statusStore: statusStore
         )
     }
+}
+
+private final class StubTailscaleDashboardService:
+    TailscaleDashboardServing,
+    @unchecked Sendable
+{
+    private let lock = NSLock()
+    private var inspections: [TailscaleDashboardInspection]
+    private(set) var enableCount = 0
+
+    init(inspections: [TailscaleDashboardInspection]) {
+        self.inspections = inspections
+    }
+
+    func inspect(
+        dashboardPort: UInt16
+    ) throws -> TailscaleDashboardInspection {
+        lock.withLock { inspections.removeFirst() }
+    }
+
+    func enable(dashboardPort: UInt16) throws {
+        lock.withLock { enableCount += 1 }
+    }
+
+    func disable() throws {}
 }
 
 private enum StatusTestFailure: Error {
