@@ -42,8 +42,8 @@ struct PackageSmokeTests {
     func packageScriptReportsDeterministicSigningPlans() throws {
         let adHoc = try signingPlan(environment: [:])
         #expect(adHoc.status == 0)
-        #expect(adHoc.output.contains("MARKETING_VERSION=0.1.10\n"))
-        #expect(adHoc.output.contains("CURRENT_PROJECT_VERSION=4\n"))
+        #expect(adHoc.output.contains("MARKETING_VERSION=0.1.11\n"))
+        #expect(adHoc.output.contains("CURRENT_PROJECT_VERSION=5\n"))
         #expect(
             adHoc.output.contains("SOURCE_COMMIT=\(try sourceCommit())\n")
         )
