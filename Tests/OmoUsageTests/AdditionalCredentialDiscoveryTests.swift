@@ -437,6 +437,169 @@ struct AdditionalCredentialDiscoveryTests {
     }
 
     @Test
+    func normalizesQuotedDevinServerURLWithTrailingSlashAndComment()
+        throws
+    {
+        try withFixtureDirectory { home in
+            try writeText(
+                """
+                windsurf_api_key = "devin-token"
+                api_server_url = "https://server.codeium.com/"  # primary
+                """,
+                to: home.appending(
+                    path: ".local/share/devin/credentials.toml"
+                )
+            )
+            let discovery = fixtureDiscovery(
+                home: home,
+                keychain: AdditionalKeychain()
+            )
+
+            let credential = try discovery.devin()
+
+            #expect(credential.accessToken == "devin-token")
+            #expect(
+                credential.accountID == "https://server.codeium.com"
+            )
+        }
+    }
+
+    @Test
+    func prefersDevinTOMLCredentialOverDatabase() throws {
+        try withFixtureDirectory { home in
+            try writeText(
+                """
+                windsurf_api_key = "toml-devin-token"
+                api_server_url = "https://server.codeium.com"
+                """,
+                to: home.appending(
+                    path: ".local/share/devin/credentials.toml"
+                )
+            )
+            try writeDevinDatabase(
+                home,
+                value: #"{"apiKey":"database-devin-token"}"#
+            )
+            let discovery = fixtureDiscovery(
+                home: home,
+                keychain: AdditionalKeychain()
+            )
+
+            let credential = try discovery.devin()
+
+            #expect(credential.accessToken == "toml-devin-token")
+            #expect(
+                credential.accountID == "https://server.codeium.com"
+            )
+        }
+    }
+
+    @Test
+    func fallsBackToDevinDatabaseWhenTOMLTokenMissing() throws {
+        try withFixtureDirectory { home in
+            try writeText(
+                "api_server_url = \"https://server.codeium.com\"",
+                to: home.appending(
+                    path: ".local/share/devin/credentials.toml"
+                )
+            )
+            try writeDevinDatabase(
+                home,
+                value: #"{"apiKey":"database-devin-token"}"#
+            )
+            let discovery = fixtureDiscovery(
+                home: home,
+                keychain: AdditionalKeychain()
+            )
+
+            #expect(
+                try discovery.devin().accessToken
+                    == "database-devin-token"
+            )
+        }
+    }
+
+    @Test
+    func discoversDevinDatabaseAuthStatusToken() throws {
+        try withFixtureDirectory { home in
+            try writeDevinDatabase(
+                home,
+                value: #"{"apiKey":"database-devin-token"}"#
+            )
+            let discovery = fixtureDiscovery(
+                home: home,
+                keychain: AdditionalKeychain()
+            )
+
+            let credential = try discovery.devin()
+
+            #expect(
+                credential.accessToken == "database-devin-token"
+            )
+            #expect(credential.source == .file)
+        }
+    }
+
+    @Test
+    func malformedDevinDatabaseIsNotReportedAsLoggedOut() throws {
+        try withFixtureDirectory { home in
+            try writeDevinDatabase(home, value: "{not-json")
+            let discovery = fixtureDiscovery(
+                home: home,
+                keychain: AdditionalKeychain()
+            )
+
+            #expect(throws: CredentialDiscoveryError.malformed(.devin)) {
+                try discovery.devin()
+            }
+        }
+    }
+
+    @Test(arguments: [
+        "http://server.codeium.com",
+        "https://evil.example.com"
+    ])
+    func rejectsUntrustedDevinServerAtProviderBoundary(
+        server: String
+    ) async throws {
+        try await withFixtureDirectoryAsync { home in
+            try writeText(
+                """
+                windsurf_api_key = "devin-token"
+                api_server_url = "\(server)"
+                """,
+                to: home.appending(
+                    path: ".local/share/devin/credentials.toml"
+                )
+            )
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [
+                UnreachableDevinURLProtocol.self
+            ]
+            UnreachableDevinURLProtocol.reset()
+            let provider = DevinUsageProvider(
+                discovery: fixtureDiscovery(
+                    home: home,
+                    keychain: AdditionalKeychain()
+                ),
+                http: providerHTTPTestClient(
+                    session: URLSession(configuration: configuration)
+                )
+            )
+
+            await #expect(
+                throws: ProviderTransportError.invalidResponse(.devin)
+            ) {
+                _ = try await provider.fetch(
+                    now: Date(timeIntervalSince1970: 1_785_675_000)
+                )
+            }
+
+            #expect(UnreachableDevinURLProtocol.requestCount() == 0)
+        }
+    }
+
+    @Test
     func malformedGrokCredentialStoreReportsFailure() throws {
         try withFixtureDirectory { home in
             try writeText(
@@ -1015,6 +1178,54 @@ struct AdditionalCredentialDiscoveryTests {
         return executable
     }
 
+    private func writeDevinDatabase(
+        _ home: URL,
+        value: String
+    ) throws {
+        let database = home.appending(
+            components: "Library",
+            "Application Support",
+            "Devin",
+            "User",
+            "globalStorage",
+            "state.vscdb"
+        )
+        try FileManager.default.createDirectory(
+            at: database.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let process = Process()
+        process.executableURL = URL(filePath: "/usr/bin/sqlite3")
+        process.arguments = [
+            database.path,
+            """
+            CREATE TABLE ItemTable(key TEXT, value TEXT);
+            INSERT INTO ItemTable VALUES(
+              'windsurfAuthStatus',
+              '\(value)'
+            );
+            """
+        ]
+        try process.run()
+        process.waitUntilExit()
+        #expect(process.terminationStatus == 0)
+    }
+
+    private func withFixtureDirectoryAsync(
+        _ body: (URL) async throws -> Void
+    ) async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appending(
+                path: "OmoUsageAdditionalAuth-\(UUID().uuidString)"
+            )
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try await body(directory)
+    }
+
     private func withFixtureDirectory(
         _ body: (URL) throws -> Void
     ) throws {
@@ -1043,6 +1254,57 @@ private final class AdditionalProviderKeychain: ProviderKeychain, @unchecked Sen
     func remove(service: String, account: String) throws {
         _ = lock.withLock { values.removeValue(forKey: service + "|" + account) }
     }
+}
+
+private final class UnreachableDevinRecorder: @unchecked Sendable {
+    static let shared = UnreachableDevinRecorder()
+
+    private let lock = NSLock()
+    private var requests = 0
+
+    func reset() {
+        lock.withLock { requests = 0 }
+    }
+
+    func record() {
+        lock.withLock { requests += 1 }
+    }
+
+    func count() -> Int {
+        lock.withLock { requests }
+    }
+}
+
+private final class UnreachableDevinURLProtocol: URLProtocol,
+    @unchecked Sendable
+{
+    static func reset() {
+        UnreachableDevinRecorder.shared.reset()
+    }
+
+    static func requestCount() -> Int {
+        UnreachableDevinRecorder.shared.count()
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        UnreachableDevinRecorder.shared.record()
+        return true
+    }
+
+    override class func canonicalRequest(
+        for request: URLRequest
+    ) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        client?.urlProtocol(
+            self,
+            didFailWithError: URLError(.badServerResponse)
+        )
+    }
+
+    override func stopLoading() {}
 }
 
 private struct AdditionalKeychain: KeychainReading {
