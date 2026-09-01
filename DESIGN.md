@@ -90,6 +90,12 @@ other privileged controls remain native-only.
 - The side-notch rail and detail card use regular system material, semantic
   borders, and the existing eucalyptus/amber usage palette. Provider branding
   remains inside the existing icon tiles.
+- The detail card is elevated by one shadow, never a bloom.
+  `SideNotchDetailElevationTokens` uses `NSColor.shadowColor` at 0.12
+  opacity, a 4 pt blur radius, and a 2 pt downward offset. The color is dark
+  in both appearances, so elevation may darken the backdrop and never
+  lightens it, and the blur stays within twice the offset so the card reads
+  as lit from above rather than haloed.
 - The hidden side-notch handle is 6 pt wide with an 8 pt edge tracking region.
   The revealed rail uses 20 pt leading corners and square screen-edge corners;
   its ring track reuses `UsageMeterVisualTokens.trackOpacity`.

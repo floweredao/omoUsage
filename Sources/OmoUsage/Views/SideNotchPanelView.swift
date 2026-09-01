@@ -719,6 +719,20 @@ enum SideNotchProviderInteractionPolicy {
     }
 }
 
+/// Elevation for the side-notch detail card.
+///
+/// The card sits on the desktop rather than inside a window, so its shadow
+/// is the only thing separating it from the backdrop. A wide blur reads as
+/// an omnidirectional bloom instead of a lit edge, so the blur stays within
+/// twice the downward offset and the color stays dark in both appearances:
+/// elevation may darken the backdrop, never lighten it.
+enum SideNotchDetailElevationTokens {
+    static let shadowColor = Color(nsColor: .shadowColor)
+    static let shadowOpacity = 0.12
+    static let shadowRadius: CGFloat = 4
+    static let shadowOffsetY: CGFloat = 2
+}
+
 private struct SideNotchDetailView: View {
     let usage: ProviderUsage
     let showsAccountLabel: Bool
@@ -757,7 +771,13 @@ private struct SideNotchDetailView: View {
                 lineWidth: 0.5
             )
         }
-        .shadow(color: .black.opacity(0.16), radius: 10, y: 4)
+        .shadow(
+            color: SideNotchDetailElevationTokens.shadowColor.opacity(
+                SideNotchDetailElevationTokens.shadowOpacity
+            ),
+            radius: SideNotchDetailElevationTokens.shadowRadius,
+            y: SideNotchDetailElevationTokens.shadowOffsetY
+        )
     }
 }
 
