@@ -366,6 +366,85 @@ struct SideNotchPanelLayoutTests {
     }
 
     @Test
+    func railContentStopsAtNaturalHeightInsideTallerDetailContainer() {
+        let providers = capturedTwoProviderUsage()
+        let visibleFrame = NSRect(
+            x: 0,
+            y: 25,
+            width: 1_920,
+            height: 1_055
+        )
+        let pointerAnchorY: CGFloat = 780
+
+        let naturalRailHeight = SideNotchPanelLayout.naturalRailHeight(
+            providerCount: providers.count
+        )
+        let revealed = SideNotchPanelLayout.presentationFrame(
+            in: visibleFrame,
+            providers: providers,
+            mode: .revealed,
+            anchorY: pointerAnchorY
+        )
+        let detail = SideNotchPanelLayout.presentationFrame(
+            in: visibleFrame,
+            providers: providers,
+            mode: .detail(.claude),
+            anchorY: pointerAnchorY
+        )
+
+        #expect(
+            naturalRailHeight
+                == SideNotchPanelLayout.verticalPadding
+                    + CGFloat(providers.count)
+                        * SideNotchPanelLayout.providerRowHeight
+                    + SideNotchPanelLayout.footerClearance
+                    + SideNotchPanelLayout.footerHeight
+        )
+
+        // The detail container is legitimately taller than the rail.
+        #expect(detail.height > naturalRailHeight)
+
+        // The rail view must not stretch to fill it.
+        #expect(
+            SideNotchPanelLayout.railContentHeight(
+                providerCount: providers.count,
+                containerHeight: detail.height
+            ) == naturalRailHeight
+        )
+        #expect(
+            SideNotchPanelLayout.railContentHeight(
+                providerCount: providers.count,
+                containerHeight: revealed.height
+            ) == naturalRailHeight
+        )
+
+        // The zero-provider checking state still uses the container.
+        #expect(
+            SideNotchPanelLayout.railContentHeight(
+                providerCount: 0,
+                containerHeight: detail.height
+            ) == detail.height
+        )
+
+        // A crowded rail keeps the container height and scrolls inside it.
+        let crowdedContainer = SideNotchPanelLayout.frame(
+            in: visibleFrame,
+            providerCount: 9,
+            mode: .revealed
+        ).height
+        #expect(
+            SideNotchPanelLayout.naturalRailHeight(providerCount: 9)
+                > crowdedContainer
+        )
+        #expect(
+            SideNotchPanelLayout.railContentHeight(
+                providerCount: 9,
+                containerHeight: crowdedContainer
+            ) == crowdedContainer
+        )
+    }
+
+    @Test
     func revealAnchorChangesOnlyForHiddenEdgeEntry() {
         #expect(
             SideNotchRevealAnchorPolicy.anchorY(
@@ -860,6 +939,72 @@ struct SideNotchPanelLayoutTests {
                 reduceMotion: true
             )
         )
+    }
+
+    /// The supplied capture: a Codex ring above a Claude Code "Max 5x"
+    /// detail whose three resetting meters and "as of" row make it the
+    /// tallest provider detail.
+    private func capturedTwoProviderUsage() -> [ProviderUsage] {
+        [
+            ProviderUsage(
+                provider: .codex,
+                planName: "Plus",
+                groups: [
+                    UsageGroup(
+                        id: "codex.main",
+                        title: nil,
+                        meters: [
+                            UsageMeter(
+                                id: "codex.session",
+                                title: "Session (5 hours)",
+                                period: .session,
+                                percentRemaining: 32,
+                                resetText: "Resets in 2 hr 10 min"
+                            )
+                        ],
+                        creditText: nil
+                    )
+                ],
+                availability: .available,
+                updatedAt: nil
+            ),
+            ProviderUsage(
+                provider: .claude,
+                planName: "Max 5x",
+                groups: [
+                    UsageGroup(
+                        id: "claude.main",
+                        title: nil,
+                        meters: [
+                            UsageMeter(
+                                id: "claude.session",
+                                title: "Session (5 hours)",
+                                period: .session,
+                                percentRemaining: 95,
+                                resetText: "Resets in 4 hr 44 min"
+                            ),
+                            UsageMeter(
+                                id: "claude.week",
+                                title: "Weekly",
+                                period: .week,
+                                percentRemaining: 18,
+                                resetText: "Resets in 1 days"
+                            ),
+                            UsageMeter(
+                                id: "claude.week.model.fable",
+                                title: "Fable weekly",
+                                period: .week,
+                                percentRemaining: 25,
+                                resetText: "Resets in 1 days"
+                            )
+                        ],
+                        creditText: nil
+                    )
+                ],
+                availability: .available,
+                updatedAt: Date(timeIntervalSince1970: 1_764_590_040)
+            )
+        ]
     }
 
     private func controllerFixture(
