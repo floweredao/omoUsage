@@ -214,6 +214,193 @@ struct AdditionalCredentialDiscoveryTests {
     }
 
     @Test
+    func discoversGitHubCLIKeychainTokenForConfiguredUser() throws {
+        try withFixtureDirectory { home in
+            try writeGitHubHosts(
+                home,
+                user: "octocat-fixture",
+                oauthToken: nil
+            )
+            let discovery = fixtureDiscovery(
+                home: home,
+                keychain: AdditionalKeychain(
+                    accountValues: [
+                        "gh:github.com": [
+                            "octocat-fixture": goKeyringWrapped(
+                                "gh-user-token-fixture"
+                            ),
+                            "": goKeyringWrapped(
+                                "gh-service-token-fixture"
+                            )
+                        ]
+                    ]
+                )
+            )
+
+            let credential = try discovery.copilot()
+
+            #expect(credential.accessToken == "gh-user-token-fixture")
+            #expect(credential.source == .keychain)
+        }
+    }
+
+    @Test
+    func fallsBackToServiceOnlyGitHubCLIKeychainAccount() throws {
+        try withFixtureDirectory { home in
+            try writeGitHubHosts(home, user: nil, oauthToken: nil)
+            let discovery = fixtureDiscovery(
+                home: home,
+                keychain: AdditionalKeychain(
+                    accountValues: [
+                        "gh:github.com": [
+                            "": goKeyringWrapped(
+                                "gh-service-token-fixture"
+                            )
+                        ]
+                    ]
+                )
+            )
+
+            let credential = try discovery.copilot()
+
+            #expect(
+                credential.accessToken == "gh-service-token-fixture"
+            )
+            #expect(credential.source == .keychain)
+        }
+    }
+
+    @Test
+    func prefersGitHubConfigTokenOverGitHubCLIKeychain() throws {
+        try withFixtureDirectory { home in
+            try writeGitHubHosts(
+                home,
+                user: "octocat-fixture",
+                oauthToken: "gh-config-token-fixture"
+            )
+            let discovery = fixtureDiscovery(
+                home: home,
+                keychain: AdditionalKeychain(
+                    accountValues: [
+                        "gh:github.com": [
+                            "octocat-fixture": goKeyringWrapped(
+                                "gh-user-token-fixture"
+                            )
+                        ]
+                    ]
+                )
+            )
+
+            let credential = try discovery.copilot()
+
+            #expect(
+                credential.accessToken == "gh-config-token-fixture"
+            )
+            #expect(credential.source == .file)
+        }
+    }
+
+    @Test
+    func prefersGitHubCLIKeychainOverCommandFallback() throws {
+        try withFixtureDirectory { home in
+            try writeGitHubHosts(
+                home,
+                user: "octocat-fixture",
+                oauthToken: nil
+            )
+            let executable = try writeGitHubCommandFixture(
+                home,
+                token: "gh-command-token-fixture"
+            )
+            let discovery = fixtureDiscovery(
+                home: home,
+                keychain: AdditionalKeychain(
+                    accountValues: [
+                        "gh:github.com": [
+                            "octocat-fixture": goKeyringWrapped(
+                                "gh-user-token-fixture"
+                            )
+                        ]
+                    ]
+                ),
+                commandPaths: [executable]
+            )
+
+            let credential = try discovery.copilot()
+
+            #expect(credential.accessToken == "gh-user-token-fixture")
+            #expect(credential.source == .keychain)
+        }
+    }
+
+    @Test
+    func ignoresMalformedGoKeyringWrapperWithoutReportingMalformed()
+        throws
+    {
+        try withFixtureDirectory { home in
+            try writeGitHubHosts(
+                home,
+                user: "octocat-fixture",
+                oauthToken: nil
+            )
+            let executable = try writeGitHubCommandFixture(
+                home,
+                token: "gh-command-token-fixture"
+            )
+            let discovery = fixtureDiscovery(
+                home: home,
+                keychain: AdditionalKeychain(
+                    accountValues: [
+                        "gh:github.com": [
+                            "octocat-fixture":
+                                "go-keyring-base64:not+valid+base64!!"
+                        ]
+                    ]
+                ),
+                commandPaths: [executable]
+            )
+
+            let credential = try discovery.copilot()
+
+            #expect(
+                credential.accessToken == "gh-command-token-fixture"
+            )
+            #expect(credential.source == .file)
+        }
+    }
+
+    @Test
+    func ignoresGitHubCLIKeychainFailureWithoutReportingMalformed()
+        throws
+    {
+        try withFixtureDirectory { home in
+            try writeGitHubHosts(
+                home,
+                user: "octocat-fixture",
+                oauthToken: nil
+            )
+            let executable = try writeGitHubCommandFixture(
+                home,
+                token: "gh-command-token-fixture"
+            )
+            let discovery = fixtureDiscovery(
+                home: home,
+                keychain: AdditionalKeychain(
+                    failingServices: ["gh:github.com"]
+                ),
+                commandPaths: [executable]
+            )
+
+            let credential = try discovery.copilot()
+
+            #expect(
+                credential.accessToken == "gh-command-token-fixture"
+            )
+            #expect(credential.source == .file)
+        }
+    }
+
+    @Test
     func reportsMissingProviderWithoutLeakingSecrets() throws {
         try withFixtureDirectory { home in
             let discovery = fixtureDiscovery(
@@ -619,7 +806,8 @@ struct AdditionalCredentialDiscoveryTests {
     private func fixtureDiscovery(
         home: URL,
         environment: [String: String] = [:],
-        keychain: AdditionalKeychain
+        keychain: AdditionalKeychain,
+        commandPaths: [URL] = []
     ) -> CredentialDiscovery {
         CredentialDiscovery(
             paths: CredentialPaths(
@@ -629,7 +817,7 @@ struct AdditionalCredentialDiscoveryTests {
             environment: environment,
             keychain: keychain,
             homeDirectory: home,
-            commandPaths: []
+            commandPaths: commandPaths
         )
     }
 
@@ -781,6 +969,52 @@ struct AdditionalCredentialDiscoveryTests {
             .replacingOccurrences(of: "=", with: "")
     }
 
+    private func goKeyringWrapped(_ token: String) -> String {
+        "go-keyring-base64:"
+            + Data(token.utf8).base64EncodedString()
+    }
+
+    private func writeGitHubHosts(
+        _ home: URL,
+        user: String?,
+        oauthToken: String?
+    ) throws {
+        var lines = ["github.com:"]
+        if let user {
+            lines.append("    user: \(user)")
+        }
+        if let oauthToken {
+            lines.append("    oauth_token: \(oauthToken)")
+        }
+        try writeText(
+            lines.joined(separator: "\n"),
+            to: home.appending(path: ".config/gh/hosts.yml")
+        )
+    }
+
+    private func writeGitHubCommandFixture(
+        _ home: URL,
+        token: String
+    ) throws -> URL {
+        let executable = home.appending(path: "bin/gh")
+        try FileManager.default.createDirectory(
+            at: executable.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let script = """
+        #!/bin/sh
+        printf '%s\\n' '\(token)'
+        """
+        #expect(
+            FileManager.default.createFile(
+                atPath: executable.path,
+                contents: Data(script.utf8),
+                attributes: [.posixPermissions: 0o755]
+            )
+        )
+        return executable
+    }
+
     private func withFixtureDirectory(
         _ body: (URL) throws -> Void
     ) throws {
@@ -813,9 +1047,17 @@ private final class AdditionalProviderKeychain: ProviderKeychain, @unchecked Sen
 
 private struct AdditionalKeychain: KeychainReading {
     var values: [String: String] = [:]
+    var accountValues: [String: [String: String]] = [:]
+    var failingServices: Set<String> = []
 
     func value(service: String, account: String) throws -> String? {
-        values[service]
+        if failingServices.contains(service) {
+            throw KeychainReadError(status: -1)
+        }
+        if let accounts = accountValues[service] {
+            return accounts[account]
+        }
+        return values[service]
     }
 }
 

@@ -106,10 +106,25 @@ extension CredentialDiscovery {
             }
         }
         let hosts = home.appending(path: ".config/gh/hosts.yml")
-        if let text = try? String(contentsOf: hosts, encoding: .utf8),
-           let token = githubYAMLValue(text, key: "oauth_token")
+        let hostsText = try? String(contentsOf: hosts, encoding: .utf8)
+        if
+            let hostsText,
+            let token = githubYAMLValue(hostsText, key: "oauth_token")
         {
             return credential(.copilot, token: token, source: .file)
+        }
+        if
+            let token = githubCLIKeychainToken(
+                user: hostsText.flatMap {
+                    githubYAMLValue($0, key: "user")
+                }
+            )
+        {
+            return credential(
+                .copilot,
+                token: token,
+                source: .keychain
+            )
         }
         for executable in commandPaths
         where FileManager.default.isExecutableFile(
@@ -528,6 +543,47 @@ private extension CredentialDiscovery {
                 .nonBlank
         }
         return nil
+    }
+
+    func githubCLIKeychainToken(user: String?) -> String? {
+        var accounts: [String] = []
+        if let user {
+            accounts.append(user)
+        }
+        accounts.append("")
+        for account in accounts {
+            guard
+                let value = try? keychain.value(
+                    service: "gh:github.com",
+                    account: account
+                )
+            else {
+                continue
+            }
+            if let token = goKeyringToken(value) {
+                return token
+            }
+        }
+        return nil
+    }
+
+    func goKeyringToken(_ value: String?) -> String? {
+        guard let trimmed = value?.nonBlank else {
+            return nil
+        }
+        let prefix = "go-keyring-base64:"
+        guard trimmed.hasPrefix(prefix) else {
+            return trimmed
+        }
+        guard
+            let data = Data(
+                base64Encoded: String(trimmed.dropFirst(prefix.count))
+            ),
+            let decoded = String(data: data, encoding: .utf8)
+        else {
+            return nil
+        }
+        return decoded.nonBlank
     }
 
     func tomlValue(_ text: String, key: String) -> String? {
