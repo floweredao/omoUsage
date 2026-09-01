@@ -107,6 +107,146 @@ struct ClaudeTokenRefreshTests {
     }
 
     @Test
+    func refreshRequestIncludesPinnedClaudeCodeScope() async throws {
+        ClaudeRefreshExchange.shared.reset(
+            tokenResponse: .success(
+                accessToken: "rotated-access-token",
+                refreshToken: "rotated-refresh-token",
+                expiresIn: 3_600
+            )
+        )
+        let provider = ClaudeRefreshFixtures.provider(
+            writer: RecordingClaudeKeychainWriter()
+        )
+
+        _ = try await provider.fetch(now: Self.now)
+
+        let tokenRequest = try #require(
+            ClaudeRefreshExchange.shared.lastTokenRequest()
+        )
+        #expect(
+            tokenRequest.body["scope"] as? String
+                == """
+                user:profile user:inference \
+                user:sessions:claude_code user:mcp_servers \
+                user:file_upload
+                """
+        )
+    }
+
+    /// Claude Code refreshes inside a five minute guard band; waiting for
+    /// actual expiry means every dashboard cycle races the deadline.
+    @Test
+    func accessTokenExpiringWithinFiveMinutesIsRefreshed() async throws {
+        ClaudeRefreshExchange.shared.reset(
+            tokenResponse: .success(
+                accessToken: "rotated-access-token",
+                refreshToken: "rotated-refresh-token",
+                expiresIn: 3_600
+            ),
+            storedCredential: ClaudeRefreshFixtures.storedCredential(
+                accessToken: "stored-access-token",
+                expiresAtMilliseconds: 1_785_675_240_000
+            ),
+            acceptedUsageTokens: [
+                "stored-access-token",
+                "rotated-access-token"
+            ]
+        )
+        let provider = ClaudeRefreshFixtures.provider(
+            writer: RecordingClaudeKeychainWriter()
+        )
+
+        let usage = try await provider.fetch(now: Self.now)
+
+        #expect(usage.availability == .available)
+        #expect(ClaudeRefreshExchange.shared.tokenRequestCount() == 1)
+        #expect(
+            ClaudeRefreshExchange.shared.usageAuthorizations()
+                == ["Bearer rotated-access-token"]
+        )
+    }
+
+    @Test
+    func accessTokenExpiringAfterFiveMinutesIsUsedWithoutRefresh()
+        async throws
+    {
+        ClaudeRefreshExchange.shared.reset(
+            tokenResponse: .success(
+                accessToken: "rotated-access-token",
+                refreshToken: "rotated-refresh-token",
+                expiresIn: 3_600
+            ),
+            storedCredential: ClaudeRefreshFixtures.storedCredential(
+                accessToken: "stored-access-token",
+                expiresAtMilliseconds: 1_785_675_360_000
+            ),
+            acceptedUsageTokens: [
+                "stored-access-token",
+                "rotated-access-token"
+            ]
+        )
+        let provider = ClaudeRefreshFixtures.provider(
+            writer: RecordingClaudeKeychainWriter()
+        )
+
+        let usage = try await provider.fetch(now: Self.now)
+
+        #expect(usage.availability == .available)
+        #expect(ClaudeRefreshExchange.shared.tokenRequestCount() == 0)
+        #expect(
+            ClaudeRefreshExchange.shared.usageAuthorizations()
+                == ["Bearer stored-access-token"]
+        )
+    }
+
+    /// A rotated token that cannot be written back is lost: the next launch
+    /// reads the stale credential and the refresh token may already be
+    /// consumed, so a silent success here strands the account.
+    @Test
+    func rotatedTokenPersistenceFailureFailsTheFetch() async throws {
+        ClaudeRefreshExchange.shared.reset(
+            tokenResponse: .success(
+                accessToken: "rotated-access-token",
+                refreshToken: "rotated-refresh-token",
+                expiresIn: 3_600
+            )
+        )
+        let provider = ClaudeRefreshFixtures.provider(
+            writer: FailingClaudeKeychainWriter()
+        )
+
+        await #expect(throws: (any Error).self) {
+            _ = try await provider.fetch(now: Self.now)
+        }
+
+        #expect(ClaudeRefreshExchange.shared.usageAuthorizations() == [])
+    }
+
+    @Test
+    func rotatedCredentialIsWrittenToOriginatingKeychainService()
+        async throws
+    {
+        ClaudeRefreshExchange.shared.reset(
+            tokenResponse: .success(
+                accessToken: "rotated-access-token",
+                refreshToken: "rotated-refresh-token",
+                expiresIn: 3_600
+            ),
+            storedService: "Claude Code-staging-oauth-credentials"
+        )
+        let writer = RecordingClaudeKeychainWriter()
+        let provider = ClaudeRefreshFixtures.provider(writer: writer)
+
+        _ = try await provider.fetch(now: Self.now)
+
+        #expect(
+            writer.services()
+                == ["Claude Code-staging-oauth-credentials"]
+        )
+    }
+
+    @Test
     func rejectedRefreshKeepsStoredCredentialAndDoesNotRetry() async throws {
         ClaudeRefreshExchange.shared.reset(
             tokenResponse: .failure(statusCode: 400)
@@ -190,8 +330,27 @@ private enum ClaudeRefreshFixtures {
         """.utf8
     )
 
+    static func storedCredential(
+        accessToken: String,
+        expiresAtMilliseconds: Int
+    ) -> String {
+        """
+        {
+          "claudeAiOauth": {
+            "accessToken": "\(accessToken)",
+            "refreshToken": "stored-refresh-token",
+            "expiresAt": \(expiresAtMilliseconds),
+            "refreshTokenExpiresAt": 4102444800000,
+            "scopes": ["user:inference", "user:profile"],
+            "subscriptionType": "max",
+            "rateLimitTier": "default_claude_max_5x"
+          }
+        }
+        """
+    }
+
     static func provider(
-        writer: RecordingClaudeKeychainWriter
+        writer: any KeychainWriting
     ) -> ClaudeUsageProvider {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [ClaudeRefreshURLProtocol.self]
@@ -215,22 +374,40 @@ private enum ClaudeRefreshFixtures {
 
 private struct StoredClaudeKeychain: KeychainReading {
     func value(service: String, account: String) throws -> String? {
-        service == "Claude Code-credentials"
-            ? ClaudeRefreshFixtures.storedCredential
-            : nil
+        ClaudeRefreshExchange.shared.storedCredential(for: service)
     }
 }
 
-final class RecordingClaudeKeychainWriter: KeychainWriting, @unchecked Sendable {
-    private let lock = NSLock()
-    private var write: (value: String, service: String, account: String)?
+private struct FailingClaudeKeychainWriter: KeychainWriting {
+    struct WriteFailure: Error {}
 
     func setValue(
         _ value: String,
         service: String,
         account: String
     ) throws {
-        lock.withLock { write = (value, service, account) }
+        throw WriteFailure()
+    }
+}
+
+final class RecordingClaudeKeychainWriter: KeychainWriting, @unchecked Sendable {
+    private let lock = NSLock()
+    private var write: (value: String, service: String, account: String)?
+    private var writtenServices: [String] = []
+
+    func setValue(
+        _ value: String,
+        service: String,
+        account: String
+    ) throws {
+        lock.withLock {
+            write = (value, service, account)
+            writtenServices.append(service)
+        }
+    }
+
+    func services() -> [String] {
+        lock.withLock { writtenServices }
     }
 
     func lastWrite() -> (value: String, service: String, account: String)? {
@@ -261,12 +438,41 @@ private final class ClaudeRefreshExchange: @unchecked Sendable {
     private var response: TokenResponse = .failure(statusCode: 400)
     private var tokenRequests: [TokenRequest] = []
     private var authorizations: [String] = []
+    private var storedService = "Claude Code-credentials"
+    private var stored = ClaudeRefreshFixtures.storedCredential
+    private var acceptedTokens: Set<String> = ["rotated-access-token"]
 
-    func reset(tokenResponse: TokenResponse) {
+    func reset(
+        tokenResponse: TokenResponse,
+        storedService: String = "Claude Code-credentials",
+        storedCredential: String = ClaudeRefreshFixtures.storedCredential,
+        acceptedUsageTokens: Set<String> = ["rotated-access-token"]
+    ) {
         lock.withLock {
             response = tokenResponse
             tokenRequests = []
             authorizations = []
+            self.storedService = storedService
+            stored = storedCredential
+            acceptedTokens = acceptedUsageTokens
+        }
+    }
+
+    func storedCredential(for service: String) -> String? {
+        lock.withLock { service == storedService ? stored : nil }
+    }
+
+    func accepts(authorization: String?) -> Bool {
+        lock.withLock {
+            guard
+                let authorization,
+                authorization.hasPrefix("Bearer ")
+            else {
+                return false
+            }
+            return acceptedTokens.contains(
+                String(authorization.dropFirst("Bearer ".count))
+            )
         }
     }
 
@@ -318,7 +524,11 @@ private final class ClaudeRefreshURLProtocol: URLProtocol, @unchecked Sendable {
         ClaudeRefreshExchange.shared.recordUsage(
             authorization: authorization
         )
-        guard authorization == "Bearer rotated-access-token" else {
+        guard
+            ClaudeRefreshExchange.shared.accepts(
+                authorization: authorization
+            )
+        else {
             respond(statusCode: 401, body: Data())
             return
         }

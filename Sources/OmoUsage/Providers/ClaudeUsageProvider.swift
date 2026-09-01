@@ -15,6 +15,18 @@ struct ClaudeDesktopSessionDiscovery: Sendable {
 }
 
 struct ClaudeUsageProvider: UsageProvider {
+    /// Claude Code's own grant. The endpoint issues a token scoped to what
+    /// it is asked for, so a narrower request silently loses capabilities.
+    static let oauthScope = """
+        user:profile user:inference \
+        user:sessions:claude_code user:mcp_servers \
+        user:file_upload
+        """
+    /// Refresh inside a guard band instead of at the deadline: the dashboard
+    /// polls on a timer, and a token that expires mid-flight reads as a
+    /// revoked credential.
+    static let refreshLeadTime: TimeInterval = 300
+
     let id = ProviderID.claude
     let accountID: AccountID
     let accountLabel: String
@@ -25,6 +37,7 @@ struct ClaudeUsageProvider: UsageProvider {
     let tokenEndpoint: URL
     let oauthClientID: String
     let refreshCooldown: ClaudeRefreshCooldown
+    let usageCooldown: ClaudeUsageCooldown
 
     init(
         accountID: AccountID = .legacy,
@@ -46,7 +59,8 @@ struct ClaudeUsageProvider: UsageProvider {
             string: "https://platform.claude.com/v1/oauth/token"
         )!,
         oauthClientID: String = "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
-        refreshCooldown: ClaudeRefreshCooldown = .shared
+        refreshCooldown: ClaudeRefreshCooldown = .shared,
+        usageCooldown: ClaudeUsageCooldown = .shared
     ) {
         self.accountID = accountID
         self.accountLabel = accountLabel
@@ -57,6 +71,7 @@ struct ClaudeUsageProvider: UsageProvider {
         self.tokenEndpoint = tokenEndpoint
         self.oauthClientID = oauthClientID
         self.refreshCooldown = refreshCooldown
+        self.usageCooldown = usageCooldown
     }
 
     func fetch(now: Date) async throws -> ProviderUsage {
@@ -70,30 +85,40 @@ struct ClaudeUsageProvider: UsageProvider {
                 allowsCachedHistory: true
             )
         }
-        var credential = stored
-        var didRefresh = false
-        if let expiresAt = credential.expiresAt, expiresAt <= now {
-            guard await refreshCooldown.allowsAttempt(
-                for: accountProviderID,
-                at: now
-            ) else {
-                return try await fetchDesktopUsage(
-                    now: now,
-                    cause: ProviderTransportError
-                        .authenticationRequired(id),
-                    allowsCachedHistory: false
-                )
-            }
+        // A throttled account stays throttled: reissuing the read (or
+        // rotating the token to retry it) is what turns a 429 into a
+        // longer ban. Surface the same transient failure so the dashboard
+        // keeps showing last-good usage.
+        guard await usageCooldown.allowsAttempt(
+            for: accountProviderID,
+            at: now
+        ) else {
+            throw ProviderTransportError.requestFailed(id, 429)
+        }
+        // Only an auth rejection says anything about *which* credential we
+        // picked. A 500, a 429, a malformed payload or a lost rotation are
+        // facts about the request, so replaying them against every other
+        // stored credential just multiplies the damage.
+        var candidates = discovery.claudeCandidates(
+            now: now,
+            allowingExpired: true
+        )
+        if candidates.isEmpty {
+            candidates = [stored]
+        }
+        var authFailure: any Error = ProviderTransportError
+            .authenticationRequired(id)
+        for candidate in candidates {
             do {
-                credential = try await refreshedCredential(
-                    credential,
-                    now: now
-                )
-                didRefresh = true
+                return try await oauthUsage(for: candidate, now: now)
             } catch is CancellationError {
                 throw CancellationError()
             } catch let contractError as ProviderContractError {
                 throw contractError
+            } catch let error as ProviderTransportError
+                where error == .authenticationRequired(id)
+            {
+                authFailure = error
             } catch {
                 return try await fetchDesktopUsage(
                     now: now,
@@ -101,6 +126,38 @@ struct ClaudeUsageProvider: UsageProvider {
                     allowsCachedHistory: false
                 )
             }
+        }
+        return try await fetchDesktopUsage(
+            now: now,
+            cause: authFailure,
+            allowsCachedHistory: false
+        )
+    }
+
+    /// One credential's full attempt: rotate it if it is at or past the
+    /// guard band, read usage, and rotate once more if a token the clock
+    /// still trusts turns out to be revoked.
+    private func oauthUsage(
+        for candidate: DiscoveredCredential,
+        now: Date
+    ) async throws -> ProviderUsage {
+        var credential = candidate
+        var didRefresh = false
+        if
+            let expiresAt = credential.expiresAt,
+            expiresAt.timeIntervalSince(now) <= Self.refreshLeadTime
+        {
+            guard await refreshCooldown.allowsAttempt(
+                for: accountProviderID,
+                at: now
+            ) else {
+                throw ProviderTransportError.authenticationRequired(id)
+            }
+            credential = try await refreshedCredential(
+                credential,
+                now: now
+            )
+            didRefresh = true
         }
         do {
             return try await fetchOAuthUsage(credential, now: now)
@@ -121,29 +178,13 @@ struct ClaudeUsageProvider: UsageProvider {
                     at: now
                 )
             {
-                do {
-                    let rotated = try await refreshedCredential(
-                        credential,
-                        now: now
-                    )
-                    return try await fetchOAuthUsage(rotated, now: now)
-                } catch is CancellationError {
-                    throw CancellationError()
-                } catch let contractError as ProviderContractError {
-                    throw contractError
-                } catch let retryError {
-                    return try await fetchDesktopUsage(
-                        now: now,
-                        cause: retryError,
-                        allowsCachedHistory: false
-                    )
-                }
+                let rotated = try await refreshedCredential(
+                    credential,
+                    now: now
+                )
+                return try await fetchOAuthUsage(rotated, now: now)
             }
-            return try await fetchDesktopUsage(
-                now: now,
-                cause: error,
-                allowsCachedHistory: false
-            )
+            throw error
         }
     }
 
@@ -176,14 +217,30 @@ struct ClaudeUsageProvider: UsageProvider {
             "claude-code/2.1.69",
             forHTTPHeaderField: "User-Agent"
         )
-        let data = try await http.data(for: request, endpoint: endpoint)
-        return try endpoint.schemaChecked {
+        let data: Data
+        do {
+            data = try await http.data(for: request, endpoint: endpoint)
+        } catch {
+            if
+                error as? ProviderTransportError
+                    == .requestFailed(id, 429)
+            {
+                await usageCooldown.recordRateLimit(
+                    for: accountProviderID,
+                    at: now
+                )
+            }
+            throw error
+        }
+        let usage = try endpoint.schemaChecked {
             try ClaudeUsageParser.parse(
                 data,
                 planName: credential.planName ?? "",
                 now: now
             )
         }
+        await usageCooldown.recordSuccess(for: accountProviderID)
+        return usage
     }
 
     /// Exchanges the stored refresh token for a fresh access token and writes
@@ -207,7 +264,8 @@ struct ClaudeUsageProvider: UsageProvider {
             withJSONObject: [
                 "grant_type": "refresh_token",
                 "refresh_token": refreshToken,
-                "client_id": oauthClientID
+                "client_id": oauthClientID,
+                "scope": Self.oauthScope
             ],
             options: [.sortedKeys]
         )
@@ -260,12 +318,16 @@ struct ClaudeUsageProvider: UsageProvider {
             paths: [["refresh_token"]]
         ) ?? refreshToken
         let expiresAt = now.addingTimeInterval(expiresIn)
+        // A rotated token that cannot be written back is lost: the grant is
+        // already spent, so reporting usage here would strand the account
+        // behind a credential nobody can read next launch.
         do {
             try discovery.persistClaudeCredential(
                 accessToken: accessToken,
                 refreshToken: rotatedRefreshToken,
                 expiresAt: expiresAt,
-                source: credential.source
+                source: credential.source,
+                storage: credential.storage
             )
         } catch {
             DiagnosticStore.shared.record(
@@ -273,6 +335,7 @@ struct ClaudeUsageProvider: UsageProvider {
                 provider: id,
                 category: .credentialPersistence
             )
+            throw error
         }
         return DiscoveredCredential(
             provider: id,
@@ -281,7 +344,8 @@ struct ClaudeUsageProvider: UsageProvider {
             accountID: credential.accountID,
             planName: credential.planName,
             expiresAt: expiresAt,
-            source: credential.source
+            source: credential.source,
+            storage: credential.storage
         )
     }
 
