@@ -352,17 +352,44 @@ struct CredentialDiscovery: Sendable {
     }
 
     func codex(now: Date) throws -> DiscoveredCredential {
+        let resolution = resolveCodexCandidates(now: now)
+        if let best = resolution.candidates.first {
+            return best
+        }
+        if let failure = resolution.failure {
+            throw failure
+        }
+        throw CredentialDiscoveryError.notFound(.codex)
+    }
+
+    func codexCandidates(now: Date) -> [DiscoveredCredential] {
+        resolveCodexCandidates(now: now).candidates
+    }
+
+    private func resolveCodexCandidates(
+        now: Date
+    ) -> (
+        candidates: [DiscoveredCredential],
+        failure: CredentialDiscoveryError?
+    ) {
+        var candidates: [DiscoveredCredential] = []
         var candidateError: CredentialDiscoveryError?
         if Foundation.FileManager.default.fileExists(
             atPath: paths.codex.path
         ) {
-            if let data = try? Data(contentsOf: paths.codex) {
-                do {
-                    return try parseCodex(data, source: .file)
-                } catch let error as CredentialDiscoveryError {
-                    candidateError = error
-                }
-            } else {
+            do {
+                let data = try Data(contentsOf: paths.codex)
+                candidates.append(
+                    try parseCodex(
+                        data,
+                        source: .file,
+                        storage: .file(paths.codex),
+                        now: now
+                    )
+                )
+            } catch let error as CredentialDiscoveryError {
+                candidateError = error
+            } catch {
                 candidateError = .malformed(.codex)
             }
         }
@@ -374,22 +401,95 @@ struct CredentialDiscovery: Sendable {
                 ) else {
                     continue
                 }
-                do {
-                    return try parseCodex(
+                candidates.append(
+                    try parseCodex(
                         Data(raw.utf8),
-                        source: .keychain
+                        source: .keychain,
+                        storage: .keychain(
+                            service: service,
+                            account: ""
+                        ),
+                        now: now
                     )
-                } catch let error as CredentialDiscoveryError {
-                    candidateError = error
-                }
+                )
+            } catch let error as CredentialDiscoveryError {
+                candidateError = error
             } catch {
                 candidateError = .malformed(.codex)
             }
         }
-        if let candidateError {
-            throw candidateError
+        return (candidates, candidateError)
+    }
+
+    func persistCodexCredential(
+        accessToken: String,
+        refreshToken: String?,
+        idToken: String?,
+        lastRefresh: Date,
+        storage: CredentialStorage?
+    ) throws {
+        guard let storage else {
+            throw CredentialDiscoveryError.malformed(.codex)
         }
-        throw CredentialDiscoveryError.notFound(.codex)
+        let raw: Data
+        switch storage {
+        case let .file(url):
+            guard let data = try? Data(contentsOf: url) else {
+                throw CredentialDiscoveryError.malformed(.codex)
+            }
+            raw = data
+        case let .keychain(service, account):
+            guard let text = try? keychain.value(
+                service: service,
+                account: account
+            ) else {
+                throw CredentialDiscoveryError.malformed(.codex)
+            }
+            raw = Data(text.utf8)
+        }
+        guard
+            var root = try? UsageJSON.object(raw),
+            var tokens = UsageJSON.object(root["tokens"])
+        else {
+            throw CredentialDiscoveryError.malformed(.codex)
+        }
+        tokens["access_token"] = accessToken
+        if let refreshToken {
+            tokens["refresh_token"] = refreshToken
+        }
+        if let idToken {
+            tokens["id_token"] = idToken
+        }
+        root["tokens"] = tokens
+        root["last_refresh"] = lastRefresh.ISO8601Format()
+        let encoded = try JSONSerialization.data(
+            withJSONObject: root,
+            options: [.prettyPrinted, .sortedKeys]
+        )
+        switch storage {
+        case let .file(url):
+            do {
+                try writeAtomically(encoded, to: url)
+            } catch {
+                throw CredentialDiscoveryError.malformed(.codex)
+            }
+        case let .keychain(service, account):
+            guard
+                let keychainWriter,
+                let text = String(data: encoded, encoding: .utf8)
+            else {
+                throw CredentialDiscoveryError.malformed(.codex)
+            }
+            do {
+                try keychainWriter.setValue(
+                    text,
+                    service: service,
+                    account: account
+                )
+            } catch {
+                throw CredentialDiscoveryError.malformed(.codex)
+            }
+        }
     }
 
     func antigravity(now: Date) throws -> DiscoveredCredential {
@@ -576,7 +676,9 @@ struct CredentialDiscovery: Sendable {
 
     private func parseCodex(
         _ data: Data,
-        source: CredentialSource
+        source: CredentialSource,
+        storage: CredentialStorage?,
+        now: Date
     ) throws -> DiscoveredCredential {
         guard
             let root = try? UsageJSON.object(data),
@@ -592,9 +694,30 @@ struct CredentialDiscovery: Sendable {
             refreshToken: (tokens["refresh_token"] as? String)?.nonEmpty,
             accountID: (tokens["account_id"] as? String)?.nonEmpty,
             planName: nil,
-            expiresAt: nil,
-            source: source
+            expiresAt: codexJWTExpiration(accessToken),
+            source: source,
+            storage: storage
         )
+    }
+
+    private func codexJWTExpiration(_ token: String) -> Date? {
+        let parts = token.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count >= 2 else { return nil }
+        var payload = String(parts[1])
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        payload += String(
+            repeating: "=",
+            count: (4 - payload.count % 4) % 4
+        )
+        guard
+            let data = Data(base64Encoded: payload),
+            let object = try? UsageJSON.object(data),
+            let expiration = UsageJSON.number(object["exp"])
+        else {
+            return nil
+        }
+        return Date(timeIntervalSince1970: expiration)
     }
 
     private func parseAntigravity(

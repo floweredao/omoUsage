@@ -50,6 +50,99 @@ struct CredentialDiscoveryTests {
         }
     }
 
+    @Test(arguments: [240, 360])
+    func parsesCodexJWTExpiration(offset: Int) throws {
+        try withFixtureDirectory { directory in
+            let codexURL = directory.appending(path: "codex.json")
+            let expiration = Int(now.timeIntervalSince1970) + offset
+            try Data(
+                codexCredentialsJSON(
+                    accessToken: codexJWT(expiresAt: expiration),
+                    refreshToken: "fixture-codex-refresh"
+                ).utf8
+            ).write(to: codexURL)
+            let credential = try makeDiscovery(
+                claude: directory.appending(path: "missing.json"),
+                codex: codexURL
+            ).codex(now: now)
+
+            #expect(
+                credential.expiresAt
+                    == Date(timeIntervalSince1970: TimeInterval(expiration))
+            )
+        }
+    }
+
+    @Test
+    func validCodexFilePrecedesKeychainCredential() throws {
+        try withFixtureDirectory { directory in
+            let codexURL = directory.appending(path: "codex.json")
+            try Data(
+                codexCredentialsJSON(
+                    accessToken: "fixture-file-codex-access",
+                    refreshToken: "fixture-file-codex-refresh"
+                ).utf8
+            ).write(to: codexURL)
+            let discovery = CredentialDiscovery(
+                paths: CredentialPaths(
+                    claude: directory.appending(path: "missing.json"),
+                    codex: codexURL
+                ),
+                environment: [:],
+                keychain: StubKeychain(values: [
+                    "Codex Auth\u{0}": codexCredentialsJSON(
+                        accessToken: "fixture-keychain-codex-access",
+                        refreshToken: "fixture-keychain-codex-refresh"
+                    )
+                ]),
+                homeDirectory: directory
+            )
+
+            let credential = try discovery.codex(now: now)
+
+            #expect(credential.source == .file)
+            #expect(credential.accessToken == "fixture-file-codex-access")
+        }
+    }
+
+    @Test
+    func unofficialCodexConfigRequiresExplicitCodexHome() throws {
+        try withFixtureDirectory { home in
+            let unofficial = home.appending(path: ".config/codex")
+            try FileManager.default.createDirectory(
+                at: unofficial,
+                withIntermediateDirectories: true
+            )
+            try Data(
+                codexCredentialsJSON(
+                    accessToken: "fixture-unofficial-codex-access",
+                    refreshToken: "fixture-unofficial-codex-refresh"
+                ).utf8
+            ).write(to: unofficial.appending(path: "auth.json"))
+
+            let defaultDiscovery = CredentialDiscovery.live(
+                home: home,
+                environment: [:],
+                keychain: StubKeychain(values: [:])
+            )
+            #expect(throws: CredentialDiscoveryError.notFound(.codex)) {
+                try defaultDiscovery.codex(now: now)
+            }
+
+            let explicitDiscovery = CredentialDiscovery.live(
+                home: home,
+                environment: ["CODEX_HOME": unofficial.path],
+                keychain: StubKeychain(values: [:])
+            )
+            let credential = try explicitDiscovery.codex(now: now)
+            #expect(
+                credential.accessToken
+                    == "fixture-unofficial-codex-access"
+            )
+            #expect(credential.source == .file)
+        }
+    }
+
     @Test
     func discoversBase64AntigravityKeychainToken() throws {
         let payload = Data(
@@ -682,6 +775,36 @@ struct CredentialDiscoveryTests {
         #expect(!diagnostic.contains("fixture-access"))
         #expect(!diagnostic.contains("fixture-refresh"))
         #expect(diagnostic.contains("<redacted>"))
+    }
+
+    private func codexCredentialsJSON(
+        accessToken: String,
+        refreshToken: String
+    ) -> String {
+        """
+        {
+          "auth_mode": "chatgpt",
+          "tokens": {
+            "access_token": "\(accessToken)",
+            "refresh_token": "\(refreshToken)",
+            "account_id": "fixture-codex-account"
+          }
+        }
+        """
+    }
+
+    private func codexJWT(expiresAt: Int) -> String {
+        let header = Data(#"{"alg":"none"}"#.utf8)
+            .base64EncodedString()
+        let payload = Data(#"{"exp":\#(expiresAt)}"#.utf8)
+            .base64EncodedString()
+        return [header, payload, "fixture-signature"]
+            .map {
+                $0.replacingOccurrences(of: "+", with: "-")
+                    .replacingOccurrences(of: "/", with: "_")
+                    .replacingOccurrences(of: "=", with: "")
+            }
+            .joined(separator: ".")
     }
 
     private func claudeCredentialsJSON(
