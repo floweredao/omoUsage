@@ -480,6 +480,19 @@ struct SideNotchHoverPreviewTests {
     }
 
     @Test
+    func livePointerExitWinsOverStaleTrackingEventLocation() {
+        let panelFrame = NSRect(x: 1_520, y: 177, width: 400, height: 752)
+
+        #expect(
+            SideNotchTrackingExitPolicy.shouldForward(
+                eventPointer: NSPoint(x: 1_520, y: 400),
+                livePointer: NSPoint(x: 1_000, y: 400),
+                panelFrame: panelFrame
+            )
+        )
+    }
+
+    @Test
     func everyHoverDrivenStateStaysPassive() {
         let state = SideNotchPanelState()
 

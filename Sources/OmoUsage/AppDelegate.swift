@@ -13,6 +13,7 @@ enum SettingsWindowContract {
     static func apply(to window: NSWindow) {
         window.styleMask = styleMask
         window.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        window.standardWindowButton(.zoomButton)?.isHidden = true
     }
 }
 

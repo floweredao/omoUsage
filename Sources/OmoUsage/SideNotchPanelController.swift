@@ -431,6 +431,19 @@ enum SideNotchHoverBoundaryPolicy {
     }
 }
 
+enum SideNotchTrackingExitPolicy {
+    static func shouldForward(
+        eventPointer _: NSPoint,
+        livePointer: NSPoint,
+        panelFrame: NSRect
+    ) -> Bool {
+        SideNotchHoverBoundaryPolicy.confirmsExit(
+            pointer: livePointer,
+            panelFrame: panelFrame
+        )
+    }
+}
+
 enum SideNotchPanelMode: Equatable {
     case hidden
     case revealed

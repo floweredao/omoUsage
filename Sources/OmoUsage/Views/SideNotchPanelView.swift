@@ -264,10 +264,16 @@ private struct SideNotchTrackingSurface: NSViewRepresentable {
 
         override func mouseExited(with event: NSEvent) {
             guard let window else { return }
-            let screenPoint = window.convertPoint(
+            let eventPointer = window.convertPoint(
                 toScreen: event.locationInWindow
             )
-            guard !window.frame.contains(screenPoint) else {
+            guard
+                SideNotchTrackingExitPolicy.shouldForward(
+                    eventPointer: eventPointer,
+                    livePointer: NSEvent.mouseLocation,
+                    panelFrame: window.frame
+                )
+            else {
                 return
             }
             onExited()
