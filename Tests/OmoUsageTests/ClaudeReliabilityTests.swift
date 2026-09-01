@@ -75,7 +75,7 @@ struct ClaudeReliabilityTests {
     }
 
     @Test
-    func transientOAuthFailureFallsBackToLiveDesktopSession() async throws {
+    func transientOAuthFailureDoesNotCrossDesktopSession() async throws {
         HephaestusTransientFallbackRecorder.shared.reset()
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [HephaestusTransientFallbackURLProtocol.self]
@@ -95,14 +95,15 @@ struct ClaudeReliabilityTests {
             }
         )
 
-        let usage = try await provider.fetch(now: now)
-
+        await #expect(
+            throws: ProviderTransportError.requestFailed(.claude, 503)
+        ) {
+            try await provider.fetch(now: now)
+        }
         #expect(
             HephaestusTransientFallbackRecorder.shared.requestedHosts()
-                == ["api.anthropic.com", "claude.ai"]
+                == ["api.anthropic.com"]
         )
-        #expect(usage.planName == "Claude.ai")
-        #expect(usage.groups.flatMap(\.meters).map(\.percentRemaining) == [58, 75])
     }
 }
 

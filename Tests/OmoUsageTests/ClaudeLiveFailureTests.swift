@@ -445,6 +445,113 @@ struct ClaudeSourceFallbackTests {
     }
 
     @Test
+    func oauthServerFailureDoesNotUseDesktop() async throws {
+        try await expectNonAuthenticationFailureDoesNotUseDesktop(
+            .serverError
+        )
+    }
+
+    @Test
+    func oauthRateLimitDoesNotUseDesktop() async throws {
+        try await expectNonAuthenticationFailureDoesNotUseDesktop(
+            .rateLimited
+        )
+    }
+
+    @Test
+    func malformedOAuthPayloadDoesNotUseDesktop() async throws {
+        try await expectNonAuthenticationFailureDoesNotUseDesktop(
+            .invalidJSON
+        )
+    }
+
+    @Test
+    func rotatedTokenPersistenceFailureDoesNotUseDesktop() async throws {
+        ClaudeFallbackExchange.shared.reset(
+            acceptedUsageTokens: [],
+            tokenStatus: 200,
+            tokenSucceeds: true
+        )
+        try await withFallbackHome { home in
+            let provider = try ClaudeFallbackFixtures.provider(
+                home: home,
+                keychainCredential: ClaudeFallbackFixtures.credential(
+                    accessToken: "expiring-keychain-access",
+                    refreshToken: "expiring-keychain-refresh",
+                    expiresAtMilliseconds: 1_785_675_240_000
+                ),
+                fileCredential: nil,
+                desktopPresent: true,
+                keychainWriter: ClaudeFallbackFailingWriter()
+            )
+
+            let failure = await ClaudeFallbackFixtures.failure {
+                try await provider.fetch(now: Self.now)
+            }
+
+            #expect(failure is ClaudeFallbackFailingWriter.Failure)
+            #expect(ClaudeFallbackExchange.shared.tokenRequests() == 1)
+            #expect(ClaudeFallbackExchange.shared.authorizations().isEmpty)
+            #expect(ClaudeFallbackExchange.shared.desktopRequests() == 0)
+            let description = String(describing: failure)
+            #expect(!description.contains("expiring-keychain-access"))
+            #expect(!description.contains("expiring-keychain-refresh"))
+            #expect(!description.contains("desktop-session-secret"))
+        }
+    }
+
+    @Test
+    func exhaustedOAuthAuthenticationMayUseDesktop() async throws {
+        ClaudeFallbackExchange.shared.reset(acceptedUsageTokens: [])
+        try await withFallbackHome { home in
+            let provider = try ClaudeFallbackFixtures.provider(
+                home: home,
+                keychainCredential: ClaudeFallbackFixtures.credential(
+                    accessToken: "desktop-keychain-access",
+                    refreshToken: nil,
+                    expiresAtMilliseconds: 1_790_000_000_000
+                ),
+                fileCredential: ClaudeFallbackFixtures.credential(
+                    accessToken: "desktop-file-access",
+                    refreshToken: nil,
+                    expiresAtMilliseconds: 1_790_000_000_000
+                ),
+                desktopPresent: true
+            )
+
+            let usage = try await provider.fetch(now: Self.now)
+
+            #expect(usage.availability == .available)
+            #expect(
+                ClaudeFallbackExchange.shared.authorizations() == [
+                    "Bearer desktop-keychain-access",
+                    "Bearer desktop-file-access"
+                ]
+            )
+            #expect(ClaudeFallbackExchange.shared.desktopRequests() == 1)
+        }
+    }
+
+    @Test
+    func missingOAuthCredentialMayUseDesktop() async throws {
+        ClaudeFallbackExchange.shared.reset(acceptedUsageTokens: [])
+        try await withFallbackHome { home in
+            let provider = try ClaudeFallbackFixtures.provider(
+                home: home,
+                keychainCredential: nil,
+                fileCredential: nil,
+                desktopPresent: true
+            )
+
+            let usage = try await provider.fetch(now: Self.now)
+
+            #expect(usage.availability == .available)
+            #expect(ClaudeFallbackExchange.shared.authorizations().isEmpty)
+            #expect(ClaudeFallbackExchange.shared.desktopRequests() == 1)
+        }
+    }
+
+    @Test
     func transientFailureDoesNotCrossFallBackToAnotherCandidate()
         async throws
     {
@@ -542,7 +649,8 @@ struct ClaudeSourceFallbackTests {
                     accessToken: "file-access",
                     refreshToken: nil,
                     expiresAtMilliseconds: 1_790_000_000_000
-                )
+                ),
+                desktopPresent: true
             )
             let task = Task { try await provider.fetch(now: Self.now) }
 
@@ -558,6 +666,72 @@ struct ClaudeSourceFallbackTests {
                 ClaudeFallbackExchange.shared.authorizations()
                     == ["Bearer keychain-access"]
             )
+            #expect(ClaudeFallbackExchange.shared.desktopRequests() == 0)
+        }
+    }
+
+    private func expectNonAuthenticationFailureDoesNotUseDesktop(
+        _ scenario: ClaudeDesktopBoundaryFailure
+    ) async throws {
+        ClaudeFallbackExchange.shared.reset(
+            acceptedUsageTokens: scenario == .invalidJSON
+                ? ["boundary-keychain-access"]
+                : [],
+            usageStatus: scenario.status,
+            invalidJSON: scenario == .invalidJSON
+        )
+        try await withFallbackHome { home in
+            let provider = try ClaudeFallbackFixtures.provider(
+                home: home,
+                keychainCredential: ClaudeFallbackFixtures.credential(
+                    accessToken: "boundary-keychain-access",
+                    refreshToken: nil,
+                    expiresAtMilliseconds: 1_790_000_000_000
+                ),
+                fileCredential: nil,
+                desktopPresent: true
+            )
+
+            let failure = await ClaudeFallbackFixtures.failure {
+                try await provider.fetch(now: Self.now)
+            }
+
+            #expect(
+                failure as? ProviderTransportError == scenario.expected
+            )
+            #expect(
+                ClaudeFallbackExchange.shared.authorizations()
+                    == ["Bearer boundary-keychain-access"]
+            )
+            #expect(ClaudeFallbackExchange.shared.desktopRequests() == 0)
+            let description = String(describing: failure)
+            #expect(!description.contains("boundary-keychain-access"))
+            #expect(!description.contains("desktop-session-secret"))
+        }
+    }
+
+    private enum ClaudeDesktopBoundaryFailure: String, Sendable {
+        case serverError
+        case rateLimited
+        case invalidJSON
+
+        var status: Int {
+            switch self {
+            case .serverError: 500
+            case .rateLimited: 429
+            case .invalidJSON: 200
+            }
+        }
+
+        var expected: ProviderTransportError {
+            switch self {
+            case .serverError:
+                .requestFailed(.claude, 500)
+            case .rateLimited:
+                .requestFailed(.claude, 429)
+            case .invalidJSON:
+                .invalidJSON(.claude)
+            }
         }
     }
 
@@ -608,7 +782,9 @@ private enum ClaudeFallbackFixtures {
         home: URL,
         keychainCredential: String?,
         fileCredential: String?,
-        environmentToken: String? = nil
+        environmentToken: String? = nil,
+        desktopPresent: Bool = false,
+        keychainWriter: (any KeychainWriting)? = nil
     ) throws -> ClaudeUsageProvider {
         let claudeURL = home.appending(path: "credentials.json")
         if let fileCredential {
@@ -631,6 +807,7 @@ private enum ClaudeFallbackFixtures {
                 keychain: ClaudeFallbackKeychain(
                     credential: keychainCredential
                 ),
+                keychainWriter: keychainWriter,
                 homeDirectory: home
             ),
             http: providerHTTPTestClient(
@@ -638,10 +815,30 @@ private enum ClaudeFallbackFixtures {
                 retryPolicy: ProviderRetryPolicy(maximumAttempts: 1)
             ),
             desktopUsageURL: home.appending(path: "missing-history.json"),
-            desktopSessionDiscovery: .unavailable,
+            desktopSessionDiscovery: ClaudeDesktopSessionDiscovery {
+                desktopPresent
+                    ? ClaudeDesktopSession(
+                        organizationID: "desktop-organization",
+                        cookieHeader:
+                            "sessionKey=desktop-session-secret"
+                    )
+                    : nil
+            },
             refreshCooldown: ClaudeRefreshCooldown(),
             usageCooldown: ClaudeUsageCooldown()
         )
+    }
+}
+
+private struct ClaudeFallbackFailingWriter: KeychainWriting {
+    struct Failure: Error {}
+
+    func setValue(
+        _ value: String,
+        service: String,
+        account: String
+    ) throws {
+        throw Failure()
     }
 }
 
@@ -661,8 +858,11 @@ private final class ClaudeFallbackExchange: @unchecked Sendable {
     private var usageStatus = 200
     private var tokenStatus = 401
     private var hangs = false
+    private var invalidJSON = false
+    private var tokenSucceeds = false
     private var recorded: [String] = []
     private var tokenCount = 0
+    private var desktopCount = 0
     private var continuation: AsyncStream<Void>.Continuation?
 
     @discardableResult
@@ -670,7 +870,9 @@ private final class ClaudeFallbackExchange: @unchecked Sendable {
         acceptedUsageTokens: Set<String>,
         usageStatus: Int = 200,
         tokenStatus: Int = 401,
-        hangs: Bool = false
+        hangs: Bool = false,
+        invalidJSON: Bool = false,
+        tokenSucceeds: Bool = false
     ) -> AsyncStream<Void> {
         let (stream, continuation) = AsyncStream<Void>.makeStream()
         lock.withLock {
@@ -678,8 +880,11 @@ private final class ClaudeFallbackExchange: @unchecked Sendable {
             self.usageStatus = usageStatus
             self.tokenStatus = tokenStatus
             self.hangs = hangs
+            self.invalidJSON = invalidJSON
+            self.tokenSucceeds = tokenSucceeds
             recorded = []
             tokenCount = 0
+            desktopCount = 0
             self.continuation = continuation
         }
         return stream
@@ -710,11 +915,34 @@ private final class ClaudeFallbackExchange: @unchecked Sendable {
         return status
     }
 
-    func recordToken() -> Int {
+    func recordToken() -> (status: Int, succeeds: Bool) {
         lock.withLock {
             tokenCount += 1
-            return tokenStatus
+            return (tokenStatus, tokenSucceeds)
         }
+    }
+
+    func usageBody() -> Data {
+        lock.withLock {
+            invalidJSON
+                ? Data("{".utf8)
+                : Data(
+                    """
+                    {
+                      "five_hour": {"utilization": 42},
+                      "seven_day": {"utilization": 25}
+                    }
+                    """.utf8
+                )
+        }
+    }
+
+    func recordDesktop() {
+        lock.withLock { desktopCount += 1 }
+    }
+
+    func desktopRequests() -> Int {
+        lock.withLock { desktopCount }
     }
 
     func authorizations() -> [String] {
@@ -744,10 +972,23 @@ private final class ClaudeFallbackURLProtocol: URLProtocol,
             respond(statusCode: 500, body: Data())
             return
         }
-        if url.path.hasSuffix("/oauth/token") {
+        if url.host == "claude.ai" {
+            ClaudeFallbackExchange.shared.recordDesktop()
             respond(
-                statusCode: ClaudeFallbackExchange.shared.recordToken(),
-                body: Data(#"{"error":"invalid_grant"}"#.utf8)
+                statusCode: 200,
+                body: ClaudeFallbackExchange.shared.usageBody()
+            )
+            return
+        }
+        if url.path.hasSuffix("/oauth/token") {
+            let token = ClaudeFallbackExchange.shared.recordToken()
+            respond(
+                statusCode: token.status,
+                body: token.succeeds
+                    ? Data(
+                        #"{"access_token":"rotated-access","refresh_token":"rotated-refresh","expires_in":3600}"#.utf8
+                    )
+                    : Data(#"{"error":"invalid_grant"}"#.utf8)
             )
             return
         }
@@ -762,14 +1003,7 @@ private final class ClaudeFallbackURLProtocol: URLProtocol,
         }
         respond(
             statusCode: status,
-            body: Data(
-                """
-                {
-                  "five_hour": {"utilization": 42},
-                  "seven_day": {"utilization": 25}
-                }
-                """.utf8
-            )
+            body: ClaudeFallbackExchange.shared.usageBody()
         )
     }
 
