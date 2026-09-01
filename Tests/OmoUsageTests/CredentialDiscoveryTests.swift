@@ -78,6 +78,402 @@ struct CredentialDiscoveryTests {
     }
 
     @Test
+    func liveDiscoveryDefaultsToSecurityKeychainReader() throws {
+        try withFixtureDirectory { directory in
+            let discovery = CredentialDiscovery.live(
+                home: directory,
+                environment: [:]
+            )
+
+            #expect(discovery.keychain is SecurityKeychainReader)
+            #expect(
+                discovery.paths.claude
+                    == directory.appending(
+                        components: ".claude",
+                        ".credentials.json"
+                    )
+            )
+        }
+    }
+
+    @Test
+    func discoversClaudeCredentialsInConfigDirectory() throws {
+        try withFixtureDirectory { directory in
+            let configDirectory = directory.appending(
+                path: "claude-config"
+            )
+            try FileManager.default.createDirectory(
+                at: configDirectory,
+                withIntermediateDirectories: true
+            )
+            try Data(
+                claudeCredentialsJSON(
+                    accessToken: "fixture-config-access",
+                    expiresAtMilliseconds: 1_785_685_000_000
+                ).utf8
+            ).write(
+                to: configDirectory.appending(
+                    path: ".credentials.json"
+                )
+            )
+            let discovery = CredentialDiscovery.live(
+                home: directory,
+                environment: [
+                    "CLAUDE_CONFIG_DIR": configDirectory.path
+                ],
+                keychain: StubKeychain(values: [:])
+            )
+
+            let credential = try discovery.claude(now: now)
+
+            #expect(credential.accessToken == "fixture-config-access")
+            #expect(credential.source == .file)
+        }
+    }
+
+    @Test(arguments: [
+        "Claude Code-local-oauth-credentials",
+        "Claude Code-staging-oauth-credentials",
+        "Claude Code-custom-oauth-credentials"
+    ])
+    func discoversAlternateClaudeKeychainService(
+        service: String
+    ) throws {
+        let discovery = claudeKeychainDiscovery(
+            values: [
+                "\(service)\u{0}": claudeCredentialsJSON(
+                    accessToken: "fixture-alternate-access",
+                    expiresAtMilliseconds: 1_785_685_000_000
+                )
+            ]
+        )
+
+        let credential = try discovery.claude(now: now)
+
+        #expect(credential.accessToken == "fixture-alternate-access")
+        #expect(credential.source == .keychain)
+    }
+
+    @Test
+    func prefersStoredKeychainCredentialOverEnvironmentToken() throws {
+        let missing = URL(filePath: "/definitely/missing")
+        let discovery = CredentialDiscovery(
+            paths: CredentialPaths(claude: missing, codex: missing),
+            environment: [
+                "CLAUDE_CODE_OAUTH_TOKEN": "fixture-environment-access"
+            ],
+            keychain: StubKeychain(
+                values: [
+                    "Claude Code-credentials\u{0}":
+                        claudeCredentialsJSON(
+                            accessToken: "fixture-keychain-access",
+                            expiresAtMilliseconds: 1_785_685_000_000
+                        )
+                ]
+            )
+        )
+
+        let credential = try discovery.claude(now: now)
+
+        #expect(credential.accessToken == "fixture-keychain-access")
+        #expect(credential.source == .keychain)
+        #expect(
+            !credential.description.contains("fixture-keychain-access")
+        )
+    }
+
+    @Test(arguments: [
+        """
+        {
+          "claudeAiOauth": {
+            "accessToken": "fixture-unusable-access",
+            "expiresAt": 1000
+          }
+        }
+        """,
+        "{broken"
+    ])
+    func fallsBackToValidFileWhenKeychainCandidateUnusable(
+        stored: String
+    ) throws {
+        try withFixtureDirectory { directory in
+            let claudeURL = directory.appending(path: "claude.json")
+            try Data(
+                claudeCredentialsJSON(
+                    accessToken: "fixture-file-access",
+                    expiresAtMilliseconds: 1_785_685_000_000
+                ).utf8
+            ).write(to: claudeURL)
+            let discovery = CredentialDiscovery(
+                paths: CredentialPaths(
+                    claude: claudeURL,
+                    codex: directory.appending(path: "codex.json")
+                ),
+                environment: [:],
+                keychain: StubKeychain(
+                    values: ["Claude Code-credentials\u{0}": stored]
+                )
+            )
+
+            let credential = try discovery.claude(now: now)
+
+            #expect(credential.accessToken == "fixture-file-access")
+            #expect(credential.source == .file)
+        }
+    }
+
+    @Test
+    func prefersKeychainCredentialOverFileCredential() throws {
+        try withFixtureDirectory { directory in
+            let claudeURL = directory.appending(path: "claude.json")
+            try Data(
+                claudeCredentialsJSON(
+                    accessToken: "fixture-file-access",
+                    expiresAtMilliseconds: 1_785_685_000_000
+                ).utf8
+            ).write(to: claudeURL)
+            let discovery = CredentialDiscovery(
+                paths: CredentialPaths(
+                    claude: claudeURL,
+                    codex: directory.appending(path: "codex.json")
+                ),
+                environment: [:],
+                keychain: StubKeychain(
+                    values: [
+                        "Claude Code-credentials\u{0}":
+                            claudeCredentialsJSON(
+                                accessToken: "fixture-keychain-access",
+                                expiresAtMilliseconds: 1_785_685_000_000
+                            )
+                    ]
+                )
+            )
+
+            let credential = try discovery.claude(now: now)
+
+            #expect(
+                credential.accessToken == "fixture-keychain-access"
+            )
+            #expect(credential.source == .keychain)
+        }
+    }
+
+    @Test
+    func attachesExactKeychainStorageLocation() throws {
+        let discovery = claudeKeychainDiscovery(
+            values: [
+                "Claude Code-staging-oauth-credentials\u{0}":
+                    claudeCredentialsJSON(
+                        accessToken: "fixture-staging-access",
+                        expiresAtMilliseconds: 1_785_685_000_000
+                    )
+            ]
+        )
+
+        let credential = try discovery.claude(now: now)
+
+        #expect(
+            credential.storage
+                == .keychain(
+                    service: "Claude Code-staging-oauth-credentials",
+                    account: ""
+                )
+        )
+    }
+
+    @Test
+    func attachesExactFileStorageLocation() throws {
+        try withFixtureDirectory { directory in
+            let claudeURL = directory.appending(path: "claude.json")
+            try Data(
+                claudeCredentialsJSON(
+                    accessToken: "fixture-file-access",
+                    expiresAtMilliseconds: 1_785_685_000_000
+                ).utf8
+            ).write(to: claudeURL)
+            let discovery = CredentialDiscovery(
+                paths: CredentialPaths(
+                    claude: claudeURL,
+                    codex: directory.appending(path: "codex.json")
+                ),
+                environment: [:],
+                keychain: StubKeychain(values: [:])
+            )
+
+            let credential = try discovery.claude(now: now)
+
+            #expect(credential.storage == .file(claudeURL))
+        }
+    }
+
+    @Test
+    func persistsRotatedCredentialToOriginatingKeychainService() throws {
+        let writer = RecordingKeychainWriter()
+        let missing = URL(filePath: "/definitely/missing")
+        let discovery = CredentialDiscovery(
+            paths: CredentialPaths(claude: missing, codex: missing),
+            environment: [:],
+            keychain: StubKeychain(
+                values: [
+                    "Claude Code-staging-oauth-credentials\u{0}":
+                        claudeCredentialsJSON(
+                            accessToken: "fixture-staging-access",
+                            expiresAtMilliseconds: 1_785_685_000_000
+                        )
+                ]
+            ),
+            keychainWriter: writer
+        )
+        let credential = try discovery.claude(now: now)
+
+        try discovery.persistClaudeCredential(
+            accessToken: "fixture-rotated-access",
+            refreshToken: "fixture-rotated-refresh",
+            expiresAt: Date(timeIntervalSince1970: 1_785_695_000),
+            source: credential.source,
+            storage: credential.storage
+        )
+
+        #expect(
+            writer.records.map(\.service)
+                == ["Claude Code-staging-oauth-credentials"]
+        )
+        let stored = try #require(writer.records.first?.value)
+        #expect(stored.contains("fixture-rotated-access"))
+        #expect(stored.contains("\"subscriptionType\":\"pro\""))
+    }
+
+    @Test
+    func persistsRotatedCredentialToOriginatingFileURL() throws {
+        try withFixtureDirectory { directory in
+            let claudeURL = directory.appending(
+                path: "custom-credentials.json"
+            )
+            let base = directory.appending(path: "base.json")
+            try Data(
+                """
+                {
+                  "claudeAiOauth": {
+                    "accessToken": "fixture-file-access",
+                    "refreshToken": "fixture-claude-refresh",
+                    "expiresAt": 1785685000000,
+                    "subscriptionType": "pro",
+                    "scopes": ["user:inference"]
+                  }
+                }
+                """.utf8
+            ).write(to: claudeURL)
+            let discovery = CredentialDiscovery(
+                paths: CredentialPaths(
+                    claude: claudeURL,
+                    codex: directory.appending(path: "codex.json")
+                ),
+                environment: [:],
+                keychain: StubKeychain(values: [:])
+            )
+            let credential = try discovery.claude(now: now)
+
+            try discovery.persistClaudeCredential(
+                accessToken: "fixture-rotated-access",
+                refreshToken: "fixture-rotated-refresh",
+                expiresAt: Date(timeIntervalSince1970: 1_785_695_000),
+                source: credential.source,
+                storage: credential.storage
+            )
+
+            let written = try #require(
+                try? UsageJSON.object(Data(contentsOf: claudeURL))
+            )
+            let oauth = try #require(
+                UsageJSON.object(written["claudeAiOauth"])
+            )
+            #expect(
+                oauth["accessToken"] as? String
+                    == "fixture-rotated-access"
+            )
+            #expect(oauth["subscriptionType"] as? String == "pro")
+            #expect(oauth["scopes"] as? [String] == ["user:inference"])
+            #expect(
+                !FileManager.default.fileExists(atPath: base.path)
+            )
+        }
+    }
+
+    @Test
+    func reportsMostActionableClaudeCandidateFailure() throws {
+        try withFixtureDirectory { directory in
+            let claudeURL = directory.appending(path: "claude.json")
+            try Data("{broken".utf8).write(to: claudeURL)
+            let discovery = CredentialDiscovery(
+                paths: CredentialPaths(
+                    claude: claudeURL,
+                    codex: directory.appending(path: "codex.json")
+                ),
+                environment: [:],
+                keychain: StubKeychain(
+                    values: [
+                        "Claude Code-credentials\u{0}":
+                            claudeCredentialsJSON(
+                                accessToken: "fixture-expired-access",
+                                expiresAtMilliseconds: 1_000
+                            )
+                    ]
+                )
+            )
+
+            #expect(throws: CredentialDiscoveryError.expired(.claude)) {
+                try discovery.claude(now: now)
+            }
+        }
+    }
+
+    @Test
+    func usesEnvironmentTokenWhenNoStoredCandidateParses() throws {
+        let missing = URL(filePath: "/definitely/missing")
+        let discovery = CredentialDiscovery(
+            paths: CredentialPaths(claude: missing, codex: missing),
+            environment: [
+                "CLAUDE_CODE_OAUTH_TOKEN": "fixture-environment-access"
+            ],
+            keychain: StubKeychain(
+                values: ["Claude Code-credentials\u{0}": "{broken"]
+            )
+        )
+
+        let credential = try discovery.claude(now: now)
+
+        #expect(
+            credential.accessToken == "fixture-environment-access"
+        )
+        #expect(credential.source == .environment)
+        #expect(credential.storage == nil)
+    }
+
+    @Test
+    func keepsStorageLocationOutOfCredentialDescription() throws {
+        let discovery = claudeKeychainDiscovery(
+            values: [
+                "Claude Code-custom-oauth-credentials\u{0}":
+                    claudeCredentialsJSON(
+                        accessToken: "fixture-custom-access",
+                        expiresAtMilliseconds: 1_785_685_000_000
+                    )
+            ]
+        )
+
+        let description = try discovery.claude(now: now).description
+
+        #expect(!description.contains("fixture-custom-access"))
+        #expect(
+            !description.contains(
+                "Claude Code-custom-oauth-credentials"
+            )
+        )
+        #expect(!description.contains("oauth-credentials"))
+        #expect(description.contains("<redacted>"))
+    }
+
+    @Test
     func acceptsFutureISO8601AntigravityExpiry() throws {
         let discovery = antigravityDiscovery(
             """
@@ -288,6 +684,33 @@ struct CredentialDiscoveryTests {
         #expect(diagnostic.contains("<redacted>"))
     }
 
+    private func claudeCredentialsJSON(
+        accessToken: String,
+        expiresAtMilliseconds: Int
+    ) -> String {
+        """
+        {
+          "claudeAiOauth": {
+            "accessToken": "\(accessToken)",
+            "refreshToken": "fixture-claude-refresh",
+            "expiresAt": \(expiresAtMilliseconds),
+            "subscriptionType": "pro"
+          }
+        }
+        """
+    }
+
+    private func claudeKeychainDiscovery(
+        values: [String: String]
+    ) -> CredentialDiscovery {
+        let missing = URL(filePath: "/definitely/missing")
+        return CredentialDiscovery(
+            paths: CredentialPaths(claude: missing, codex: missing),
+            environment: [:],
+            keychain: StubKeychain(values: values)
+        )
+    }
+
     private func antigravityDiscovery(
         _ json: String
     ) -> CredentialDiscovery {
@@ -326,6 +749,39 @@ struct CredentialDiscoveryTests {
         )
         defer { try? FileManager.default.removeItem(at: directory) }
         try body(directory)
+    }
+}
+
+private final class RecordingKeychainWriter: KeychainWriting,
+    @unchecked Sendable
+{
+    struct Record: Equatable {
+        let value: String
+        let service: String
+        let account: String
+    }
+
+    private let lock = NSLock()
+    private var stored: [Record] = []
+
+    var records: [Record] {
+        lock.withLock { stored }
+    }
+
+    func setValue(
+        _ value: String,
+        service: String,
+        account: String
+    ) throws {
+        lock.withLock {
+            stored.append(
+                Record(
+                    value: value,
+                    service: service,
+                    account: account
+                )
+            )
+        }
     }
 }
 

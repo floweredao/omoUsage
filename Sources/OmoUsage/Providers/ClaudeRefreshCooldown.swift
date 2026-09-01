@@ -80,3 +80,44 @@ actor ClaudeRefreshCooldown {
         )
     }
 }
+
+/// Suppresses live usage reads after the usage endpoint answers `429`.
+///
+/// Deliberately separate state from `ClaudeRefreshCooldown`: a throttled
+/// usage read says nothing about the token, and a refusing token endpoint
+/// says nothing about usage. Sharing one timer would let either failure
+/// silence the other.
+actor ClaudeUsageCooldown {
+    static let shared = ClaudeUsageCooldown()
+
+    private let interval: TimeInterval
+    private var blockedUntilByAccountProvider: [AccountProviderID: Date] = [:]
+
+    init(interval: TimeInterval = 300) {
+        self.interval = interval
+    }
+
+    func allowsAttempt(
+        for accountProviderID: AccountProviderID,
+        at now: Date
+    ) -> Bool {
+        guard
+            let blockedUntil = blockedUntilByAccountProvider[accountProviderID]
+        else {
+            return true
+        }
+        return now >= blockedUntil
+    }
+
+    func recordRateLimit(
+        for accountProviderID: AccountProviderID,
+        at now: Date
+    ) {
+        blockedUntilByAccountProvider[accountProviderID] =
+            now.addingTimeInterval(interval)
+    }
+
+    func recordSuccess(for accountProviderID: AccountProviderID) {
+        blockedUntilByAccountProvider[accountProviderID] = nil
+    }
+}

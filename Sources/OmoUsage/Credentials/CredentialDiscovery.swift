@@ -8,6 +8,13 @@ enum CredentialSource: Equatable, Sendable {
     case keychain
 }
 
+/// Exact store a credential was read from, so a rotated token is written
+/// back where it came from instead of a different base store.
+enum CredentialStorage: Equatable, Sendable {
+    case file(URL)
+    case keychain(service: String, account: String)
+}
+
 struct DiscoveredCredential: Equatable, Sendable, CustomStringConvertible {
     let provider: ProviderID
     let accessToken: String
@@ -20,6 +27,7 @@ struct DiscoveredCredential: Equatable, Sendable, CustomStringConvertible {
     let oidcClientID: String?
     let principalType: String?
     let principalID: String?
+    let storage: CredentialStorage?
 
     init(
         provider: ProviderID,
@@ -32,8 +40,10 @@ struct DiscoveredCredential: Equatable, Sendable, CustomStringConvertible {
         oidcIssuer: String? = nil,
         oidcClientID: String? = nil,
         principalType: String? = nil,
-        principalID: String? = nil
+        principalID: String? = nil,
+        storage: CredentialStorage? = nil
     ) {
+        self.storage = storage
         self.provider = provider
         self.accessToken = accessToken
         self.refreshToken = refreshToken
@@ -77,6 +87,12 @@ protocol KeychainWriting: Sendable {
 
 struct CredentialDiscovery: Sendable {
     static let claudeKeychainService = "Claude Code-credentials"
+    static let claudeKeychainServices = [
+        claudeKeychainService,
+        "Claude Code-local-oauth-credentials",
+        "Claude Code-staging-oauth-credentials",
+        "Claude Code-custom-oauth-credentials"
+    ]
 
     let paths: CredentialPaths
     let environment: [String: String]
@@ -113,54 +129,143 @@ struct CredentialDiscovery: Sendable {
         now: Date,
         allowingExpired: Bool = false
     ) throws -> DiscoveredCredential {
-        if let token = environment["CLAUDE_CODE_OAUTH_TOKEN"]?.nonEmpty {
-            return DiscoveredCredential(
-                provider: .claude,
-                accessToken: token,
-                refreshToken: nil,
-                accountID: nil,
-                planName: nil,
-                expiresAt: nil,
-                source: .environment
-            )
+        let resolution = resolveClaudeCandidates(
+            now: now,
+            allowingExpired: allowingExpired
+        )
+        if let best = resolution.candidates.first {
+            return best
         }
+        if let failure = resolution.failure {
+            throw failure
+        }
+        throw CredentialDiscoveryError.notFound(.claude)
+    }
+
+    /// Every parsable stored credential, in the order the runtime should
+    /// try them. `claude(now:)` returns the first of these; a caller that
+    /// can tell an auth rejection from a transport failure walks the rest.
+    func claudeCandidates(
+        now: Date,
+        allowingExpired: Bool = false
+    ) -> [DiscoveredCredential] {
+        resolveClaudeCandidates(
+            now: now,
+            allowingExpired: allowingExpired
+        ).candidates
+    }
+
+    private func resolveClaudeCandidates(
+        now: Date,
+        allowingExpired: Bool
+    ) -> (
+        candidates: [DiscoveredCredential],
+        failure: CredentialDiscoveryError?
+    ) {
+        var candidates: [DiscoveredCredential] = []
         var candidateError: CredentialDiscoveryError?
-        do {
-            if let raw = try keychain.value(
-                service: Self.claudeKeychainService,
-                account: ""
-            ) {
-                do {
-                    return try parseClaude(
+        for service in Self.claudeKeychainServices {
+            do {
+                guard let raw = try keychain.value(
+                    service: service,
+                    account: ""
+                ) else {
+                    continue
+                }
+                candidates.append(
+                    try parseClaude(
                         Data(raw.utf8),
                         source: .keychain,
+                        storage: .keychain(
+                            service: service,
+                            account: ""
+                        ),
                         now: now,
                         allowingExpired: allowingExpired
                     )
-                } catch let error as CredentialDiscoveryError {
-                    candidateError = error
-                }
+                )
+            } catch let error as CredentialDiscoveryError {
+                candidateError = betterClaudeFailure(
+                    candidateError,
+                    error
+                )
+            } catch {
+                candidateError = betterClaudeFailure(
+                    candidateError,
+                    .malformed(.claude)
+                )
             }
-        } catch {
-            candidateError = .malformed(.claude)
         }
         if Foundation.FileManager.default.fileExists(
             atPath: paths.claude.path
         ) {
-            guard let data = try? Data(contentsOf: paths.claude) else {
-                throw CredentialDiscoveryError.malformed(.claude)
+            do {
+                guard let data = try? Data(contentsOf: paths.claude)
+                else {
+                    throw CredentialDiscoveryError.malformed(.claude)
+                }
+                candidates.append(
+                    try parseClaude(
+                        data,
+                        source: .file,
+                        storage: .file(paths.claude),
+                        now: now,
+                        allowingExpired: allowingExpired
+                    )
+                )
+            } catch let error as CredentialDiscoveryError {
+                candidateError = betterClaudeFailure(
+                    candidateError,
+                    error
+                )
+            } catch {
+                candidateError = betterClaudeFailure(
+                    candidateError,
+                    .malformed(.claude)
+                )
             }
-            return try parseClaude(
-                data,
-                source: .file,
-                now: now,
-                allowingExpired: allowingExpired
+        }
+        if let token = environment["CLAUDE_CODE_OAUTH_TOKEN"]?.nonEmpty {
+            candidates.append(
+                DiscoveredCredential(
+                    provider: .claude,
+                    accessToken: token,
+                    refreshToken: nil,
+                    accountID: nil,
+                    planName: nil,
+                    expiresAt: nil,
+                    source: .environment
+                )
             )
         }
-        if let candidateError {
-            throw candidateError
+        return (candidates, candidateError)
+    }
+
+    /// Keeps the most actionable failure: a dead-but-real credential
+    /// outranks an unusable store, which outranks nothing at all.
+    private func betterClaudeFailure(
+        _ current: CredentialDiscoveryError?,
+        _ candidate: CredentialDiscoveryError
+    ) -> CredentialDiscoveryError {
+        guard let current else {
+            return candidate
         }
-        throw CredentialDiscoveryError.notFound(.claude)
+        return claudeFailureRank(candidate) > claudeFailureRank(current)
+            ? candidate
+            : current
+    }
+
+    private func claudeFailureRank(
+        _ error: CredentialDiscoveryError
+    ) -> Int {
+        switch error {
+        case .expired:
+            2
+        case .malformed:
+            1
+        case .notFound:
+            0
+        }
     }
 
     /// Rewrites the stored Claude credential in place, keeping every field
@@ -170,22 +275,26 @@ struct CredentialDiscovery: Sendable {
         accessToken: String,
         refreshToken: String,
         expiresAt: Date,
-        source: CredentialSource
+        source: CredentialSource,
+        storage: CredentialStorage? = nil
     ) throws {
-        let raw: Data
-        switch source {
-        case .environment:
+        guard
+            let location = storage ?? defaultClaudeStorage(for: source)
+        else {
             return
-        case .keychain:
+        }
+        let raw: Data
+        switch location {
+        case let .keychain(service, account):
             guard let text = try? keychain.value(
-                service: Self.claudeKeychainService,
-                account: ""
+                service: service,
+                account: account
             ) else {
                 throw CredentialDiscoveryError.malformed(.claude)
             }
             raw = Data(text.utf8)
-        case .file:
-            guard let data = try? Data(contentsOf: paths.claude) else {
+        case let .file(url):
+            guard let data = try? Data(contentsOf: url) else {
                 throw CredentialDiscoveryError.malformed(.claude)
             }
             raw = data
@@ -208,10 +317,8 @@ struct CredentialDiscovery: Sendable {
             withJSONObject: root,
             options: [.sortedKeys]
         )
-        switch source {
-        case .environment:
-            return
-        case .keychain:
+        switch location {
+        case let .keychain(service, account):
             guard
                 let writer = keychainWriter,
                 let text = String(data: encoded, encoding: .utf8)
@@ -220,11 +327,27 @@ struct CredentialDiscovery: Sendable {
             }
             try writer.setValue(
                 text,
+                service: service,
+                account: account
+            )
+        case let .file(url):
+            try writeAtomically(encoded, to: url)
+        }
+    }
+
+    private func defaultClaudeStorage(
+        for source: CredentialSource
+    ) -> CredentialStorage? {
+        switch source {
+        case .environment:
+            nil
+        case .keychain:
+            .keychain(
                 service: Self.claudeKeychainService,
                 account: ""
             )
         case .file:
-            try writeAtomically(encoded, to: paths.claude)
+            .file(paths.claude)
         }
     }
 
@@ -327,7 +450,8 @@ struct CredentialDiscovery: Sendable {
         home: URL = Foundation.FileManager.default
             .homeDirectoryForCurrentUser,
         environment: [String: String] =
-            ProcessInfo.processInfo.environment
+            ProcessInfo.processInfo.environment,
+        keychain: any KeychainReading = SecurityKeychainReader()
     ) -> CredentialDiscovery {
         let codexHome: URL
         if let path = environment["CODEX_HOME"]?.nonEmpty {
@@ -338,16 +462,27 @@ struct CredentialDiscovery: Sendable {
                 directoryHint: URL.DirectoryHint.isDirectory
             )
         }
+        let claudeHome: URL
+        if
+            let path = environment["CLAUDE_CONFIG_DIR"]?.nonEmpty,
+            path.hasPrefix("/")
+        {
+            claudeHome = URL(fileURLWithPath: path, isDirectory: true)
+        } else {
+            claudeHome = home.appending(
+                path: ".claude",
+                directoryHint: URL.DirectoryHint.isDirectory
+            )
+        }
         return CredentialDiscovery(
             paths: CredentialPaths(
-                claude: home.appending(
-                    components: ".claude",
-                    ".credentials.json"
+                claude: claudeHome.appending(
+                    path: ".credentials.json"
                 ),
                 codex: codexHome.appending(path: "auth.json")
             ),
             environment: environment,
-            keychain: SecurityKeychainReader(),
+            keychain: keychain,
             providerKeychain: SecurityProviderKeychain(),
             keychainWriter: SecurityKeychainWriter(),
             homeDirectory: home,
@@ -379,6 +514,7 @@ struct CredentialDiscovery: Sendable {
     private func parseClaude(
         _ data: Data,
         source: CredentialSource,
+        storage: CredentialStorage?,
         now: Date,
         allowingExpired: Bool = false
     ) throws -> DiscoveredCredential {
@@ -401,7 +537,8 @@ struct CredentialDiscovery: Sendable {
             accountID: nil,
             planName: plan,
             expiresAt: expiresAt,
-            source: source
+            source: source,
+            storage: storage
         )
     }
 
