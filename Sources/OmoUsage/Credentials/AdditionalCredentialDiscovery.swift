@@ -175,10 +175,7 @@ extension CredentialDiscovery {
                         provider: .devin,
                         accessToken: token,
                         refreshToken: nil,
-                        accountID: tomlValue(
-                            text,
-                            key: "api_server_url"
-                        ),
+                        accountID: devinServerURL(text),
                         planName: nil,
                         expiresAt: nil,
                         source: .file
@@ -600,11 +597,48 @@ private extension CredentialDiscovery {
             else {
                 continue
             }
-            return parts[1].trimmingCharacters(
-                in: CharacterSet(charactersIn: " \"'")
-            ).nonBlank
+            return tomlScalar(parts[1])
         }
         return nil
+    }
+
+    /// Reads one TOML scalar. Trimming quote characters off both ends is
+    /// not enough: `"https://host/"  # note` keeps the closing quote and
+    /// the comment, and that string is no longer a parsable URL.
+    func tomlScalar(_ raw: some StringProtocol) -> String? {
+        let value = raw.trimmingCharacters(in: .whitespaces)
+        guard let quote = value.first else {
+            return nil
+        }
+        guard quote == "\"" || quote == "'" else {
+            return value.split(
+                separator: "#",
+                maxSplits: 1,
+                omittingEmptySubsequences: false
+            )[0].trimmingCharacters(in: .whitespaces).nonBlank
+        }
+        let body = value.dropFirst()
+        guard let closing = body.firstIndex(of: quote) else {
+            return nil
+        }
+        let remainder = body[body.index(after: closing)...]
+            .trimmingCharacters(in: .whitespaces)
+        guard remainder.isEmpty || remainder.hasPrefix("#") else {
+            return nil
+        }
+        return String(body[..<closing]).nonBlank
+    }
+
+    /// Devin writes the server with or without a trailing slash; the host
+    /// allow-list in the provider stays authoritative either way.
+    func devinServerURL(_ text: String) -> String? {
+        guard var value = tomlValue(text, key: "api_server_url") else {
+            return nil
+        }
+        while value.hasSuffix("/") {
+            value.removeLast()
+        }
+        return value.nonBlank
     }
 
     func rejectExpiredJWT(
