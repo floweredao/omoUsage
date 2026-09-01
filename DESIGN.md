@@ -128,11 +128,14 @@ other privileged controls remain native-only.
   `NSScreen.visibleFrame.maxX`, centers it vertically with 20 pt minimum top
   and bottom margins, and grows to 344 pt inward without moving its right
   edge. Provider rows are 58 pt high. Fourteen points of total rail padding
-  plus a 58 pt vertically stacked footer defines the rail's natural height.
-  While presented, the panel also reserves the largest visible provider
-  detail height plus 12 pt top and bottom margins. This prevents vertical
-  movement on provider selection and may leave intentional slack between the
-  last provider row and footer when detail content is taller than the rail.
+  plus a 58 pt vertically stacked footer defines the rail's natural height,
+  and the revealed rail uses exactly that height. It never reserves detail
+  height, so no blank material band appears between the last provider row
+  and the footer. Only provider detail reserves the largest visible provider
+  detail height plus 12 pt top and bottom margins: the panel resizes once on
+  entering or leaving detail and never while moving between providers inside
+  it. Both states stay centered on the same reveal anchor, keep the same
+  right edge, and stay within the 128 pt minimum and 540 pt maximum height.
 - The side-notch detail card is 280 pt wide and at most 320 pt high. It uses
   the existing provider section, applies 14 pt content padding, and scrolls
   only when that provider's complete usage content exceeds the cap.
