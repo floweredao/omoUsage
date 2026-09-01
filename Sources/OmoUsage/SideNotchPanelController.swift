@@ -93,15 +93,20 @@ enum SideNotchPanelLayout {
         anchorY: CGFloat? = nil,
         language: AppLanguage = .english
     ) -> NSRect {
-        let presentedContentMinimumHeight =
-            mode.isPresented
-            ? providers.map {
+        // Only provider detail reserves card height. The revealed rail keeps
+        // its natural provider-row height, so it never opens with a blank
+        // material band between the last row and the footer.
+        let presentedContentMinimumHeight: CGFloat = switch mode {
+        case .hidden, .revealed:
+            0
+        case .detail:
+            providers.map {
                 requiredPanelHeight(
                     for: $0,
                     language: language
                 )
             }.max() ?? 0
-            : 0
+        }
         return frame(
             in: visibleFrame,
             providerCount: providers.count,

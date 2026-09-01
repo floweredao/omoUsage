@@ -178,7 +178,7 @@ struct SideNotchPanelLayoutTests {
     }
 
     @Test
-    func presentedRailReservesTallestDetailHeightBeforeSelection() {
+    func revealedRailStaysNaturalWhileDetailReservesTallestHeight() {
         let usage = ProviderUsage(
             provider: .claude,
             planName: "Max 5x",
@@ -234,14 +234,135 @@ struct SideNotchPanelLayoutTests {
 
         #expect(
             revealed.height
+                == SideNotchPanelLayout.verticalPadding
+                    + SideNotchPanelLayout.providerRowHeight
+                    + SideNotchPanelLayout.footerClearance
+                    + SideNotchPanelLayout.footerHeight
+        )
+        #expect(
+            detail.height
                 == SideNotchPanelLayout.requiredPanelHeight(
                     for: usage
                 )
         )
-        #expect(detail.height == revealed.height)
-        #expect(detail.minY == revealed.minY)
-        #expect(detail.maxY == revealed.maxY)
+        #expect(detail.height > revealed.height)
+        #expect(detail.midY == revealed.midY)
         #expect(detail.maxX == revealed.maxX)
+    }
+
+    @Test
+    func revealedRailUsesNaturalHeightInsteadOfTallestDetail() {
+        // Mirrors the supplied two-provider capture: a Codex ring above a
+        // Claude Code "Max 5x" detail whose three resetting meters and
+        // "as of" row make it the tallest provider detail.
+        let codex = ProviderUsage(
+            provider: .codex,
+            planName: "Plus",
+            groups: [
+                UsageGroup(
+                    id: "codex.main",
+                    title: nil,
+                    meters: [
+                        UsageMeter(
+                            id: "codex.session",
+                            title: "Session (5 hours)",
+                            period: .session,
+                            percentRemaining: 32,
+                            resetText: "Resets in 2 hr 10 min"
+                        )
+                    ],
+                    creditText: nil
+                )
+            ],
+            availability: .available,
+            updatedAt: nil
+        )
+        let claude = ProviderUsage(
+            provider: .claude,
+            planName: "Max 5x",
+            groups: [
+                UsageGroup(
+                    id: "claude.main",
+                    title: nil,
+                    meters: [
+                        UsageMeter(
+                            id: "claude.session",
+                            title: "Session (5 hours)",
+                            period: .session,
+                            percentRemaining: 95,
+                            resetText: "Resets in 4 hr 44 min"
+                        ),
+                        UsageMeter(
+                            id: "claude.week",
+                            title: "Weekly",
+                            period: .week,
+                            percentRemaining: 18,
+                            resetText: "Resets in 1 days"
+                        ),
+                        UsageMeter(
+                            id: "claude.week.model.fable",
+                            title: "Fable weekly",
+                            period: .week,
+                            percentRemaining: 25,
+                            resetText: "Resets in 1 days"
+                        )
+                    ],
+                    creditText: nil
+                )
+            ],
+            availability: .available,
+            updatedAt: Date(timeIntervalSince1970: 1_764_590_040)
+        )
+        let providers = [codex, claude]
+        let visibleFrame = NSRect(
+            x: 0,
+            y: 25,
+            width: 1_920,
+            height: 1_055
+        )
+        let pointerAnchorY: CGFloat = 780
+
+        let naturalRailHeight =
+            SideNotchPanelLayout.verticalPadding
+            + CGFloat(providers.count)
+                * SideNotchPanelLayout.providerRowHeight
+            + SideNotchPanelLayout.footerClearance
+            + SideNotchPanelLayout.footerHeight
+        let tallestDetailHeight =
+            providers
+            .map { SideNotchPanelLayout.requiredPanelHeight(for: $0) }
+            .max() ?? 0
+
+        let revealed = SideNotchPanelLayout.presentationFrame(
+            in: visibleFrame,
+            providers: providers,
+            mode: .revealed,
+            anchorY: pointerAnchorY
+        )
+        let detail = SideNotchPanelLayout.presentationFrame(
+            in: visibleFrame,
+            providers: providers,
+            mode: .detail(.claude),
+            anchorY: pointerAnchorY
+        )
+
+        // Fixture guard: without a detail taller than the rail the
+        // criterion below would pass vacuously.
+        #expect(tallestDetailHeight > naturalRailHeight)
+
+        // The revealed rail owns its own height: provider rows plus
+        // padding and footer, never the tallest detail's reservation.
+        #expect(revealed.height == naturalRailHeight)
+
+        // Detail may stay taller, and neither mode leaves the right edge.
+        #expect(detail.height >= tallestDetailHeight)
+        #expect(
+            revealed.width == SideNotchPanelLayout.collapsedWidth
+        )
+        #expect(detail.width == SideNotchPanelLayout.expandedWidth)
+        #expect(revealed.maxX == visibleFrame.maxX)
+        #expect(detail.maxX == revealed.maxX)
+        #expect(revealed.midY == pointerAnchorY)
     }
 
     @Test
