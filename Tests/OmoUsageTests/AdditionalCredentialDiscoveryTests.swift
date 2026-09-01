@@ -5,6 +5,8 @@ import Testing
 
 @Suite
 struct AdditionalCredentialDiscoveryTests {
+    private let cursorNow = Date(timeIntervalSince1970: 1_786_032_000)
+
     @Test
     func discoversEveryAdditionalProviderSource() throws {
         try withFixtureDirectory { home in
@@ -71,6 +73,143 @@ struct AdditionalCredentialDiscoveryTests {
                     == "openrouter-token"
             )
             #expect(try discovery.zai().accessToken == "zai-token")
+        }
+    }
+
+    @Test
+    func discoversKeychainOnlyCursorAccessAndRefreshTokens() throws {
+        try withFixtureDirectory { home in
+            let accessToken = cursorJWT(
+                subject: "cursor-keychain-subject",
+                expiresAt: cursorNow.addingTimeInterval(3_600)
+            )
+            let discovery = fixtureDiscovery(
+                home: home,
+                keychain: AdditionalKeychain(
+                    values: [
+                        "cursor-access-token": accessToken,
+                        "cursor-refresh-token":
+                            "cursor-keychain-refresh-fixture"
+                    ]
+                )
+            )
+
+            let credential = try discovery.cursor(now: cursorNow)
+
+            #expect(credential.accessToken == accessToken)
+            #expect(
+                credential.refreshToken
+                    == "cursor-keychain-refresh-fixture"
+            )
+            #expect(credential.source == .keychain)
+        }
+    }
+
+    @Test
+    func prefersCursorDatabaseCredentialOverKeychainCredential() throws {
+        try withFixtureDirectory { home in
+            let databaseToken = cursorJWT(
+                subject: "cursor-database-subject",
+                expiresAt: cursorNow.addingTimeInterval(3_600)
+            )
+            let keychainToken = cursorJWT(
+                subject: "cursor-keychain-subject",
+                expiresAt: cursorNow.addingTimeInterval(3_600)
+            )
+            try writeCursorDatabase(
+                home,
+                values: [
+                    "cursorAuth/accessToken": databaseToken,
+                    "cursorAuth/refreshToken":
+                        "cursor-database-refresh-fixture",
+                    "cursorAuth/stripeMembershipType": "pro"
+                ]
+            )
+            let discovery = fixtureDiscovery(
+                home: home,
+                keychain: AdditionalKeychain(
+                    values: [
+                        "cursor-access-token": keychainToken,
+                        "cursor-refresh-token":
+                            "cursor-keychain-refresh-fixture"
+                    ]
+                )
+            )
+
+            let credential = try discovery.cursor(now: cursorNow)
+
+            #expect(credential.accessToken == databaseToken)
+            #expect(
+                credential.refreshToken
+                    == "cursor-database-refresh-fixture"
+            )
+            #expect(credential.source == .file)
+        }
+    }
+
+    @Test
+    func prefersKeychainWhenFreeDatabaseSubjectDiffers() throws {
+        try withFixtureDirectory { home in
+            let databaseToken = cursorJWT(
+                subject: "cursor-database-subject",
+                expiresAt: cursorNow.addingTimeInterval(3_600)
+            )
+            let keychainToken = cursorJWT(
+                subject: "cursor-keychain-subject",
+                expiresAt: cursorNow.addingTimeInterval(3_600)
+            )
+            try writeCursorDatabase(
+                home,
+                values: [
+                    "cursorAuth/accessToken": databaseToken,
+                    "cursorAuth/refreshToken":
+                        "cursor-database-refresh-fixture",
+                    "cursorAuth/stripeMembershipType": "free"
+                ]
+            )
+            let discovery = fixtureDiscovery(
+                home: home,
+                keychain: AdditionalKeychain(
+                    values: [
+                        "cursor-access-token": keychainToken,
+                        "cursor-refresh-token":
+                            "cursor-keychain-refresh-fixture"
+                    ]
+                )
+            )
+
+            let credential = try discovery.cursor(now: cursorNow)
+
+            #expect(credential.accessToken == keychainToken)
+            #expect(
+                credential.refreshToken
+                    == "cursor-keychain-refresh-fixture"
+            )
+            #expect(credential.source == .keychain)
+        }
+    }
+
+    @Test
+    func rejectsExpiredKeychainCursorAccessToken() throws {
+        try withFixtureDirectory { home in
+            let expiredToken = cursorJWT(
+                subject: "cursor-keychain-subject",
+                expiresAt: cursorNow.addingTimeInterval(-60)
+            )
+            let discovery = fixtureDiscovery(
+                home: home,
+                keychain: AdditionalKeychain(
+                    values: [
+                        "cursor-access-token": expiredToken,
+                        "cursor-refresh-token":
+                            "cursor-keychain-refresh-fixture"
+                    ]
+                )
+            )
+
+            #expect(throws: CredentialDiscoveryError.expired(.cursor)) {
+                try discovery.cursor(now: cursorNow)
+            }
         }
     }
 
@@ -583,6 +722,63 @@ struct AdditionalCredentialDiscoveryTests {
         try process.run()
         process.waitUntilExit()
         #expect(process.terminationStatus == 0)
+    }
+
+    private func writeCursorDatabase(
+        _ home: URL,
+        values: [String: String]
+    ) throws {
+        let database = home.appending(
+            components: "Library",
+            "Application Support",
+            "Cursor",
+            "User",
+            "globalStorage",
+            "state.vscdb"
+        )
+        try FileManager.default.createDirectory(
+            at: database.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let rows = values.keys.sorted().map {
+            "INSERT INTO ItemTable VALUES('\($0)', '\(values[$0]!)');"
+        }
+        let process = Process()
+        process.executableURL = URL(filePath: "/usr/bin/sqlite3")
+        process.arguments = [
+            database.path,
+            (
+                ["CREATE TABLE ItemTable(key TEXT, value TEXT);"] + rows
+            ).joined(separator: "\n")
+        ]
+        try process.run()
+        process.waitUntilExit()
+        #expect(process.terminationStatus == 0)
+    }
+
+    private func cursorJWT(
+        subject: String,
+        expiresAt: Date
+    ) -> String {
+        let header = base64URL(["alg": "HS256", "typ": "JWT"])
+        let payload = base64URL([
+            "sub": subject,
+            "exp": Int(expiresAt.timeIntervalSince1970)
+        ])
+        return "\(header).\(payload).cursor-fixture-signature"
+    }
+
+    private func base64URL(_ object: [String: Any]) -> String {
+        let data = (
+            try? JSONSerialization.data(
+                withJSONObject: object,
+                options: [.sortedKeys]
+            )
+        ) ?? Data()
+        return data.base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
     }
 
     private func withFixtureDirectory(
