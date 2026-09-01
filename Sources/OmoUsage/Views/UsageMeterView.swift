@@ -68,7 +68,9 @@ struct UsageMeterView: View {
             if meter.resetText != nil || meter.resetsAt != nil {
                 Text(resetText)
                     .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(
+                        ProviderMetadataVisualTokens.foreground
+                    )
             }
         }
         .accessibilityElement(children: .ignore)
