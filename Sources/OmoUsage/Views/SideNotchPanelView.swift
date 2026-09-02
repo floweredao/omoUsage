@@ -79,7 +79,6 @@ struct SideNotchPanelView: View {
 
                         SideNotchRailView(
                             providers: viewModel.snapshot.providers,
-                            selectedTarget: state.selectedTarget,
                             isRefreshing: viewModel.isRefreshing,
                             onSelect: { target in
                                 onSelectionIntent(.commit(target), true)
@@ -295,7 +294,6 @@ private struct SideNotchTrackingSurface: NSViewRepresentable {
 
 private struct SideNotchRailView: View {
     let providers: [ProviderUsage]
-    let selectedTarget: AccountProviderID?
     let isRefreshing: Bool
     let onSelect: (AccountProviderID) -> Void
     let onHoverTarget: (AccountProviderID) -> Void
@@ -344,9 +342,6 @@ private struct SideNotchRailView: View {
                                             default: 0
                                         ]
                                     ),
-                                isSelected:
-                                    selectedTarget
-                                    == usage.accountProviderID,
                                 action: {
                                     onSelect(usage.accountProviderID)
                                 },
@@ -488,17 +483,13 @@ private struct SideNotchSpinningRefreshButton: View {
 private struct SideNotchProviderButton: View {
     let usage: ProviderUsage
     let showsAccountLabel: Bool
-    let isSelected: Bool
     let action: () -> Void
     let onHoverTarget: () -> Void
     let onKeyboardFocus: () -> Void
 
     @Environment(\.appLocalization)
     private var localization
-    @Environment(\.accessibilityReduceMotion)
-    private var reduceMotion
     @FocusState private var isKeyboardFocused: Bool
-    @State private var isHovered = false
     @State private var hasRequestedHoverPreview = false
 
     var body: some View {
@@ -589,27 +580,6 @@ private struct SideNotchProviderButton: View {
                     .multilineTextAlignment(.center)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(
-                Color.primary.opacity(
-                    isSelected ? 0.14 : isHovered ? 0.08 : 0
-                ),
-                in: RoundedRectangle(
-                    cornerRadius: 16,
-                    style: .continuous
-                )
-            )
-            .overlay {
-                if isSelected || isHovered {
-                    RoundedRectangle(
-                        cornerRadius: 16,
-                        style: .continuous
-                    )
-                    .stroke(
-                        Color(nsColor: .separatorColor),
-                        lineWidth: isSelected ? 1 : 0.5
-                    )
-                }
-            }
             .padding(.horizontal, 6)
             .contentShape(Rectangle())
         }
@@ -617,6 +587,7 @@ private struct SideNotchProviderButton: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contentShape(Rectangle())
         .focusable()
+        .focusEffectDisabled()
         .focused($isKeyboardFocused)
         .onChange(of: isKeyboardFocused) { _, focused in
             guard focused else { return }
@@ -629,11 +600,6 @@ private struct SideNotchProviderButton: View {
         .onContinuousHover { phase in
             switch phase {
             case .active:
-                withAnimation(
-                    reduceMotion ? nil : .easeOut(duration: 0.12)
-                ) {
-                    isHovered = true
-                }
                 guard
                     !hasRequestedHoverPreview,
                     let screen = NSScreen.screens.first(
@@ -656,11 +622,6 @@ private struct SideNotchProviderButton: View {
                 onHoverTarget()
             case .ended:
                 hasRequestedHoverPreview = false
-                withAnimation(
-                    reduceMotion ? nil : .easeOut(duration: 0.12)
-                ) {
-                    isHovered = false
-                }
             }
         }
         .help(
