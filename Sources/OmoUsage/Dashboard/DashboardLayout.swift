@@ -43,10 +43,12 @@ enum DashboardLayout {
     }
 
     static func sectionHeight(
-        _ usage: ProviderUsage
+        _ usage: ProviderUsage,
+        showsAccountLabel: Bool = false
     ) -> CGFloat {
         let freshness = freshnessDisplay(for: usage)
-        var children: [CGFloat] = [20]
+        let headerHeight: CGFloat = showsAccountLabel ? 33 : 20
+        var children: [CGFloat] = [headerHeight]
         if freshness.showsStaleBadge {
             children.append(StaleUsageVisualTokens.badgeRowHeight)
         }
