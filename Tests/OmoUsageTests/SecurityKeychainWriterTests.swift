@@ -5,6 +5,106 @@ import Testing
 @testable import OmoUsage
 
 @Suite
+struct SecurityKeychainReaderTests {
+    @Test
+    func backgroundReadUsesNoninteractiveSecurityFrameworkQuery() throws {
+        let api = RecordingSecurityItemAPI(
+            copyResult: SecurityItemCopyResult(
+                status: errSecSuccess,
+                value: Data("reader-fixture-value".utf8)
+            )
+        )
+        let reader = SecurityKeychainReader(api: api)
+
+        #expect(
+            try reader.value(
+                service: "Claude Safe Storage",
+                account: ""
+            ) == "reader-fixture-value"
+        )
+
+        let query = try #require(api.copyQueries().only)
+        #expect(
+            query[key(kSecClass)] as? String
+                == key(kSecClassGenericPassword)
+        )
+        #expect(
+            query[key(kSecAttrService)] as? String
+                == "Claude Safe Storage"
+        )
+        #expect(query[key(kSecAttrAccount)] == nil)
+        #expect(query[key(kSecReturnData)] as? Bool == true)
+        #expect(
+            query[key(kSecMatchLimit)] as? String
+                == key(kSecMatchLimitOne)
+        )
+        #expect(
+            (query[key(kSecUseAuthenticationContext)] as? LAContext)?
+                .interactionNotAllowed == true
+        )
+    }
+
+    @Test
+    func explicitAccountReadMatchesOnlyThatAccount() throws {
+        let api = RecordingSecurityItemAPI(
+            copyResult: SecurityItemCopyResult(
+                status: errSecSuccess,
+                value: Data("reader-fixture-value".utf8)
+            )
+        )
+        let reader = SecurityKeychainReader(api: api)
+
+        _ = try reader.value(
+            service: "Claude Code-credentials",
+            account: "fixture-account"
+        )
+
+        let query = try #require(api.copyQueries().only)
+        #expect(
+            query[key(kSecAttrAccount)] as? String
+                == "fixture-account"
+        )
+    }
+
+    @Test
+    func itemNotFoundReturnsNilAndDeniedAccessRemainsTyped() throws {
+        let missing = SecurityKeychainReader(
+            api: RecordingSecurityItemAPI(
+                copyResult: SecurityItemCopyResult(
+                    status: errSecItemNotFound,
+                    value: nil
+                )
+            )
+        )
+        #expect(
+            try missing.value(
+                service: "missing-service",
+                account: ""
+            ) == nil
+        )
+
+        let denied = SecurityKeychainReader(
+            api: RecordingSecurityItemAPI(
+                copyResult: SecurityItemCopyResult(
+                    status: errSecInteractionNotAllowed,
+                    value: nil
+                )
+            )
+        )
+        #expect(
+            throws: KeychainReadError(
+                status: errSecInteractionNotAllowed
+            )
+        ) {
+            _ = try denied.value(
+                service: "Claude Safe Storage",
+                account: ""
+            )
+        }
+    }
+}
+
+@Suite
 struct SecurityKeychainWriterTests {
     private let service = "synthetic.test.Claude Code-credentials"
     private let secret = "writer-test-secret-must-stay-private"
