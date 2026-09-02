@@ -15,7 +15,6 @@ enum SideNotchPanelLayout {
     static let verticalPadding: CGFloat = 14
     static let footerClearance: CGFloat = 8
     static let footerHeight: CGFloat = 58
-    static let detailMaximumHeight: CGFloat = 320
     static let detailContentPadding: CGFloat = 14
     static let detailCardMargin: CGFloat = 12
     static let maximumPanelHeight: CGFloat = 540
@@ -32,22 +31,24 @@ enum SideNotchPanelLayout {
 
     static func detailHeight(
         for usage: ProviderUsage,
+        showsAccountLabel: Bool = false,
         language: AppLanguage = .english
     ) -> CGFloat {
-        min(
-            detailMaximumHeight,
-            detailSectionHeight(for: usage)
-                + detailContentPadding * 2
-                + (
-                    language == .korean
-                        ? koreanTypographyAllowance
-                        : 0
-                )
+        detailSectionHeight(
+            for: usage,
+            showsAccountLabel: showsAccountLabel
         )
+            + detailContentPadding * 2
+            + (
+                language == .korean
+                    ? koreanTypographyAllowance
+                    : 0
+            )
     }
 
     private static func detailSectionHeight(
-        for usage: ProviderUsage
+        for usage: ProviderUsage,
+        showsAccountLabel: Bool
     ) -> CGFloat {
         let meters = usage.groups.flatMap(\.meters)
         let dashboardMeterTotal =
@@ -55,7 +56,10 @@ enum SideNotchPanelLayout {
         let renderedMeterTotal = meters.reduce(CGFloat.zero) {
             $0 + detailMeterHeight(for: $1)
         }
-        return DashboardLayout.sectionHeight(usage)
+        return DashboardLayout.sectionHeight(
+            usage,
+            showsAccountLabel: showsAccountLabel
+        )
             - dashboardMeterTotal
             + renderedMeterTotal
     }
@@ -80,9 +84,14 @@ enum SideNotchPanelLayout {
 
     static func requiredPanelHeight(
         for usage: ProviderUsage,
+        showsAccountLabel: Bool = false,
         language: AppLanguage = .english
     ) -> CGFloat {
-        detailHeight(for: usage, language: language)
+        detailHeight(
+            for: usage,
+            showsAccountLabel: showsAccountLabel,
+            language: language
+        )
             + detailCardMargin * 2
     }
 
@@ -120,6 +129,10 @@ enum SideNotchPanelLayout {
         anchorY: CGFloat? = nil,
         language: AppLanguage = .english
     ) -> NSRect {
+        let providerCounts = Dictionary(
+            grouping: providers,
+            by: \.provider
+        ).mapValues(\.count)
         // Only provider detail reserves card height. The revealed rail keeps
         // its natural provider-row height, so it never opens with a blank
         // material band between the last row and the footer.
@@ -130,6 +143,14 @@ enum SideNotchPanelLayout {
             providers.map {
                 requiredPanelHeight(
                     for: $0,
+                    showsAccountLabel:
+                        DashboardAccountIdentityRule.showsAlias(
+                            for: $0,
+                            sameProviderCount: providerCounts[
+                                $0.provider,
+                                default: 0
+                            ]
+                        ),
                     language: language
                 )
             }.max() ?? 0

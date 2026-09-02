@@ -61,6 +61,76 @@ struct SideNotchPanelLayoutTests {
     }
 
     @Test
+    func detailViewDoesNotInstallScrollView() {
+        let usage = capturedTwoProviderUsage()[1]
+        let hostingView = NSHostingView(
+            rootView:
+                SideNotchDetailView(
+                    usage: usage,
+                    showsAccountLabel: false
+                )
+                .frame(width: SideNotchPanelLayout.detailWidth)
+        )
+        hostingView.frame.size = hostingView.fittingSize
+        hostingView.layoutSubtreeIfNeeded()
+
+        #expect(
+            !containsDescendant(
+                ofType: NSScrollView.self,
+                in: hostingView
+            )
+        )
+    }
+
+    @Test
+    func tallDetailHeightMatchesRenderedProviderSection() {
+        let usage = detailUsage(meterCount: 6)
+        let contentWidth = SideNotchPanelLayout.detailWidth
+            - SideNotchPanelLayout.detailContentPadding * 2
+        let hostingView = NSHostingView(
+            rootView:
+                ProviderSectionView(usage: usage)
+                .frame(width: contentWidth)
+        )
+        let renderedHeight = hostingView.fittingSize.height
+            + SideNotchPanelLayout.detailContentPadding * 2
+
+        #expect(
+            abs(
+                SideNotchPanelLayout.detailHeight(for: usage)
+                    - renderedHeight
+            ) <= 1
+        )
+        #expect(renderedHeight > 320)
+    }
+
+    @Test
+    func accountLabelDetailHeightMatchesRenderedProviderSection() {
+        let usage = detailUsage(meterCount: 3)
+        let contentWidth = SideNotchPanelLayout.detailWidth
+            - SideNotchPanelLayout.detailContentPadding * 2
+        let hostingView = NSHostingView(
+            rootView:
+                ProviderSectionView(
+                    usage: usage,
+                    showsAccountLabel: true
+                )
+                .frame(width: contentWidth)
+        )
+        let renderedHeight = hostingView.fittingSize.height
+            + SideNotchPanelLayout.detailContentPadding * 2
+
+        #expect(
+            abs(
+                SideNotchPanelLayout.detailHeight(
+                    for: usage,
+                    showsAccountLabel: true
+                ) - renderedHeight
+            ) <= 1
+        )
+    }
+
+    @Test
     func koreanDetailHeightMatchesRenderedProviderSection() {
         let codex = ProviderUsage(
             provider: .codex,
@@ -1044,6 +1114,32 @@ struct SideNotchPanelLayoutTests {
         ]
     }
 
+    private func detailUsage(meterCount: Int) -> ProviderUsage {
+        ProviderUsage(
+            provider: .claude,
+            accountLabel: "Work",
+            planName: "Max 5x",
+            groups: [
+                UsageGroup(
+                    id: "claude.main",
+                    title: nil,
+                    meters: (0..<meterCount).map { index in
+                        UsageMeter(
+                            id: "claude.meter.\(index)",
+                            title: "Meter \(index)",
+                            period: .week,
+                            percentRemaining: 50,
+                            resetText: "Resets in 1 day"
+                        )
+                    },
+                    creditText: nil
+                )
+            ],
+            availability: .available,
+            updatedAt: nil
+        )
+    }
+
     private func controllerFixture(
         autoHideDelay: TimeInterval = 0.8
     ) throws -> (
@@ -1067,6 +1163,16 @@ struct SideNotchPanelLayoutTests {
             onQuit: {}
         )
         return (controller, scheduler)
+    }
+
+    private func containsDescendant<ViewType: NSView>(
+        ofType type: ViewType.Type,
+        in view: NSView
+    ) -> Bool {
+        view is ViewType
+            || view.subviews.contains {
+                containsDescendant(ofType: type, in: $0)
+            }
     }
 }
 

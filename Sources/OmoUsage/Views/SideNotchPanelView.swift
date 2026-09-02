@@ -43,16 +43,17 @@ struct SideNotchPanelView: View {
 
                     ZStack(alignment: .topTrailing) {
                         if let usage = selectedUsage {
+                            let showsAccountLabel =
+                                DashboardAccountIdentityRule.showsAlias(
+                                    for: usage,
+                                    sameProviderCount:
+                                        viewModel.snapshot.providers.count {
+                                            $0.provider == usage.provider
+                                        }
+                                )
                             SideNotchDetailView(
                                 usage: usage,
-                                showsAccountLabel:
-                                    DashboardAccountIdentityRule.showsAlias(
-                                        for: usage,
-                                        sameProviderCount:
-                                            viewModel.snapshot.providers.count {
-                                                $0.provider == usage.provider
-                                            }
-                                    )
+                                showsAccountLabel: showsAccountLabel
                             )
                                 .frame(
                                     width:
@@ -68,6 +69,8 @@ struct SideNotchPanelView: View {
                                     )
                                         + SideNotchPanelLayout.detailHeight(
                                             for: usage,
+                                            showsAccountLabel:
+                                                showsAccountLabel,
                                             language: localization.language
                                         ) / 2
                                 )
@@ -150,6 +153,14 @@ struct SideNotchPanelView: View {
         else {
             return SideNotchPanelLayout.detailCardMargin
         }
+        let usage = viewModel.snapshot.providers[index]
+        let showsAccountLabel = DashboardAccountIdentityRule.showsAlias(
+            for: usage,
+            sameProviderCount:
+                viewModel.snapshot.providers.count {
+                    $0.provider == usage.provider
+                }
+        )
         let rowCenter = SideNotchPanelLayout.detailCardMargin
             + CGFloat(index) * SideNotchPanelLayout.providerRowHeight
             + SideNotchPanelLayout.providerRowHeight / 2
@@ -158,7 +169,8 @@ struct SideNotchPanelView: View {
             SideNotchPanelLayout.detailCardMargin,
             containerHeight
                 - SideNotchPanelLayout.detailHeight(
-                    for: viewModel.snapshot.providers[index],
+                    for: usage,
+                    showsAccountLabel: showsAccountLabel,
                     language: localization.language
                 )
                 - SideNotchPanelLayout.detailCardMargin
@@ -757,25 +769,23 @@ enum SideNotchDetailElevationTokens {
     static let shadowOffsetY: CGFloat = 2
 }
 
-private struct SideNotchDetailView: View {
+struct SideNotchDetailView: View {
     let usage: ProviderUsage
     let showsAccountLabel: Bool
     @Environment(\.appLocalization)
     private var localization
 
     var body: some View {
-        ScrollView {
-            ProviderSectionView(
-                usage: usage,
-                showsAccountLabel: showsAccountLabel,
-                usesCircularProviderIcon: true
-            )
-                .padding(SideNotchPanelLayout.detailContentPadding)
-        }
-        .scrollIndicators(.hidden)
+        ProviderSectionView(
+            usage: usage,
+            showsAccountLabel: showsAccountLabel,
+            usesCircularProviderIcon: true
+        )
+        .padding(SideNotchPanelLayout.detailContentPadding)
         .frame(
             height: SideNotchPanelLayout.detailHeight(
                 for: usage,
+                showsAccountLabel: showsAccountLabel,
                 language: localization.language
             )
         )
