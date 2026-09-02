@@ -42,6 +42,12 @@ struct SecurityKeychainReaderTests {
             (query[key(kSecUseAuthenticationContext)] as? LAContext)?
                 .interactionNotAllowed == true
         )
+        #expect(
+            query[
+                SecurityKeychainAuthenticationUIPolicy.queryKey
+            ] as? String
+                == SecurityKeychainAuthenticationUIPolicy.failValue
+        )
     }
 
     @Test
