@@ -3,6 +3,26 @@ import AppKit
 import CoreImage
 import SwiftUI
 
+struct PhonePairingPresentationState {
+    struct PresentedItem: Identifiable {
+        let id = UUID()
+        let url: URL
+    }
+
+    var presentedItem: PresentedItem?
+
+    mutating func pairButtonAtomicallyCreatesPresentedItem(
+        _ makeURL: () -> URL?
+    ) -> AppStringKey? {
+        guard let url = makeURL() else {
+            presentedItem = nil
+            return .phonePairingFailed
+        }
+        presentedItem = PresentedItem(url: url)
+        return nil
+    }
+}
+
 enum ClaudeConnectionAuthorizationDecision: Equatable {
     case refresh
     case launchCompanion
@@ -52,8 +72,8 @@ struct SettingsView: View {
     ).load()
     @State private var presentationStyle: DashboardPresentationStyle
     @State private var sideNotchHideDelay: SideNotchHideDelay
-    @State private var phonePairingURL: URL?
-    @State private var showsPhonePairing = false
+    @State private var phonePairingPresentation =
+        PhonePairingPresentationState()
 
     init(
         viewModel: UsageDashboardViewModel,
@@ -255,14 +275,13 @@ struct SettingsView: View {
                     TailscalePhoneAccessRow(
                         controller: tailscaleDashboardController,
                         onPair: {
-                            guard
-                                let url = onCreatePhonePairingURL()
-                            else {
-                                feedback = .key(.phonePairingFailed)
-                                return
+                            if let failureKey =
+                                phonePairingPresentation
+                                .pairButtonAtomicallyCreatesPresentedItem(
+                                    onCreatePhonePairingURL
+                                ) {
+                                feedback = .key(failureKey)
                             }
-                            phonePairingURL = url
-                            showsPhonePairing = true
                         }
                     )
 
@@ -371,14 +390,12 @@ struct SettingsView: View {
             idealHeight: 560
         )
         .environment(\.appLocalization, localization.context)
-        .sheet(isPresented: $showsPhonePairing) {
-            if let phonePairingURL {
-                TailscalePhonePairingView(url: phonePairingURL)
-                    .environment(
-                        \.appLocalization,
-                        localization.context
-                    )
-            }
+        .sheet(item: $phonePairingPresentation.presentedItem) { item in
+            TailscalePhonePairingView(url: item.url)
+                .environment(
+                    \.appLocalization,
+                    localization.context
+                )
         }
         .onReceive(
             NotificationCenter.default.publisher(
@@ -875,6 +892,7 @@ private struct TailscalePhonePairingView: View {
     let url: URL
     @Environment(\.dismiss) private var dismiss
     @Environment(\.appLocalization) private var localization
+    @State private var qrCode: NSImage?
 
     var body: some View {
         VStack(spacing: 14) {
@@ -890,30 +908,42 @@ private struct TailscalePhonePairingView: View {
                     .accessibilityLabel(
                         localization.text(.phonePairingQRCodeLabel)
                     )
+
+                Text(localization.text(.phonePairingDescription))
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text(url.absoluteString)
+                    .font(.system(size: 10.5, design: .monospaced))
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Button(localization.text(.confirm)) {
+                    dismiss()
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            } else {
+                ProgressView(localization.text(.inProgress))
+                    .frame(width: 184, height: 184)
             }
-
-            Text(localization.text(.phonePairingDescription))
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-
-            Text(url.absoluteString)
-                .font(.system(size: 10.5, design: .monospaced))
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
-
-            Button(localization.text(.confirm)) {
-                dismiss()
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.small)
         }
         .padding(20)
         .frame(width: 320)
+        .task(id: url) {
+            qrCode = nil
+            await Task.yield()
+            let generatedQRCode = Self.makeQRCode(for: url)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                qrCode = generatedQRCode
+            }
+        }
     }
 
-    private var qrCode: NSImage? {
+    private static func makeQRCode(for url: URL) -> NSImage? {
         guard
             let filter = CIFilter(name: "CIQRCodeGenerator")
         else {
