@@ -605,7 +605,7 @@ struct SideNotchPanelLayoutTests {
     }
 
     @Test
-    func hideAnimationTargetContractsSidewaysInPlace() {
+    func hideAnimationTargetPreservesFullTrackingStripInPlace() {
         let visibleFrame = NSRect(
             x: 0,
             y: 25,
@@ -624,10 +624,47 @@ struct SideNotchPanelLayoutTests {
             from: rail
         )
 
-        #expect(edgeFrame.width == SideNotchPanelLayout.hiddenWidth)
+        #expect(edgeFrame.width == SideNotchPanelLayout.hiddenTrackingWidth)
         #expect(edgeFrame.maxX == rail.maxX)
         #expect(edgeFrame.minY == rail.minY)
         #expect(edgeFrame.height == rail.height)
+    }
+
+    @Test
+    func pointerAtRightEdgeSchedulesRevealAcrossFullVisibleHeight() throws {
+        let visibleFrame = NSRect(
+            x: 0,
+            y: 25,
+            width: 1_920,
+            height: 1_000
+        )
+        let rail = SideNotchPanelLayout.frame(
+            in: visibleFrame,
+            providerCount: 2,
+            mode: .revealed,
+            anchorY: visibleFrame.midY
+        )
+
+        let target = SideNotchPanelLayout.hideAnimationTarget(
+            in: visibleFrame,
+            from: rail
+        )
+
+        #expect(target.width == SideNotchPanelLayout.hiddenTrackingWidth)
+        for y in [target.minY + 1, target.midY, target.maxY - 1] {
+            #expect(target.contains(NSPoint(x: target.maxX - 7, y: y)))
+        }
+
+        let fixture = try controllerFixture()
+        defer { fixture.controller.stop() }
+
+        fixture.controller.pointerEntered()
+
+        #expect(fixture.scheduler.jobs.count == 1)
+        #expect(fixture.scheduler.jobs[0].delay == 0.18)
+
+        fixture.scheduler.fire(0)
+        #expect(fixture.controller.mode == .revealed)
     }
 
     @Test
