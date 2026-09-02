@@ -149,9 +149,9 @@ enum SideNotchPanelLayout {
         from currentFrame: NSRect
     ) -> NSRect {
         NSRect(
-            x: visibleFrame.maxX - hiddenWidth,
+            x: visibleFrame.maxX - hiddenTrackingWidth,
             y: currentFrame.minY,
-            width: hiddenWidth,
+            width: hiddenTrackingWidth,
             height: currentFrame.height
         )
     }
