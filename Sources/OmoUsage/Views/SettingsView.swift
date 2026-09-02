@@ -1,6 +1,7 @@
 import OmoUsageCore
 import AppKit
 import CoreImage
+import Observation
 import SwiftUI
 
 struct PhonePairingPresentationState {
@@ -888,65 +889,41 @@ private struct TailscalePhoneAccessRow: View {
     }
 }
 
-private struct TailscalePhonePairingView: View {
-    let url: URL
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.appLocalization) private var localization
-    @State private var qrCode: NSImage?
+@Observable
+@MainActor
+final class PhonePairingQRCodeLoader {
+    enum Phase: Equatable {
+        case loading
+        case ready(Data)
+    }
 
-    var body: some View {
-        VStack(spacing: 14) {
-            Text(localization.text(.phonePairingTitle))
-                .font(.system(size: 18, weight: .bold))
+    private(set) var phase: Phase = .loading
+    @ObservationIgnored
+    private let generator: @Sendable (URL) async -> Data?
 
-            if let qrCode {
-                Image(nsImage: qrCode)
-                    .resizable()
-                    .interpolation(.none)
-                    .aspectRatio(1, contentMode: .fit)
-                    .frame(width: 184, height: 184)
-                    .accessibilityLabel(
-                        localization.text(.phonePairingQRCodeLabel)
-                    )
+    init(_ generator: @escaping @Sendable (URL) async -> Data?) {
+        self.generator = generator
+    }
 
-                Text(localization.text(.phonePairingDescription))
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Text(url.absoluteString)
-                    .font(.system(size: 10.5, design: .monospaced))
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Button(localization.text(.confirm)) {
-                    dismiss()
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-            } else {
-                ProgressView(localization.text(.inProgress))
-                    .frame(width: 184, height: 184)
-            }
-        }
-        .padding(20)
-        .frame(width: 320)
-        .task(id: url) {
-            qrCode = nil
-            await Task.yield()
-            let generatedQRCode = Self.makeQRCode(for: url)
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                qrCode = generatedQRCode
-            }
+    init() {
+        generator = { url in
+            await Task.detached(priority: .userInitiated) {
+                Self.makeQRCodePNGData(for: url)
+            }.value
         }
     }
 
-    private static func makeQRCode(for url: URL) -> NSImage? {
-        guard
-            let filter = CIFilter(name: "CIQRCodeGenerator")
-        else {
+    func load(url: URL) async {
+        phase = .loading
+        let data = await generator(url)
+        guard !Task.isCancelled, let data else { return }
+        phase = .ready(data)
+    }
+
+    nonisolated private static func makeQRCodePNGData(
+        for url: URL
+    ) -> Data? {
+        guard let filter = CIFilter(name: "CIQRCodeGenerator") else {
             return nil
         }
         filter.setValue(
@@ -955,8 +932,7 @@ private struct TailscalePhonePairingView: View {
         )
         filter.setValue("Q", forKey: "inputCorrectionLevel")
         guard let output = filter.outputImage else { return nil }
-        let quietZone =
-            TailscaleQRCodeVisualTokens.quietZoneModules
+        let quietZone = TailscaleQRCodeVisualTokens.quietZoneModules
         let canvas = CGRect(
             x: 0,
             y: 0,
@@ -977,10 +953,67 @@ private struct TailscalePhonePairingView: View {
         let scaled = padded.transformed(
             by: CGAffineTransform(scaleX: scale, y: scale)
         )
-        let representation = NSCIImageRep(ciImage: scaled)
-        let image = NSImage(size: representation.size)
-        image.addRepresentation(representation)
-        return image
+        return CIContext().pngRepresentation(
+            of: scaled,
+            format: .RGBA8,
+            colorSpace: CGColorSpaceCreateDeviceRGB()
+        )
+    }
+}
+
+private struct TailscalePhonePairingView: View {
+    let url: URL
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.appLocalization) private var localization
+    @State private var qrCodeLoader = PhonePairingQRCodeLoader()
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Text(localization.text(.phonePairingTitle))
+                .font(.system(size: 18, weight: .bold))
+
+            switch qrCodeLoader.phase {
+            case .loading:
+                ProgressView(localization.text(.inProgress))
+                    .frame(width: 184, height: 184)
+            case .ready(let data):
+                if let qrCode = NSImage(data: data) {
+                    Image(nsImage: qrCode)
+                        .resizable()
+                        .interpolation(.none)
+                        .aspectRatio(1, contentMode: .fit)
+                        .frame(width: 184, height: 184)
+                        .accessibilityLabel(
+                            localization.text(.phonePairingQRCodeLabel)
+                        )
+
+                    Text(localization.text(.phonePairingDescription))
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Text(url.absoluteString)
+                        .font(.system(size: 10.5, design: .monospaced))
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Button(localization.text(.confirm)) {
+                        dismiss()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                } else {
+                    ProgressView(localization.text(.inProgress))
+                        .frame(width: 184, height: 184)
+                }
+            }
+        }
+        .padding(20)
+        .frame(width: 320)
+        .task(id: url) {
+            await qrCodeLoader.load(url: url)
+        }
     }
 }
 
