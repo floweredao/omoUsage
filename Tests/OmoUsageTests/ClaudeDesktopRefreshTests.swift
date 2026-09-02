@@ -1,4 +1,5 @@
 import Foundation
+import Security
 import Testing
 @testable import OmoUsage
 
@@ -56,6 +57,117 @@ struct ClaudeDesktopRefreshTests {
         let request = keychain.lastRequest()
         #expect(request?.service == "Claude Safe Storage")
         #expect(request?.account == "")
+    }
+
+    @Test
+    func deniedDesktopKeychainUsesHistoryWhenCodeCredentialMissing()
+        async throws
+    {
+        let directory = FileManager.default.temporaryDirectory
+            .appending(
+                path: "OmoUsageClaudeDeniedHistory-\(UUID().uuidString)"
+            )
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let historyURL = directory.appending(
+            path: "plan-usage-history.json"
+        )
+        try Data(
+            """
+            {
+              "version": 2,
+              "samples": [{
+                "t": 1785674940000,
+                "org": "fixture-org",
+                "u": {"fh": 64, "sd": 7, "xu": 78}
+              }]
+            }
+            """.utf8
+        ).write(to: historyURL)
+        let missing = directory.appending(path: "missing.json")
+        let provider = ClaudeUsageProvider(
+            discovery: CredentialDiscovery(
+                paths: CredentialPaths(
+                    claude: missing,
+                    codex: missing
+                ),
+                environment: [:],
+                keychain: MissingClaudeRefreshKeychain(),
+                homeDirectory: directory
+            ),
+            http: ProviderHTTP(),
+            desktopUsageURL: historyURL,
+            desktopSessionDiscovery: ClaudeDesktopSessionDiscovery {
+                throw KeychainReadError(
+                    status: errSecInteractionNotAllowed
+                )
+            }
+        )
+        let fixedNow = Date(timeIntervalSince1970: 1_785_675_000)
+
+        let usage = try await provider.fetch(now: fixedNow)
+
+        #expect(
+            usage.groups.flatMap(\.meters).map(\.percentRemaining)
+                == [36, 93, 22]
+        )
+        #expect(
+            usage.updatedAt
+                == Date(timeIntervalSince1970: 1_785_674_940)
+        )
+    }
+
+    @Test
+    func deniedDesktopKeychainWithoutHistoryRequiresAuthentication()
+        async throws
+    {
+        let directory = FileManager.default.temporaryDirectory
+            .appending(
+                path: "OmoUsageClaudeDeniedNoHistory-\(UUID().uuidString)"
+            )
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let missing = directory.appending(path: "missing.json")
+        let provider = ClaudeUsageProvider(
+            discovery: CredentialDiscovery(
+                paths: CredentialPaths(
+                    claude: missing,
+                    codex: missing
+                ),
+                environment: [:],
+                keychain: MissingClaudeRefreshKeychain(),
+                homeDirectory: directory
+            ),
+            http: ProviderHTTP(),
+            desktopUsageURL: missing,
+            desktopSessionDiscovery: ClaudeDesktopSessionDiscovery {
+                throw KeychainReadError(
+                    status: errSecInteractionNotAllowed
+                )
+            }
+        )
+
+        do {
+            _ = try await provider.fetch(
+                now: Date(timeIntervalSince1970: 1_785_675_000)
+            )
+            Issue.record("Expected authentication-required failure")
+        } catch {
+            #expect(
+                error as? ProviderTransportError
+                    == .authenticationRequired(.claude)
+            )
+        }
     }
 
     @Test
