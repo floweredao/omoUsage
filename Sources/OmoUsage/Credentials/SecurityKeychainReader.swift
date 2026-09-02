@@ -21,7 +21,9 @@ struct SecurityKeychainReader: KeychainReading {
             keychainKey(kSecReturnData): true,
             keychainKey(kSecMatchLimit):
                 keychainKey(kSecMatchLimitOne),
-            keychainKey(kSecUseAuthenticationContext): context
+            keychainKey(kSecUseAuthenticationContext): context,
+            SecurityKeychainAuthenticationUIPolicy.queryKey:
+                SecurityKeychainAuthenticationUIPolicy.failValue
         ]
         if !account.isEmpty {
             query[keychainKey(kSecAttrAccount)] = account
@@ -46,6 +48,15 @@ struct SecurityKeychainReader: KeychainReading {
 
 struct KeychainReadError: Error, Equatable {
     let status: OSStatus
+}
+
+/// Legacy macOS Keychain ACL items can ignore a noninteractive `LAContext`
+/// and still open SecurityAgent. These are the stable raw values of the
+/// deprecated `kSecUseAuthenticationUI` / `kSecUseAuthenticationUIFail`
+/// constants, retained only to force fail-closed behavior for those items.
+enum SecurityKeychainAuthenticationUIPolicy {
+    static let queryKey = "u_AuthUI"
+    static let failValue = "u_AuthUIF"
 }
 
 private func keychainKey(_ value: CFString) -> String {
