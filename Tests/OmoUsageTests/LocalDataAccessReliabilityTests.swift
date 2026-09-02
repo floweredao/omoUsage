@@ -16,14 +16,13 @@ struct LocalDataAccessReliabilityTests {
     }
 
     @Test
-    func runawayKeychainCommandIsKilledWithinDeadline() {
-        let reader = SecurityKeychainReader(
-            executable: URL(filePath: "/usr/bin/yes"),
-            timeout: 0.05
-        )
-
-        #expect(throws: KeychainReadError.self) {
-            _ = try reader.value(service: "unused", account: "")
+    func runawayBoundedProcessIsKilledWithinDeadline() {
+        #expect(throws: BoundedProcessError.timedOut) {
+            _ = try BoundedProcessRunner().run(
+                executable: URL(filePath: "/usr/bin/yes"),
+                arguments: [],
+                timeout: 0.05
+            )
         }
     }
 }

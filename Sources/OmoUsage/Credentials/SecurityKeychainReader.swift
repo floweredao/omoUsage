@@ -1,45 +1,39 @@
 import Foundation
+import LocalAuthentication
 import Security
 
 struct SecurityKeychainReader: KeychainReading {
-    let executable: URL
-    let timeout: TimeInterval
+    let api: any SecurityItemAPI
 
     init(
-        executable: URL = URL(filePath: "/usr/bin/security"),
-        timeout: TimeInterval = 3
+        api: any SecurityItemAPI = SecurityFrameworkItemAPI()
     ) {
-        self.executable = executable
-        self.timeout = timeout
+        self.api = api
     }
 
     func value(service: String, account: String) throws -> String? {
-        var arguments = [
-            "find-generic-password",
-            "-s",
-            service
+        let context = LAContext()
+        context.interactionNotAllowed = true
+        var query: [String: Any] = [
+            keychainKey(kSecClass):
+                keychainKey(kSecClassGenericPassword),
+            keychainKey(kSecAttrService): service,
+            keychainKey(kSecReturnData): true,
+            keychainKey(kSecMatchLimit):
+                keychainKey(kSecMatchLimitOne),
+            keychainKey(kSecUseAuthenticationContext): context
         ]
         if !account.isEmpty {
-            arguments.append(contentsOf: ["-a", account])
+            query[keychainKey(kSecAttrAccount)] = account
         }
-        arguments.append("-w")
-        let result: BoundedProcessResult
-        do {
-            result = try BoundedProcessRunner().run(
-                executable: executable,
-                arguments: arguments,
-                timeout: timeout
-            )
-        } catch BoundedProcessError.timedOut {
-            throw KeychainReadError(status: errSecInteractionNotAllowed)
+        let result = api.copyMatching(query)
+        if result.status == errSecItemNotFound { return nil }
+        guard result.status == errSecSuccess else {
+            throw KeychainReadError(status: result.status)
         }
-        if result.status == 44 {
-            return nil
+        guard let data = result.value as? Data else {
+            throw KeychainReadError(status: errSecDecode)
         }
-        guard result.status == 0 else {
-            throw KeychainReadError(status: OSStatus(result.status))
-        }
-        let data = result.standardOutput
         guard let value = String(data: data, encoding: .utf8) else {
             throw KeychainReadError(status: errSecDecode)
         }
@@ -52,4 +46,8 @@ struct SecurityKeychainReader: KeychainReading {
 
 struct KeychainReadError: Error, Equatable {
     let status: OSStatus
+}
+
+private func keychainKey(_ value: CFString) -> String {
+    value as String
 }
