@@ -304,6 +304,9 @@ struct WebDashboardRouter: Sendable {
     private let indexHTML: Data
     private let appIconSVG: Data
     private let appleTouchIconPNG: Data
+    private let androidIcon192PNG: Data
+    private let androidIcon512PNG: Data
+    private let webManifest: Data
     private let providerIconSVGs: [ProviderID: Data]
     private let mutationNonce: String
     private let dispatchCommand:
@@ -317,6 +320,9 @@ struct WebDashboardRouter: Sendable {
         indexHTML: Data,
         appIconSVG: Data = Data(),
         appleTouchIconPNG: Data = WebDashboardAssets.appleTouchIconPNG,
+        androidIcon192PNG: Data = WebDashboardAssets.androidIcon192PNG,
+        androidIcon512PNG: Data = WebDashboardAssets.androidIcon512PNG,
+        webManifest: Data = WebDashboardAssets.webManifest,
         providerIconSVGs: [ProviderID: Data] =
             WebDashboardAssets.providerIconSVGs,
         mutationNonce: String = "",
@@ -328,6 +334,9 @@ struct WebDashboardRouter: Sendable {
         self.indexHTML = indexHTML
         self.appIconSVG = appIconSVG
         self.appleTouchIconPNG = appleTouchIconPNG
+        self.androidIcon192PNG = androidIcon192PNG
+        self.androidIcon512PNG = androidIcon512PNG
+        self.webManifest = webManifest
         self.providerIconSVGs = providerIconSVGs
         self.mutationNonce = mutationNonce
         self.dispatchCommand = dispatchCommand
@@ -388,6 +397,30 @@ struct WebDashboardRouter: Sendable {
                 reasonPhrase: "OK",
                 contentType: "image/png",
                 body: appleTouchIconPNG,
+                cacheControl: "public, max-age=86400"
+            )
+        case ("GET", "/android-chrome-192x192.png"):
+            return response(
+                statusCode: 200,
+                reasonPhrase: "OK",
+                contentType: "image/png",
+                body: androidIcon192PNG,
+                cacheControl: "public, max-age=86400"
+            )
+        case ("GET", "/android-chrome-512x512.png"):
+            return response(
+                statusCode: 200,
+                reasonPhrase: "OK",
+                contentType: "image/png",
+                body: androidIcon512PNG,
+                cacheControl: "public, max-age=86400"
+            )
+        case ("GET", "/manifest.webmanifest"):
+            return response(
+                statusCode: 200,
+                reasonPhrase: "OK",
+                contentType: "application/manifest+json",
+                body: webManifest,
                 cacheControl: "public, max-age=86400"
             )
         case ("POST", "/api/refresh"):
@@ -665,7 +698,10 @@ struct WebDashboardRouter: Sendable {
             "/settings",
             "/api/snapshot",
             "/favicon.svg",
-            "/apple-touch-icon.png":
+            "/apple-touch-icon.png",
+            "/android-chrome-192x192.png",
+            "/android-chrome-512x512.png",
+            "/manifest.webmanifest":
             "GET"
         case "/api/settings":
             "GET, POST"

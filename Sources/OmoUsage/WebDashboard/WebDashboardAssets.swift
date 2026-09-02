@@ -36,6 +36,25 @@ enum WebDashboardAssets {
         )
     }()
 
+    static let androidIcon192PNG: Data = {
+        renderPNG(
+            source: appIconSVG,
+            pixelSize: 192
+        )
+    }()
+
+    static let androidIcon512PNG: Data = {
+        renderPNG(
+            source: appIconSVG,
+            pixelSize: 512
+        )
+    }()
+
+    static let webManifest: Data = Data(
+        #"{"display":"standalone","icons":[{"purpose":"any maskable","sizes":"192x192","src":"/android-chrome-192x192.png","type":"image/png"},{"purpose":"any maskable","sizes":"512x512","src":"/android-chrome-512x512.png","type":"image/png"}],"name":"OmoUsage","short_name":"OmoUsage","start_url":"/"}"#
+            .utf8
+    )
+
     static let providerIconSVGs: [ProviderID: Data] = {
         Dictionary(
             uniqueKeysWithValues: ProviderID.allCases.compactMap {
@@ -177,7 +196,12 @@ enum WebDashboardAssets {
         NSGraphicsContext.saveGraphicsState()
         defer { NSGraphicsContext.restoreGraphicsState() }
         NSGraphicsContext.current = context
-        NSColor.clear.setFill()
+        NSColor(
+            srgbRed: 251.0 / 255.0,
+            green: 248.0 / 255.0,
+            blue: 245.0 / 255.0,
+            alpha: 1
+        ).setFill()
         bounds.fill()
         image.draw(
             in: bounds,
