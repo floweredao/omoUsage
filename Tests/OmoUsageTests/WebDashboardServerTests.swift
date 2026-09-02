@@ -732,6 +732,131 @@ struct WebDashboardServerTests {
     }
 
     @Test
+    func installMetadataSupportsIOSHomeScreen() throws {
+        // Given
+        let html = WebDashboardAssets.indexHTML(mutationNonce: "test-nonce")
+        let router = WebDashboardRouter(
+            snapshotData: { Data() },
+            indexHTML: html
+        )
+
+        // When
+        let page = String(
+            decoding: router.response(method: "GET", path: "/").body,
+            as: UTF8.self
+        )
+        let icon = router.response(
+            method: "GET",
+            path: "/apple-touch-icon.png"
+        )
+
+        // Then
+        #expect(
+            page.contains(
+                #"rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png""#
+            )
+        )
+        #expect(icon.statusCode == 200)
+        #expect(icon.headers["Content-Type"] == "image/png")
+        #expect(
+            Array(icon.body.prefix(8))
+                == [137, 80, 78, 71, 13, 10, 26, 10]
+        )
+        #expect(icon.body.count > 100)
+        #expect(icon.body.count > Set(icon.body).count)
+        #expect(icon.body.count >= 24)
+        let width = icon.body[16..<20].reduce(0) { ($0 << 8) | UInt32($1) }
+        let height = icon.body[20..<24].reduce(0) { ($0 << 8) | UInt32($1) }
+        #expect(width == 180)
+        #expect(height == 180)
+        let bitmap = try #require(NSBitmapImageRep(data: icon.body))
+        #expect(bitmap.pixelsWide == 180)
+        #expect(bitmap.pixelsHigh == 180)
+        #expect(bitmap.colorAt(x: 0, y: 0)?.alphaComponent == 1)
+        #expect(bitmap.colorAt(x: 90, y: 90)?.alphaComponent == 1)
+    }
+
+    @Test
+    func installMetadataSupportsAndroidHomeScreen() throws {
+        // Given
+        let html = WebDashboardAssets.indexHTML(mutationNonce: "test-nonce")
+        let router = WebDashboardRouter(
+            snapshotData: { Data() },
+            indexHTML: html
+        )
+
+        // When
+        let page = String(
+            decoding: router.response(method: "GET", path: "/").body,
+            as: UTF8.self
+        )
+        let manifest = router.response(
+            method: "GET",
+            path: "/manifest.webmanifest"
+        )
+
+        // Then
+        #expect(
+            page.contains(
+                #"rel="manifest" href="/manifest.webmanifest""#
+            )
+        )
+        #expect(manifest.statusCode == 200)
+        #expect(
+            manifest.headers["Content-Type"]
+                == "application/manifest+json"
+        )
+        let object = try #require(
+            JSONSerialization.jsonObject(with: manifest.body)
+                as? [String: Any]
+        )
+        #expect(object["name"] as? String == "OmoUsage")
+        #expect(object["short_name"] as? String == "OmoUsage")
+        #expect(object["start_url"] as? String == "/")
+        #expect(object["display"] as? String == "standalone")
+        let icons = try #require(object["icons"] as? [[String: Any]])
+        #expect(
+            icons.contains {
+                ($0["sizes"] as? String) == "192x192"
+                    && ($0["purpose"] as? String)?.contains("maskable") == true
+            }
+        )
+        #expect(
+            icons.contains {
+                ($0["sizes"] as? String) == "512x512"
+                    && ($0["purpose"] as? String)?.contains("maskable") == true
+            }
+        )
+        for icon in icons {
+            let path = try #require(icon["src"] as? String)
+            let size = try #require(icon["sizes"] as? String)
+            let response = router.response(method: "GET", path: path)
+            #expect(response.statusCode == 200)
+            #expect(response.headers["Content-Type"] == "image/png")
+            #expect(
+                Array(response.body.prefix(8))
+                    == [137, 80, 78, 71, 13, 10, 26, 10]
+            )
+            let widthString = try #require(
+                size.split(separator: "x").first.map(String.init)
+            )
+            let expected = try #require(UInt32(widthString))
+            #expect(
+                response.body[16..<20]
+                    .reduce(0) { ($0 << 8) | UInt32($1) }
+                    == expected
+            )
+            #expect(
+                response.body[20..<24]
+                    .reduce(0) { ($0 << 8) | UInt32($1) }
+                    == expected
+            )
+            let bitmap = try #require(NSBitmapImageRep(data: response.body))
+            #expect(bitmap.colorAt(x: 0, y: 0)?.alphaComponent == 1)
+        }
+    }
+
+    @Test
     func appIconRouteServesBundledIconBytes() throws {
         let iconURL = try #require(
             Bundle.module.url(
