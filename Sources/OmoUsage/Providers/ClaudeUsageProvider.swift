@@ -1,5 +1,6 @@
 import OmoUsageCore
 import Foundation
+import Security
 
 struct ClaudeDesktopSession: Equatable, Sendable {
     let organizationID: String
@@ -358,6 +359,19 @@ struct ClaudeUsageProvider: UsageProvider {
         let session: ClaudeDesktopSession?
         do {
             session = try desktopSessionDiscovery.current()
+        } catch let error as KeychainReadError
+            where error.status == errSecInteractionNotAllowed
+        {
+            logDesktopFailure(error)
+            let authenticationFailure =
+                ProviderTransportError.authenticationRequired(id)
+            if allowsCachedHistory {
+                return try cachedDesktopUsage(
+                    now: now,
+                    cause: authenticationFailure
+                )
+            }
+            throw authenticationFailure
         } catch {
             logDesktopFailure(error)
             throw error
