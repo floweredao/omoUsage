@@ -3,6 +3,27 @@ import AppKit
 import CoreImage
 import SwiftUI
 
+enum ClaudeConnectionAuthorizationDecision: Equatable {
+    case refresh
+    case launchCompanion
+    case stop
+}
+
+enum ClaudeConnectionAuthorizationPolicy {
+    static func decision(
+        for outcome: ClaudeKeychainAuthorizationOutcome
+    ) -> ClaudeConnectionAuthorizationDecision {
+        switch outcome {
+        case .authorized:
+            .refresh
+        case .notFound:
+            .launchCompanion
+        case .cancelled:
+            .stop
+        }
+    }
+}
+
 struct SettingsView: View {
     @Bindable var viewModel: UsageDashboardViewModel
     let localization: LocalizationController
@@ -454,6 +475,34 @@ struct SettingsView: View {
     }
 
     private func startConnection(for provider: ProviderID) {
+        if provider == .claude {
+            let outcome: ClaudeKeychainAuthorizationOutcome
+            do {
+                outcome = try ClaudeKeychainAccessSession.shared
+                    .authorizeClaude()
+            } catch {
+                feedback = .key(.refreshFailed)
+                return
+            }
+            switch ClaudeConnectionAuthorizationPolicy.decision(
+                for: outcome
+            ) {
+            case .refresh:
+                feedback = .key(.waitingForCompanionCredentials)
+                Task {
+                    await ClaudeKeychainAccessSession.shared
+                        .withInteractionAllowed {
+                            await viewModel.refresh()
+                        }
+                }
+                return
+            case .stop:
+                feedback = .key(.authenticationRequired)
+                return
+            case .launchCompanion:
+                break
+            }
+        }
         let result = ProviderSetup.perform(for: provider)
         connectionCoordinator.record(result, for: provider)
         switch result {

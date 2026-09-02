@@ -6,6 +6,28 @@ import Testing
 @Suite("Provider setup truthfulness")
 struct ProviderSetupTruthfulnessTests {
     @Test
+    func ClaudeConnectRoutesAuthorizationOutcomesTruthfully() {
+        #expect(
+            ClaudeConnectionAuthorizationPolicy.decision(
+                for: .authorized(
+                    service:
+                        CredentialDiscovery.claudeKeychainService
+                )
+            ) == .refresh
+        )
+        #expect(
+            ClaudeConnectionAuthorizationPolicy.decision(
+                for: .notFound
+            ) == .launchCompanion
+        )
+        #expect(
+            ClaudeConnectionAuthorizationPolicy.decision(
+                for: .cancelled
+            ) == .stop
+        )
+    }
+
+    @Test
     func authBindingMatchesAllTenProviders() throws {
         let apiKeyProviders = ProviderID.allCases.filter {
             ProviderSetup.descriptor(for: $0)?.acceptsAPIKey == true

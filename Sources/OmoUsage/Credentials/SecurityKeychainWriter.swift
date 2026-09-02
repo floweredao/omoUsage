@@ -133,9 +133,14 @@ struct SecurityProviderKeychain: ProviderKeychain {
 /// preserves the item's service, account, access controls, and ACL.
 struct SecurityKeychainWriter: KeychainWriting {
     let api: any SecurityItemAPI
+    let claudeSession: ClaudeKeychainAccessSession
 
-    init(api: any SecurityItemAPI = SecurityFrameworkItemAPI()) {
+    init(
+        api: any SecurityItemAPI = SecurityFrameworkItemAPI(),
+        claudeSession: ClaudeKeychainAccessSession = .shared
+    ) {
         self.api = api
+        self.claudeSession = claudeSession
     }
 
     func setValue(
@@ -143,14 +148,24 @@ struct SecurityKeychainWriter: KeychainWriting {
         service: String,
         account: String
     ) throws {
+        let isProtected =
+            ClaudeKeychainAccessSession.isProtected(service: service)
+        if isProtected, !claudeSession.allowsInteraction {
+            throw KeychainReadError(
+                status: errSecInteractionNotAllowed
+            )
+        }
         var query: [String: Any] = [
             securityKey(kSecClass): securityKey(kSecClassGenericPassword),
             securityKey(kSecAttrService): service,
             securityKey(kSecReturnAttributes): true,
             securityKey(kSecReturnPersistentRef): true,
-            securityKey(kSecMatchLimit): securityKey(kSecMatchLimitAll),
-            securityKey(kSecUseAuthenticationContext): noninteractiveContext()
+            securityKey(kSecMatchLimit): securityKey(kSecMatchLimitAll)
         ]
+        if !claudeSession.allowsInteraction {
+            query[securityKey(kSecUseAuthenticationContext)] =
+                noninteractiveContext()
+        }
         if !account.isEmpty {
             query[securityKey(kSecAttrAccount)] = account
         }
@@ -181,18 +196,28 @@ struct SecurityKeychainWriter: KeychainWriting {
             throw KeychainReadError(status: errSecDecode)
         }
 
+        var updateQuery: [String: Any] = [
+            securityKey(kSecValuePersistentRef): persistentReference
+        ]
+        if !claudeSession.allowsInteraction {
+            updateQuery[securityKey(kSecUseAuthenticationContext)] =
+                noninteractiveContext()
+        }
         let updateStatus = api.update(
-            [
-                securityKey(kSecValuePersistentRef): persistentReference,
-                securityKey(kSecUseAuthenticationContext):
-                    noninteractiveContext()
-            ],
+            updateQuery,
             attributes: [
                 securityKey(kSecValueData): Data(value.utf8)
             ]
         )
         guard updateStatus == errSecSuccess else {
             throw KeychainReadError(status: updateStatus)
+        }
+        if isProtected {
+            claudeSession.cache(
+                value,
+                service: service,
+                account: account
+            )
         }
     }
 }

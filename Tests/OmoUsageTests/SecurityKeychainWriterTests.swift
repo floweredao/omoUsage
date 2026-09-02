@@ -18,7 +18,7 @@ struct SecurityKeychainReaderTests {
 
         #expect(
             try reader.value(
-                service: "Claude Safe Storage",
+                service: "synthetic.reader.service",
                 account: ""
             ) == "reader-fixture-value"
         )
@@ -30,7 +30,7 @@ struct SecurityKeychainReaderTests {
         )
         #expect(
             query[key(kSecAttrService)] as? String
-                == "Claude Safe Storage"
+                == "synthetic.reader.service"
         )
         #expect(query[key(kSecAttrAccount)] == nil)
         #expect(query[key(kSecReturnData)] as? Bool == true)
@@ -61,7 +61,7 @@ struct SecurityKeychainReaderTests {
         let reader = SecurityKeychainReader(api: api)
 
         _ = try reader.value(
-            service: "Claude Code-credentials",
+            service: "synthetic.reader.explicit",
             account: "fixture-account"
         )
 
@@ -103,10 +103,91 @@ struct SecurityKeychainReaderTests {
             )
         ) {
             _ = try denied.value(
-                service: "Claude Safe Storage",
+                service: "synthetic.reader.denied",
                 account: ""
             )
         }
+    }
+
+    @Test
+    func protectedClaudeReadRequiresExplicitSessionAuthorization()
+        throws
+    {
+        let api = RecordingSecurityItemAPI(
+            copyResult: SecurityItemCopyResult(
+                status: errSecSuccess,
+                value: Data("protected-reader-value".utf8)
+            )
+        )
+        let session = ClaudeKeychainAccessSession()
+        let reader = SecurityKeychainReader(
+            api: api,
+            claudeSession: session
+        )
+
+        #expect(
+            try reader.value(
+                service: CredentialDiscovery.claudeKeychainService,
+                account: ""
+            ) == nil
+        )
+        #expect(api.copyQueries().isEmpty)
+
+        #expect(
+            try session.authorizeClaude(api: api)
+                == .authorized(
+                    service:
+                        CredentialDiscovery.claudeKeychainService
+                )
+        )
+        let authorizationQuery = try #require(
+            api.copyQueries().only
+        )
+        #expect(
+            authorizationQuery[
+                key(kSecUseAuthenticationContext)
+            ] == nil
+        )
+        #expect(
+            authorizationQuery[
+                SecurityKeychainAuthenticationUIPolicy.queryKey
+            ] == nil
+        )
+
+        #expect(
+            try reader.value(
+                service: CredentialDiscovery.claudeKeychainService,
+                account: ""
+            ) == "protected-reader-value"
+        )
+        #expect(api.copyQueries().count == 1)
+    }
+
+    @Test
+    func cancelledClaudeAuthorizationDoesNotUnlockBackgroundReads()
+        throws
+    {
+        let api = RecordingSecurityItemAPI(
+            copyResult: SecurityItemCopyResult(
+                status: errSecUserCanceled,
+                value: nil
+            )
+        )
+        let session = ClaudeKeychainAccessSession()
+        let reader = SecurityKeychainReader(
+            api: api,
+            claudeSession: session
+        )
+
+        #expect(
+            try session.authorizeClaude(api: api) == .cancelled
+        )
+        #expect(
+            try reader.value(
+                service: CredentialDiscovery.claudeKeychainService,
+                account: ""
+            ) == nil
+        )
     }
 }
 
@@ -217,6 +298,53 @@ struct SecurityKeychainWriterTests {
         #expect(update.query[key(kSecValuePersistentRef)] as? Data == reference)
         #expect(update.query[key(kSecAttrService)] == nil)
         #expect(update.query[key(kSecAttrAccount)] == nil)
+    }
+
+    @Test
+    func rotatedClaudeCredentialRefreshesAuthorizedSessionCache()
+        async throws
+    {
+        let reference = Data([0x0A, 0x0B, 0x0C])
+        let api = RecordingSecurityItemAPI(
+            copyResult: SecurityItemCopyResult(
+                status: errSecSuccess,
+                value: [[
+                    key(kSecAttrService):
+                        CredentialDiscovery.claudeKeychainService,
+                    key(kSecAttrAccount): "resolved-account",
+                    key(kSecValuePersistentRef): reference
+                ]]
+            )
+        )
+        let session = ClaudeKeychainAccessSession()
+        let writer = SecurityKeychainWriter(
+            api: api,
+            claudeSession: session
+        )
+
+        try await session.withInteractionAllowed {
+            try writer.setValue(
+                "rotated-reader-value",
+                service: CredentialDiscovery.claudeKeychainService,
+                account: ""
+            )
+        }
+
+        let reader = SecurityKeychainReader(
+            api: RecordingSecurityItemAPI(
+                copyResult: SecurityItemCopyResult(
+                    status: errSecInteractionNotAllowed,
+                    value: nil
+                )
+            ),
+            claudeSession: session
+        )
+        #expect(
+            try reader.value(
+                service: CredentialDiscovery.claudeKeychainService,
+                account: ""
+            ) == "rotated-reader-value"
+        )
     }
 
     @Test
