@@ -125,6 +125,27 @@ struct LocalizationTests {
 
     @Test
     @MainActor
+    func webDashboardPortIdentifiersNeverUseLocaleGrouping() {
+        for language in AppLanguage.allCases {
+            let localization = LocalizationContext(language: language)
+            let local = localization.format(
+                .webDashboardEndpointDetails,
+                "17827"
+            )
+            let tailscale = localization.format(
+                .webDashboardTailscaleEndpointDetails,
+                "8443",
+                "17827"
+            )
+
+            #expect(local.contains("17827"))
+            #expect(tailscale.contains("8443"))
+            #expect(tailscale.contains("17827"))
+        }
+    }
+
+    @Test
+    @MainActor
     func switchingLanguageImmediatelyChangesExistingSemanticText() {
         let suiteName = "LocalizationTests.switching.\(UUID())"
         let defaults = UserDefaults(suiteName: suiteName)!

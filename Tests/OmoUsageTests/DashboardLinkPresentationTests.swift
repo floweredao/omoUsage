@@ -16,7 +16,7 @@ struct DashboardLinkPresentationTests {
             return await gate.waitForData()
         }
         let url = try #require(
-            URL(string: "https://example.com/bootstrap?token=test")
+            URL(string: "https://example.com/")
         )
 
         await gate.subscribeToStartedEvent()
@@ -40,7 +40,7 @@ struct DashboardLinkPresentationTests {
             return await gate.waitForData()
         }
         let url = try #require(
-            URL(string: "https://example.com/bootstrap?token=test")
+            URL(string: "https://example.com/")
         )
 
         await gate.subscribeToStartedEvent()
@@ -58,7 +58,7 @@ struct DashboardLinkPresentationTests {
     func qrButtonAtomicallyCreatesPresentedItem() throws {
         var state = WebDashboardLinkPresentationState()
         let url = try #require(
-            URL(string: "https://example.com/bootstrap?token=qr")
+            URL(string: "https://example.com/")
         )
 
         #expect(state.presentedItem == nil)
@@ -84,10 +84,10 @@ struct DashboardLinkPresentationTests {
     }
 
     @Test
-    func shareButtonMintsAndPresentsExactlyOneFreshURL() throws {
+    func shareButtonPresentsExactlyOneStableURL() throws {
         let state = WebDashboardLinkPresentationState()
         let url = try #require(
-            URL(string: "https://example.com/bootstrap?token=share")
+            URL(string: "https://example.com/")
         )
         var generationCount = 0
         var sharedURLs: [URL] = []
@@ -113,7 +113,7 @@ struct DashboardLinkPresentationTests {
     func shareButtonReportsFailureWithoutPresentingStaleURL() throws {
         var state = WebDashboardLinkPresentationState()
         let staleURL = try #require(
-            URL(string: "https://example.com/bootstrap?token=stale")
+            URL(string: "https://old.example/")
         )
         _ = state.openQRCode { staleURL }
         var sharedURLs: [URL] = []

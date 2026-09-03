@@ -45,9 +45,11 @@ credentials and never starts third-party authentication.
 
 The web dashboard is another companion surface. The Mac serves only the
 sanitized snapshot and narrowly scoped display controls on loopback, and
-Tailscale supplies private tailnet identity and HTTPS. The web surface never
-receives credentials, invokes provider APIs, or exposes authentication
-mutations. Its refresh command delegates to the existing local
+Tailscale Serve supplies personal-tailnet authorization, private identity, and
+HTTPS. OmoUsage does not add browser pairing, bootstrap tokens, or session
+cookies on top of that boundary. The web surface never receives credentials,
+invokes provider APIs, or exposes authentication mutations. Its refresh
+command delegates to the existing local
 `UsageDashboardViewModel.refresh()` owner; the browser never becomes a second
 provider-fetch owner.
 
@@ -319,11 +321,12 @@ other privileged controls remain native-only.
 - `WebDashboardHeader`: identity, private-tailnet status, latest refresh time,
   a non-interactive live connection indicator, the dashboard/settings page
   link, and `WebRefreshButton`.
-- `TailscalePhoneAccessRow`: private web-dashboard access status, endpoint,
-  enable/disable controls, and two equal ready-state actions: `Open QR Code`
-  presents the bootstrap URL as a scannable sheet, while `Share Link` opens
-  the native macOS sharing picker. Each action mints its own one-use bootstrap
-  URL only when pressed; neither action precomputes or reuses a prior link.
+- `WebDashboardSettingsRow`: one local/private-tailnet dashboard status,
+  endpoint, Tailscale enable/disable controls, and three ready-state actions.
+  `Open Dashboard` opens the canonical URL, `Open QR Code` presents that same
+  stable URL as a scannable sheet, and `Share Link` opens the native macOS
+  sharing picker. No parallel mobile-specific access feature or authorization
+  layer remains.
 - `WebProviderCard`: provider mark, provider name, conditional sanitized account
   alias, plan, availability, grouped usage meters, credits, and provider
   timestamp in one semantic article keyed by `AccountProviderID`.
@@ -550,6 +553,11 @@ other privileged controls remain native-only.
 - The web server binds only to `127.0.0.1:7827`. Tailscale Serve proxies that
   loopback endpoint to the authenticated tailnet; Tailscale Funnel and direct
   LAN/public binding are forbidden.
+- Personal-tailnet access uses Tailscale Serve identity and tailnet access
+  policy as the sole remote authorization boundary. Accepted local Hosts use
+  the loopback trust boundary. OmoUsage does not issue bootstrap tokens or
+  browser session cookies, so the canonical dashboard URL remains valid across
+  browser and OmoUsage restarts. Shared-tailnet authorization is deferred.
 - Web control chrome and provider-generated dashboard text follow the selected
   Web language. That preference is persisted separately from native App
   language; changing it never mutates the native `LocalizationController` or
@@ -571,9 +579,9 @@ other privileged controls remain native-only.
   account-qualified commands exclusively, so one action never silently changes
   multiple accounts on the same provider.
 - The loopback machine remains a trusted boundary; the nonce blocks cross-site
-  and accidental mutation, while Tailscale identity remains the remote access
-  boundary. No cookies, analytics, external fonts, or third-party scripts are
-  accepted.
+  and accidental mutation, while Tailscale identity and tailnet access policy
+  remain the remote access boundary. No cookies, analytics, external fonts, or
+  third-party scripts are accepted.
 - iCloud key-value sync requires both Xcode targets to use the same development
   team and ubiquity key-value identifier. Simulator and Catalyst fixture mode
   is accepted only for visual QA; production reads the private iCloud snapshot.

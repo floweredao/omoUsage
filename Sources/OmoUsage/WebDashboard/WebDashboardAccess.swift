@@ -1,6 +1,5 @@
 import Foundation
 import Observation
-import Security
 
 enum WebDashboardAccessMode: Equatable, Sendable {
     case local(port: UInt16)
@@ -19,7 +18,7 @@ enum WebDashboardAccessMode: Equatable, Sendable {
         return .tailscale(host: host, httpsPort: 443)
     }
 
-    var bootstrapBaseURL: URL {
+    var dashboardURL: URL {
         switch self {
         case .local(let port):
             return URL(string: "http://127.0.0.1:\(port)")!
@@ -109,12 +108,7 @@ enum WebDashboardAccessMode: Equatable, Sendable {
     }
 }
 
-enum WebDashboardAccessError: Error {
-    case randomGenerationFailed
-    case invalidBootstrapURL
-}
-
-enum FixtureWebBootstrapExporter {
+enum FixtureWebDashboardURLExporter {
     static func exportIfRequested(
         accessStore: WebDashboardAccessStore,
         environment: [String: String] = ProcessInfo.processInfo.environment,
@@ -122,13 +116,13 @@ enum FixtureWebBootstrapExporter {
     ) throws {
         guard
             environment["OMO_USAGE_FIXTURE_MODE"] == "1",
-            let path = environment["OMO_USAGE_BOOTSTRAP_URL_FILE"],
+            let path = environment["OMO_USAGE_DASHBOARD_URL_FILE"],
             !path.isEmpty
         else {
             return
         }
         let fileURL = URL(fileURLWithPath: path)
-        let value = try accessStore.makeBootstrapURL().absoluteString + "\n"
+        let value = accessStore.dashboardURL.absoluteString + "\n"
         try Data(value.utf8).write(to: fileURL, options: .atomic)
         try fileManager.setAttributes(
             [.posixPermissions: 0o600],
@@ -138,125 +132,26 @@ enum FixtureWebBootstrapExporter {
 }
 
 final class WebDashboardAccessStore: @unchecked Sendable {
-    static let sessionCookieName = "omo_session"
-
     private let lock = NSLock()
-    private let tokenGenerator: @Sendable () throws -> String
     private var currentMode: WebDashboardAccessMode
-    private var bootstrapToken: String?
-    private var sessions: [String] = []
-    private let maximumSessionCount = 16
 
-    init(
-        mode: WebDashboardAccessMode,
-        tokenGenerator: @escaping @Sendable () throws -> String = {
-            try WebDashboardAccessStore.secureToken()
-        }
-    ) {
+    init(mode: WebDashboardAccessMode) {
         currentMode = mode
-        self.tokenGenerator = tokenGenerator
     }
 
     var mode: WebDashboardAccessMode {
         lock.withLock { currentMode }
     }
 
+    var dashboardURL: URL {
+        lock.withLock { currentMode.dashboardURL }
+    }
+
     func updateMode(_ mode: WebDashboardAccessMode) {
         lock.withLock {
             guard currentMode != mode else { return }
             currentMode = mode
-            bootstrapToken = nil
-            sessions.removeAll()
         }
-    }
-
-    func makeBootstrapURL() throws -> URL {
-        let token = "b_\(try tokenGenerator())"
-        let mode = lock.withLock {
-            bootstrapToken = token
-            return currentMode
-        }
-        guard var components = URLComponents(
-            url: mode.bootstrapBaseURL.appending(path: "bootstrap"),
-            resolvingAgainstBaseURL: false
-        ) else {
-            throw WebDashboardAccessError.invalidBootstrapURL
-        }
-        components.queryItems = [URLQueryItem(name: "token", value: token)]
-        guard let url = components.url else {
-            throw WebDashboardAccessError.invalidBootstrapURL
-        }
-        return url
-    }
-
-    func consumeBootstrapToken(_ candidate: String) throws -> String? {
-        let session = "s_\(try tokenGenerator())"
-        let matched = lock.withLock {
-            guard
-                let bootstrapToken,
-                Self.constantTimeEqual(bootstrapToken, candidate)
-            else {
-                return false
-            }
-            self.bootstrapToken = nil
-            sessions.append(session)
-            if sessions.count > maximumSessionCount {
-                sessions.removeFirst(sessions.count - maximumSessionCount)
-            }
-            return true
-        }
-        guard matched else { return nil }
-        return session
-    }
-
-    func authenticates(cookieHeader: String?) -> Bool {
-        guard let candidate = Self.sessionToken(from: cookieHeader) else {
-            return false
-        }
-        return lock.withLock {
-            sessions.contains {
-                Self.constantTimeEqual($0, candidate)
-            }
-        }
-    }
-
-    private static func sessionToken(from header: String?) -> String? {
-        guard let header else { return nil }
-        let matches = header.split(separator: ";").compactMap { field -> String? in
-            let parts = field.split(separator: "=", maxSplits: 1)
-            guard
-                parts.count == 2,
-                parts[0].trimmingCharacters(in: .whitespaces)
-                    == sessionCookieName
-            else {
-                return nil
-            }
-            return parts[1].trimmingCharacters(in: .whitespaces)
-        }
-        guard matches.count == 1, !matches[0].isEmpty else { return nil }
-        return matches[0]
-    }
-
-    private static func constantTimeEqual(_ lhs: String, _ rhs: String) -> Bool {
-        let left = Array(lhs.utf8)
-        let right = Array(rhs.utf8)
-        guard left.count == right.count else { return false }
-        var difference: UInt8 = 0
-        for index in left.indices {
-            difference |= left[index] ^ right[index]
-        }
-        return difference == 0
-    }
-
-    private static func secureToken() throws -> String {
-        var bytes = [UInt8](repeating: 0, count: 32)
-        guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else {
-            throw WebDashboardAccessError.randomGenerationFailed
-        }
-        return Data(bytes).base64EncodedString()
-            .replacingOccurrences(of: "+", with: "-")
-            .replacingOccurrences(of: "/", with: "_")
-            .replacingOccurrences(of: "=", with: "")
     }
 }
 
@@ -286,16 +181,6 @@ struct WebDashboardAccessGateway: Sendable {
             return plainResponse(statusCode: 403, reasonPhrase: "Forbidden")
         }
 
-        if request.method == "GET", request.path == "/bootstrap" {
-            return bootstrapResponse(for: request, mode: mode)
-        }
-
-        guard accessStore.authenticates(
-            cookieHeader: request.headers["cookie"]
-        ) else {
-            return plainResponse(statusCode: 401, reasonPhrase: "Unauthorized")
-        }
-
         if request.method == "POST" {
             guard
                 let expectedOrigin = mode.expectedOrigin(for: host),
@@ -305,60 +190,6 @@ struct WebDashboardAccessGateway: Sendable {
             }
         }
         return router.response(request: request)
-    }
-
-    private func bootstrapResponse(
-        for request: WebDashboardHTTPRequest,
-        mode: WebDashboardAccessMode
-    ) -> WebDashboardHTTPResponse {
-        guard
-            let token = bootstrapToken(from: request.query),
-            let session = try? accessStore.consumeBootstrapToken(token)
-        else {
-            return plainResponse(statusCode: 401, reasonPhrase: "Unauthorized")
-        }
-        let secureAttribute: String
-        switch mode {
-        case .local:
-            secureAttribute = ""
-        case .tailscale:
-            secureAttribute = "; Secure"
-        }
-        return WebDashboardHTTPResponse(
-            statusCode: 303,
-            reasonPhrase: "See Other",
-            headers: securityHeaders.merging([
-                "Cache-Control": "no-store",
-                "Location": "/",
-                "Set-Cookie":
-                    "\(WebDashboardAccessStore.sessionCookieName)=\(session); "
-                    + "HttpOnly; SameSite=Strict; Path=/"
-                    + secureAttribute
-            ], uniquingKeysWith: { _, new in new }),
-            body: Data()
-        )
-    }
-
-    private func bootstrapToken(from query: String?) -> String? {
-        guard
-            let query,
-            !query.isEmpty,
-            let components = URLComponents(string: "http://fixture/?\(query)"),
-            let items = components.queryItems,
-            items.count == 1,
-            items[0].name == "token",
-            let token = items[0].value,
-            token.utf8.allSatisfy({
-                ($0 >= 0x41 && $0 <= 0x5a)
-                    || ($0 >= 0x61 && $0 <= 0x7a)
-                    || ($0 >= 0x30 && $0 <= 0x39)
-                    || $0 == 0x2d
-                    || $0 == 0x5f
-            })
-        else {
-            return nil
-        }
-        return token
     }
 
     private func plainResponse(

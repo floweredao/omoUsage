@@ -73,7 +73,7 @@ struct SettingsView: View {
         TailscaleDashboardController
     let onOpenWebDashboard: () -> Bool
     let onCreateWebDashboardURL: () -> URL?
-    let onShareWebDashboardURL: (URL) -> Bool
+    let onShareWebDashboardURL: (URL, NSView) -> Bool
     let onRetryWebDashboard: () -> Void
     let onExportDiagnostics: () -> DiagnosticExportOutcome
     @State private var keyDrafts: [ProviderID: String] = [:]
@@ -117,7 +117,7 @@ struct SettingsView: View {
             TailscaleDashboardController,
         onOpenWebDashboard: @escaping () -> Bool,
         onCreateWebDashboardURL: @escaping () -> URL?,
-        onShareWebDashboardURL: @escaping (URL) -> Bool,
+        onShareWebDashboardURL: @escaping (URL, NSView) -> Bool,
         onRetryWebDashboard: @escaping () -> Void,
         onExportDiagnostics: @escaping () -> DiagnosticExportOutcome
     ) {
@@ -319,16 +319,13 @@ struct SettingsView: View {
 
                     WebDashboardSettingsRow(
                         status: webDashboardStatusStore.status,
+                        tailscaleController:
+                            tailscaleDashboardController,
                         onOpen: {
                             if !onOpenWebDashboard() {
                                 feedback = .key(.webDashboardOpenFailed)
                             }
                         },
-                        onRetry: onRetryWebDashboard
-                    )
-
-                    TailscalePhoneAccessRow(
-                        controller: tailscaleDashboardController,
                         onOpenQRCode: {
                             if let failureKey =
                                 dashboardLinkPresentation.openQRCode(
@@ -338,16 +335,22 @@ struct SettingsView: View {
                                 feedback = .key(failureKey)
                             }
                         },
-                        onShareLink: {
+                        onShareLink: { anchorView in
                             if let failureKey =
                                 dashboardLinkPresentation.shareLink(
                                     makeURL: onCreateWebDashboardURL,
-                                    present: onShareWebDashboardURL
+                                    present: {
+                                        onShareWebDashboardURL(
+                                            $0,
+                                            anchorView
+                                        )
+                                    }
                                 )
                             {
                                 feedback = .key(failureKey)
                             }
-                        }
+                        },
+                        onRetry: onRetryWebDashboard
                     )
 
                     DiagnosticsSettingsRow {
@@ -947,158 +950,6 @@ private struct ProviderAccountsSection: View {
     }
 }
 
-private struct TailscalePhoneAccessRow: View {
-    @Bindable var controller: TailscaleDashboardController
-    let onOpenQRCode: () -> Void
-    let onShareLink: () -> Void
-    @Environment(\.appLocalization) private var localization
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "iphone.and.arrow.forward")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(statusColor)
-                .frame(width: 24, height: 24)
-
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Text(localization.text(.phoneAccess))
-                        .font(.system(size: 13.5, weight: .semibold))
-                    Text(statusLabel)
-                        .font(.system(size: 10.5, weight: .semibold))
-                        .foregroundStyle(statusColor)
-                }
-                Text(localization.text(.phoneAccessDescription))
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                if case .ready(let host) = controller.state {
-                    Text(verbatim:
-                        "https://\(host):\(TailscaleCLIService.httpsPort)"
-                    )
-                        .font(.system(size: 11, design: .monospaced))
-                        .textSelection(.enabled)
-                }
-            }
-
-            Spacer(minLength: 8)
-
-            VStack(alignment: .trailing, spacing: 6) {
-                if case .ready = controller.state {
-                    HStack(spacing: 6) {
-                        Button(
-                            localization.text(AppStringKey.openQRCode),
-                            action: onOpenQRCode
-                        )
-                        .accessibilityIdentifier(
-                            "open-dashboard-qr-code"
-                        )
-
-                        Button(
-                            localization.text(.shareLink),
-                            action: onShareLink
-                        )
-                        .accessibilityIdentifier(
-                            "share-dashboard-link"
-                        )
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                } else {
-                    Button(primaryButtonTitle, action: primaryAction)
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .disabled(isBusy)
-                }
-
-                if case .ready = controller.state {
-                    Button(localization.text(.disablePhoneAccess)) {
-                        Task { await controller.disable() }
-                    }
-                    .buttonStyle(.borderless)
-                    .controlSize(.small)
-                }
-            }
-        }
-        .padding(10)
-        .background(
-            Color(nsColor: .controlBackgroundColor),
-            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(
-                    Color(nsColor: .separatorColor),
-                    lineWidth: 0.5
-                )
-        }
-    }
-
-    private var statusLabel: String {
-        switch controller.state {
-        case .checking:
-            localization.text(.phoneAccessChecking)
-        case .unavailable:
-            localization.text(.phoneAccessUnavailable)
-        case .signedOut:
-            localization.text(.phoneAccessSignedOut)
-        case .available:
-            localization.text(.phoneAccessAvailable)
-        case .enabling, .disabling:
-            localization.text(.inProgress)
-        case .ready:
-            localization.text(.phoneAccessReady)
-        case .failed:
-            localization.text(.phoneAccessFailed)
-        }
-    }
-
-    private var statusColor: Color {
-        switch controller.state {
-        case .ready: .green
-        case .failed: .orange
-        case .checking, .unavailable, .signedOut, .available,
-             .enabling, .disabling:
-            .secondary
-        }
-    }
-
-    private var primaryButtonTitle: String {
-        switch controller.state {
-        case .available:
-            localization.text(.enablePhoneAccess)
-        case .ready:
-            localization.text(AppStringKey.openQRCode)
-        case .checking, .enabling, .disabling:
-            localization.text(.inProgress)
-        case .unavailable, .signedOut, .failed:
-            localization.text(.retry)
-        }
-    }
-
-    private var primaryAction: () -> Void {
-        switch controller.state {
-        case .available:
-            { Task { await controller.enable() } }
-        case .ready:
-            onOpenQRCode
-        case .unavailable, .signedOut, .failed:
-            { Task { await controller.refresh() } }
-        case .checking, .enabling, .disabling:
-            {}
-        }
-    }
-
-    private var isBusy: Bool {
-        switch controller.state {
-        case .checking, .enabling, .disabling:
-            true
-        case .unavailable, .signedOut, .available, .ready, .failed:
-            false
-        }
-    }
-}
-
 @Observable
 @MainActor
 final class WebDashboardQRCodeLoader {
@@ -1213,6 +1064,7 @@ private struct WebDashboardQRCodeView: View {
 
                     Text(url.absoluteString)
                         .font(.system(size: 10.5, design: .monospaced))
+                        .multilineTextAlignment(.center)
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
 
@@ -1240,47 +1092,134 @@ enum TailscaleQRCodeVisualTokens {
     static let moduleScale: CGFloat = 8
 }
 
+private struct WebDashboardShareAnchor: NSViewRepresentable {
+    let resolve: (NSView) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async {
+            resolve(view)
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        DispatchQueue.main.async {
+            resolve(nsView)
+        }
+    }
+}
+
 private struct WebDashboardSettingsRow: View {
     let status: WebDashboardStatus
+    @Bindable var tailscaleController: TailscaleDashboardController
     let onOpen: () -> Void
+    let onOpenQRCode: () -> Void
+    let onShareLink: (NSView) -> Void
     let onRetry: () -> Void
     @Environment(\.appLocalization) private var localization
+    @State private var shareAnchorView: NSView?
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: statusIcon)
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(statusColor)
-                .frame(width: 24, height: 24)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: statusIcon)
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(statusColor)
+                    .frame(width: 24, height: 24)
+                    .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Text(localization.text(.webDashboard))
-                        .font(.system(size: 13.5, weight: .semibold))
-                    Text(statusLabel)
-                        .font(.system(size: 10.5, weight: .semibold))
-                        .foregroundStyle(statusColor)
-                }
-                Text(status.url.absoluteString)
-                    .font(.system(size: 11.5, design: .monospaced))
-                    .textSelection(.enabled)
-                Text(endpointDetails)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                if let failure = status.failure {
-                    Text(failureMessage(failure))
-                        .font(.system(size: 11.5))
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text(localization.text(.webDashboard))
+                            .font(.system(size: 13.5, weight: .semibold))
+                        Text(statusLabel)
+                            .font(.system(size: 10.5, weight: .semibold))
+                            .foregroundStyle(statusColor)
+                    }
+                    Text(localization.text(.webDashboardDescription))
+                        .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+                    Text(status.url.absoluteString)
+                        .font(.system(size: 11.5, design: .monospaced))
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(endpointDetails)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(verbatim: "Tailscale · \(tailscaleStatusLabel)")
+                        .font(.system(size: 11))
+                        .foregroundStyle(tailscaleStatusColor)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let failure = status.failure {
+                        Text(failureMessage(failure))
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                Spacer(minLength: 8)
+
+                VStack(alignment: .trailing, spacing: 6) {
+                    Button(buttonTitle, action: buttonAction)
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(status.state == .starting)
+                        .accessibilityIdentifier(
+                            "open-web-dashboard"
+                        )
+
+                    Button(
+                        tailscaleButtonTitle,
+                        action: tailscaleButtonAction
+                    )
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(isTailscaleBusy)
+                        .accessibilityLabel(tailscaleButtonTitle)
+                        .accessibilityIdentifier(
+                            "toggle-tailscale-dashboard-access"
+                        )
                 }
             }
 
-            Spacer(minLength: 8)
+            if status.state == .ready,
+               isTailscaleReady
+            {
+                HStack(spacing: 6) {
+                    Spacer()
+                    Button(
+                        localization.text(.openQRCode),
+                        action: onOpenQRCode
+                    )
+                    .accessibilityIdentifier(
+                        "open-dashboard-qr-code"
+                    )
 
-            Button(buttonTitle, action: buttonAction)
+                    Button(
+                        localization.text(.shareLink),
+                        action: {
+                            guard let shareAnchorView else { return }
+                            onShareLink(shareAnchorView)
+                        }
+                    )
+                    .accessibilityIdentifier(
+                        "share-dashboard-link"
+                    )
+                    .background {
+                        WebDashboardShareAnchor { view in
+                            if shareAnchorView !== view {
+                                shareAnchorView = view
+                            }
+                        }
+                    }
+                }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
-                .disabled(status.state == .starting)
+            }
         }
         .padding(10)
         .background(
@@ -1326,6 +1265,78 @@ private struct WebDashboardSettingsRow: View {
         }
     }
 
+    private var tailscaleStatusLabel: String {
+        switch tailscaleController.state {
+        case .checking:
+            localization.text(.checking)
+        case .unavailable:
+            localization.text(.unavailable)
+        case .signedOut:
+            localization.text(.notConnected)
+        case .available:
+            localization.text(.webDashboardReady)
+        case .enabling, .disabling:
+            localization.text(.inProgress)
+        case .ready:
+            localization.text(.connected)
+        case .failed:
+            localization.text(.checkFailed)
+        }
+    }
+
+    private var tailscaleStatusColor: Color {
+        switch tailscaleController.state {
+        case .ready: .green
+        case .failed: .orange
+        case .checking, .unavailable, .signedOut, .available,
+             .enabling, .disabling:
+            .secondary
+        }
+    }
+
+    private var tailscaleButtonTitle: String {
+        let action = switch tailscaleController.state {
+        case .available:
+            localization.text(.startConnection)
+        case .ready:
+            localization.text(.disconnect)
+        case .checking, .enabling, .disabling:
+            localization.text(.inProgress)
+        case .unavailable, .signedOut, .failed:
+            localization.text(.retry)
+        }
+        return "Tailscale · \(action)"
+    }
+
+    private var tailscaleButtonAction: () -> Void {
+        switch tailscaleController.state {
+        case .available:
+            { Task { await tailscaleController.enable() } }
+        case .ready:
+            { Task { await tailscaleController.disable() } }
+        case .unavailable, .signedOut, .failed:
+            { Task { await tailscaleController.refresh() } }
+        case .checking, .enabling, .disabling:
+            {}
+        }
+    }
+
+    private var isTailscaleBusy: Bool {
+        switch tailscaleController.state {
+        case .checking, .enabling, .disabling:
+            true
+        case .unavailable, .signedOut, .available, .ready, .failed:
+            false
+        }
+    }
+
+    private var isTailscaleReady: Bool {
+        if case .ready = tailscaleController.state {
+            return true
+        }
+        return false
+    }
+
     private var buttonTitle: String {
         switch status.state {
         case .ready:
@@ -1345,13 +1356,13 @@ private struct WebDashboardSettingsRow: View {
         if status.url.scheme == "https" {
             return localization.format(
                 .webDashboardTailscaleEndpointDetails,
-                status.url.port ?? 443,
-                Int(status.port)
+                String(status.url.port ?? 443),
+                String(status.port)
             )
         }
         return localization.format(
             .webDashboardEndpointDetails,
-            Int(status.port)
+            String(status.port)
         )
     }
 
@@ -1360,11 +1371,14 @@ private struct WebDashboardSettingsRow: View {
     ) -> String {
         switch failure {
         case .portInUse(let port):
-            localization.format(.webDashboardPortInUse, Int(port))
+            localization.format(.webDashboardPortInUse, String(port))
         case .permissionDenied(let port):
-            localization.format(.webDashboardPermissionDenied, Int(port))
+            localization.format(
+                .webDashboardPermissionDenied,
+                String(port)
+            )
         case .unavailable(let port):
-            localization.format(.webDashboardUnavailable, Int(port))
+            localization.format(.webDashboardUnavailable, String(port))
         }
     }
 }
