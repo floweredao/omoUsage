@@ -322,7 +322,7 @@ other privileged controls remain native-only.
   a non-interactive live connection indicator, the dashboard/settings page
   link, and `WebRefreshButton`.
 - `WebDashboardSettingsRow`: one local/private-tailnet dashboard status,
-  endpoint, Tailscale enable/disable controls, and three ready-state actions.
+  endpoint, Tailscale setup/retry controls, and three ready-state actions.
   `Open Dashboard` opens the canonical URL, `Open QR Code` presents that same
   stable URL as a scannable sheet, and `Share Link` opens the native macOS
   sharing picker. No parallel mobile-specific access feature or authorization
