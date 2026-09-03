@@ -296,7 +296,6 @@ else
     note "- post-cancel alias scenario retained: $account_alias"
     assert_refresh_count 0
     note "- cancel returned to idle without adding $account_alias"
-    drive --action scroll-to --identifier add-account-codex
     capture_window cancelled-idle.png normal
 fi
 
