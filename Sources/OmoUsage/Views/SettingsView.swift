@@ -24,6 +24,11 @@ struct PhonePairingPresentationState {
     }
 }
 
+/// Raised when the user declines the Claude Keychain prompt during an
+/// account addition, so the addition fails instead of falling back to
+/// whatever credential is already cached.
+struct ClaudeCredentialAuthorizationDeclined: Error {}
+
 enum ClaudeConnectionAuthorizationDecision: Equatable {
     case refresh
     case launchCompanion
@@ -68,6 +73,8 @@ struct SettingsView: View {
     @State private var showsRegistryResetConfirmation = false
     @State private var connectionCoordinator =
         ProviderConnectionCoordinator()
+    @State private var additionCoordinator:
+        ProviderAccountAdditionCoordinator
     @State private var codexPlanMultiplier = CodexPlanMultiplierStore(
         defaults: .standard
     ).load()
@@ -82,6 +89,12 @@ struct SettingsView: View {
         presentationStyle: DashboardPresentationStyle,
         sideNotchHideDelay: SideNotchHideDelay,
         accountRegistryController: ProviderAccountRegistryController,
+        captureCompanionCredential: @escaping (ProviderID) throws -> String =
+            SettingsView.captureCompanionCredential,
+        launchCompanion: @escaping (ProviderID) -> Result<
+            ProviderSetupOutcome,
+            ProviderSetupError
+        > = { ProviderSetup.perform(for: $0) },
         onRegistryChange: @escaping () -> Void,
         onLanguageChange: @escaping () -> Void,
         onPresentationStyleChange:
@@ -113,6 +126,34 @@ struct SettingsView: View {
         self.onExportDiagnostics = onExportDiagnostics
         _presentationStyle = State(initialValue: presentationStyle)
         _sideNotchHideDelay = State(initialValue: sideNotchHideDelay)
+        _additionCoordinator = State(
+            initialValue: ProviderAccountAdditionCoordinator(
+                controller: accountRegistryController,
+                captureCredential: captureCompanionCredential,
+                launchCompanion: launchCompanion,
+                onAccountAdded: onRegistryChange
+            )
+        )
+    }
+
+    /// Production capture for companion additions. Claude keeps its
+    /// explicit authorization step: an unauthorized read must fail the
+    /// addition rather than silently reuse a cached credential.
+    nonisolated static func captureCompanionCredential(
+        for provider: ProviderID
+    ) throws -> String {
+        if provider == .claude {
+            switch try ClaudeKeychainAccessSession.shared.authorizeClaude() {
+            case .authorized, .notFound:
+                break
+            case .cancelled:
+                throw ClaudeCredentialAuthorizationDeclined()
+            }
+        }
+        return try CredentialDiscovery.live().captureCredential(
+            for: provider,
+            now: Date()
+        )
     }
 
     var body: some View {
@@ -357,6 +398,11 @@ struct SettingsView: View {
                                     addAccount(for: provider)
                                 },
                                 onRemoveAccount: removeAccount,
+                                additionState: additionState(
+                                    for: provider
+                                ),
+                                onCheckAgain: checkForCompanionCredential,
+                                onCancelAddition: cancelAddition,
                                 codexPlanMultiplier:
                                     provider == .codex
                                         ? $codexPlanMultiplier
@@ -373,6 +419,7 @@ struct SettingsView: View {
                     Text(localization.resolve(feedback))
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("settings-feedback")
                 }
                 Spacer()
                 Button(localization.text(.refresh)) {
@@ -403,6 +450,11 @@ struct SettingsView: View {
                 for: NSApplication.didBecomeActiveNotification
             )
         ) { _ in
+            let pendingProvider = additionCoordinator.pending?.provider
+            apply(
+                additionCoordinator.applicationDidBecomeActive(),
+                for: pendingProvider
+            )
             Task {
                 await connectionCoordinator.applicationDidBecomeActive(
                     refresh: viewModel.refresh,
@@ -595,21 +647,73 @@ struct SettingsView: View {
     }
 
     private func addAccount(for provider: ProviderID) {
-        do {
-            let identity = try accountRegistryController.addAccount(
+        apply(
+            additionCoordinator.addAccount(
                 provider: provider,
                 label: newAccountLabels[provider, default: ""],
                 key: newAccountKeys[provider]
-            )
-            let label = accountRegistryController.accounts.first {
-                $0.id == identity
-            }?.label ?? AccountLabel.defaultValue
-            newAccountLabels[provider] = ""
-            newAccountKeys[provider] = ""
+            ),
+            for: provider
+        )
+    }
+
+    private func checkForCompanionCredential() {
+        let provider = additionCoordinator.pending?.provider
+        apply(additionCoordinator.checkAgain(), for: provider)
+    }
+
+    /// Cancelling drops the pending addition but keeps the alias the user
+    /// typed, so retrying does not start from an empty field.
+    private func cancelAddition() {
+        additionCoordinator.cancel()
+        feedback = nil
+    }
+
+    private func additionState(
+        for provider: ProviderID
+    ) -> ProviderAccountAdditionRowState {
+        guard let pending = additionCoordinator.pending else {
+            return .idle
+        }
+        if pending.provider == provider { return .waiting }
+        return ProviderSetup.descriptor(for: provider)?.acceptsAPIKey == true
+            ? .idle
+            : .blockedByOtherAddition
+    }
+
+    private func apply(
+        _ outcome: ProviderAccountAdditionOutcome,
+        for provider: ProviderID?
+    ) {
+        switch outcome {
+        case .addedAccount(let label):
+            if let provider {
+                newAccountLabels[provider] = ""
+                newAccountKeys[provider] = ""
+            }
             feedback = .formatted(.addedAccount, label)
-            onRegistryChange()
-        } catch {
-            feedback = .key(.accountChangeFailed)
+        case .waitingForCompanion, .additionInProgress:
+            feedback = .key(.waitingForCompanionCredentials)
+        case .credentialUnchanged:
+            feedback = .key(.companionCredentialUnchanged)
+        case .credentialMissing:
+            feedback = .key(.companionCredentialMissing)
+        case .credentialUnavailable:
+            feedback = .key(.companionCredentialUnavailable)
+        case .invalidLabel, .failed:
+            feedback = .key(.accountAdditionFailed)
+        case .openedOfficialGuide:
+            feedback = .formatted(
+                .openedOfficialAuthentication,
+                provider?.displayName ?? ""
+            )
+        case .launchFailed(let error):
+            if case .companionRequired = error {
+                feedback = .key(.companionRequired)
+            }
+            setupError = error
+        case .ignored:
+            break
         }
     }
 
@@ -683,6 +787,12 @@ private struct AccountRegistryRecoveryBanner: View {
     }
 }
 
+enum ProviderAccountAdditionRowState: Equatable, Sendable {
+    case idle
+    case waiting
+    case blockedByOtherAddition
+}
+
 private struct ProviderAccountsSection: View {
     let provider: ProviderID
     let accounts: [ProviderAccountMetadata]
@@ -690,6 +800,9 @@ private struct ProviderAccountsSection: View {
     @Binding var key: String
     let onAdd: () -> Void
     let onRemove: (AccountProviderID) -> Void
+    let additionState: ProviderAccountAdditionRowState
+    let onCheckAgain: () -> Void
+    let onCancelAddition: () -> Void
     @Environment(\.appLocalization) private var localization
 
     var body: some View {
@@ -699,6 +812,9 @@ private struct ProviderAccountsSection: View {
                     VStack(alignment: .leading, spacing: 1) {
                         Text(account.label)
                             .font(.system(size: 13.5, weight: .semibold))
+                            .accessibilityIdentifier(
+                                "account-\(provider.rawValue)-\(account.label)"
+                            )
                         if let source = account.source {
                             Text(localization.text(source.stringKey))
                                 .font(.system(size: 10.5))
@@ -727,6 +843,10 @@ private struct ProviderAccountsSection: View {
                 )
                 .textFieldStyle(.roundedBorder)
                 .accessibilityLabel(localization.text(.accountAlias))
+                .accessibilityIdentifier(
+                    "account-alias-\(provider.rawValue)"
+                )
+                .disabled(additionState == .waiting)
 
                 if acceptsAPIKey {
                     SecureField(
@@ -735,12 +855,53 @@ private struct ProviderAccountsSection: View {
                     )
                     .textFieldStyle(.roundedBorder)
                     .accessibilityLabel(localization.text(.apiKey))
+                    .accessibilityIdentifier(
+                        "account-key-\(provider.rawValue)"
+                    )
                 }
 
-                Button(localization.text(.addAccount), action: onAdd)
+                if additionState == .waiting {
+                    Button(
+                        localization.text(
+                            .checkAgainForCompanionCredentials
+                        ),
+                        action: onCheckAgain
+                    )
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .accessibilityIdentifier(
+                        "check-again-\(provider.rawValue)"
+                    )
+
+                    Button(
+                        localization.text(.cancel),
+                        action: onCancelAddition
+                    )
                     .buttonStyle(.bordered)
                     .controlSize(.small)
-                    .disabled(!canAdd)
+                    .accessibilityIdentifier(
+                        "cancel-addition-\(provider.rawValue)"
+                    )
+                } else {
+                    Button(localization.text(.addAccount), action: onAdd)
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(!canAdd)
+                        .accessibilityIdentifier(
+                            "add-account-\(provider.rawValue)"
+                        )
+                }
+            }
+
+            if additionState == .waiting {
+                Text(
+                    localization.text(.waitingForCompanionCredentials)
+                )
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier(
+                    "account-waiting-\(provider.rawValue)"
+                )
             }
         }
     }
@@ -750,7 +911,10 @@ private struct ProviderAccountsSection: View {
     }
 
     private var canAdd: Bool {
-        !label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        additionState == .idle
+            && !label.trimmingCharacters(
+                in: .whitespacesAndNewlines
+            ).isEmpty
             && (
                 !acceptsAPIKey
                     || !key.trimmingCharacters(
@@ -1269,6 +1433,9 @@ private struct ProviderSettingsRow: View {
     @Binding var newAccountKey: String
     let onAddAccount: () -> Void
     let onRemoveAccount: (AccountProviderID) -> Void
+    let additionState: ProviderAccountAdditionRowState
+    let onCheckAgain: () -> Void
+    let onCancelAddition: () -> Void
     let codexPlanMultiplier: Binding<CodexPlanMultiplier>?
 
     @State private var isHovered = false
@@ -1425,7 +1592,10 @@ private struct ProviderSettingsRow: View {
                 label: $newAccountLabel,
                 key: $newAccountKey,
                 onAdd: onAddAccount,
-                onRemove: onRemoveAccount
+                onRemove: onRemoveAccount,
+                additionState: additionState,
+                onCheckAgain: onCheckAgain,
+                onCancelAddition: onCancelAddition
             )
         }
         .padding(10)

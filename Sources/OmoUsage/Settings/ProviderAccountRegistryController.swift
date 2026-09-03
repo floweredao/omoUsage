@@ -66,8 +66,6 @@ final class ProviderAccountRegistryController {
     @ObservationIgnored
     private let makeAccountID: () -> AccountID
     @ObservationIgnored
-    private let captureCredential: (ProviderID) throws -> String
-    @ObservationIgnored
     private let persistenceEnabled: Bool
     @ObservationIgnored
     private let mutationCoordinator: ProviderMutationCoordinator
@@ -83,12 +81,6 @@ final class ProviderAccountRegistryController {
             ProviderAPIKeyStore.live(for: $0, accountID: $1)
         },
         makeAccountID: @escaping () -> AccountID = { AccountID() },
-        captureCredential: @escaping (ProviderID) throws -> String = {
-            try CredentialDiscovery.live().captureCredential(
-                for: $0,
-                now: Date()
-            )
-        },
         mutationAfterPhase: @escaping ProviderMutationCoordinator.PhaseHook = { _ in }
     ) {
         self.store = store
@@ -97,7 +89,6 @@ final class ProviderAccountRegistryController {
         self.persistenceEnabled = persistenceEnabled
         self.keyStore = keyStore
         self.makeAccountID = makeAccountID
-        self.captureCredential = captureCredential
         self.mutationCoordinator = ProviderMutationCoordinator(
             store: store,
             keyStore: keyStore,
@@ -112,12 +103,6 @@ final class ProviderAccountRegistryController {
             ProviderAPIKeyStore.live(for: $0, accountID: $1)
         },
         makeAccountID: @escaping () -> AccountID = { AccountID() },
-        captureCredential: @escaping (ProviderID) throws -> String = {
-            try CredentialDiscovery.live().captureCredential(
-                for: $0,
-                now: Date()
-            )
-        },
         mutationAfterPhase: @escaping ProviderMutationCoordinator.PhaseHook = { _ in }
     ) {
         self.store = store
@@ -126,7 +111,6 @@ final class ProviderAccountRegistryController {
         self.persistenceEnabled = true
         self.keyStore = keyStore
         self.makeAccountID = makeAccountID
-        self.captureCredential = captureCredential
         self.mutationCoordinator = ProviderMutationCoordinator(
             store: store,
             keyStore: keyStore,
@@ -292,43 +276,81 @@ final class ProviderAccountRegistryController {
         recoveryState = .ready
     }
 
+    /// The one label rule every account addition goes through, so the
+    /// waiting UI can reject a label before it launches anything.
+    static func validatedAccountLabel(_ rawLabel: String) throws -> String {
+        let trimmed = rawLabel.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+        let label = AccountLabel.sanitized(trimmed)
+        guard !trimmed.isEmpty, label == trimmed else {
+            throw ProviderAccountRegistryControllerError.invalidLabel
+        }
+        return label
+    }
+
     @discardableResult
-    func addAccount(
+    func addAPIKeyAccount(
         provider: ProviderID,
         label rawLabel: String,
         key rawKey: String?
     ) throws -> AccountProviderID {
-        _ = try requireRegistry()
-        let trimmedLabel = rawLabel.trimmingCharacters(
-            in: .whitespacesAndNewlines
-        )
-        let label = AccountLabel.sanitized(trimmedLabel)
-        guard
-            !trimmedLabel.isEmpty,
-            label == trimmedLabel
+        let label = try Self.validatedAccountLabel(rawLabel)
+        guard ProviderSetup.descriptor(for: provider)?.acceptsAPIKey == true
         else {
-            throw ProviderAccountRegistryControllerError.invalidLabel
+            throw ProviderAccountRegistryControllerError.unsupportedProvider
         }
-        let acceptsAPIKey = ProviderSetup.descriptor(for: provider)?
-            .acceptsAPIKey == true
-        let key: String
-        if acceptsAPIKey {
-            let trimmedKey = rawKey?.trimmingCharacters(
-                in: .whitespacesAndNewlines
-            ) ?? ""
-            guard !trimmedKey.isEmpty else {
-                throw ProviderAccountRegistryControllerError.emptyKey
-            }
-            key = trimmedKey
-        } else {
-            do {
-                key = try captureCredential(provider)
-            } catch {
-                throw ProviderAccountRegistryControllerError
-                    .credentialUnavailable
-            }
+        let key = rawKey?.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        ) ?? ""
+        guard !key.isEmpty else {
+            throw ProviderAccountRegistryControllerError.emptyKey
         }
+        return try persistNewAccount(
+            provider: provider,
+            label: label,
+            key: key
+        )
+    }
 
+    /// Stores a companion credential that the caller already captured and
+    /// compared against the credential present before authentication. The
+    /// controller never captures on its own: a live capture here would
+    /// hand the new account whichever credential the companion happens to
+    /// hold, which is the account that is already connected.
+    @discardableResult
+    func addCapturedCompanionAccount(
+        provider: ProviderID,
+        label rawLabel: String,
+        encodedSecret: String
+    ) throws -> AccountProviderID {
+        let label = try Self.validatedAccountLabel(rawLabel)
+        guard ProviderSetup.descriptor(for: provider)?.acceptsAPIKey == false
+        else {
+            throw ProviderAccountRegistryControllerError.unsupportedProvider
+        }
+        guard
+            (try? CredentialSnapshot(
+                encodedSecret: encodedSecret,
+                provider: provider
+            )) != nil
+        else {
+            throw ProviderAccountRegistryControllerError.credentialUnavailable
+        }
+        return try persistNewAccount(
+            provider: provider,
+            label: label,
+            key: encodedSecret
+        )
+    }
+
+    @discardableResult
+    private func persistNewAccount(
+        provider: ProviderID,
+        label: String,
+        key: String
+    ) throws -> AccountProviderID {
+        _ = try requireRegistry()
         let accountID = makeAccountID()
         let identity = AccountProviderID(
             accountID: accountID,
@@ -367,15 +389,6 @@ final class ProviderAccountRegistryController {
         }
         recoveryState = .ready
         return identity
-    }
-
-    @discardableResult
-    func addAPIKeyAccount(
-        provider: ProviderID,
-        label: String,
-        key: String
-    ) throws -> AccountProviderID {
-        try addAccount(provider: provider, label: label, key: key)
     }
 
     func removeAccount(_ identity: AccountProviderID) throws {

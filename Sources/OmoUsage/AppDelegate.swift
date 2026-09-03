@@ -2,6 +2,167 @@ import OmoUsageCore
 import AppKit
 import SwiftUI
 
+#if OMO_USAGE_FIXTURES
+/// Isolated registry, Keychain, credential source, and companion launch
+/// used by companion-account QA. Every path lives under a caller-supplied
+/// temporary root, so QA can never read or write the real account
+/// registry, the real Keychain, or start a real companion login.
+struct CompanionAccountFixture {
+    static let rootPrefix = "/tmp/omousage-companion-qa-"
+    static let headlessKey = "OMO_USAGE_COMPANION_ACCOUNT_QA"
+    static let userInterfaceKey = "OMO_USAGE_COMPANION_ACCOUNT_UI_QA"
+    static let rootKey = "OMO_USAGE_COMPANION_ACCOUNT_QA_ROOT"
+
+    let root: URL
+    let defaults: UserDefaults
+    let keychain: any ProviderKeychain
+
+    static func resolve(
+        requestKey: String,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> CompanionAccountFixture? {
+        guard
+            environment[requestKey] == "1",
+            let path = environment[rootKey],
+            path.hasPrefix(rootPrefix),
+            !path.contains("..")
+        else {
+            return nil
+        }
+        let root = URL(filePath: path, directoryHint: .isDirectory)
+        guard
+            let defaults = UserDefaults(
+                suiteName: suiteName(forRootPath: path)
+            )
+        else {
+            return nil
+        }
+        return CompanionAccountFixture(
+            root: root,
+            defaults: defaults,
+            keychain: CompanionAccountFixtureKeychain(
+                directory: root.appending(
+                    path: "keychain",
+                    directoryHint: .isDirectory
+                )
+            )
+        )
+    }
+
+    static func suiteName(forRootPath path: String) -> String {
+        "CompanionAccountQA-\(URL(filePath: path).lastPathComponent)"
+    }
+
+    var registryURL: URL { root.appending(path: "accounts.json") }
+    var launchLogURL: URL { root.appending(path: "launch-log.txt") }
+
+    func credentialURL(for provider: ProviderID) -> URL {
+        root.appending(path: "credential-\(provider.rawValue).token")
+    }
+
+    func accountStore() -> ProviderAccountStore {
+        ProviderAccountStore(
+            registryURL: registryURL,
+            defaults: defaults,
+            legacyAPIKeyPresence: { _ in false }
+        )
+    }
+
+    func keyStore(
+        _ provider: ProviderID,
+        _ accountID: AccountID
+    ) -> ProviderAPIKeyStore? {
+        ProviderAPIKeyStore.live(
+            for: provider,
+            accountID: accountID,
+            home: root.appending(path: "home", directoryHint: .isDirectory),
+            environment: [:],
+            keychain: keychain
+        )
+    }
+
+    /// Mirrors the live capture contract: the token file stands in for
+    /// whichever credential the companion tool currently holds.
+    func captureCredential(for provider: ProviderID) throws -> String {
+        guard
+            let data = try? Data(contentsOf: credentialURL(for: provider)),
+            let token = String(data: data, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+            !token.isEmpty
+        else {
+            throw CredentialDiscoveryError.notFound(provider)
+        }
+        return try CredentialSnapshot(
+            provider: provider,
+            accessToken: token,
+            refreshToken: nil,
+            accountReference: token,
+            planName: "QA Plan",
+            expiresAt: nil,
+            source: .file
+        ).encodedSecret()
+    }
+
+    func launchCompanion(
+        _ provider: ProviderID
+    ) -> Result<ProviderSetupOutcome, ProviderSetupError> {
+        let line = "launched:\(provider.rawValue)\n"
+        if let handle = try? FileHandle(forWritingTo: launchLogURL) {
+            defer { try? handle.close() }
+            _ = try? handle.seekToEnd()
+            try? handle.write(contentsOf: Data(line.utf8))
+        } else {
+            try? Data(line.utf8).write(to: launchLogURL, options: .atomic)
+        }
+        return .success(.launched)
+    }
+}
+
+final class CompanionAccountFixtureKeychain: ProviderKeychain,
+    @unchecked Sendable
+{
+    let directory: URL
+
+    init(directory: URL) { self.directory = directory }
+
+    func value(service: String, account: String) throws -> String? {
+        let url = itemURL(service: service, account: account)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return nil
+        }
+        return String(data: try Data(contentsOf: url), encoding: .utf8)
+    }
+
+    func set(_ value: String, service: String, account: String) throws {
+        try ProviderFileDurability.preparePrivateDirectory(directory)
+        try ProviderFileDurability.atomicWrite(
+            Data(value.utf8),
+            to: itemURL(service: service, account: account),
+            permissions: 0o600
+        )
+    }
+
+    func remove(service: String, account: String) throws {
+        try ProviderFileDurability.removeIfPresent(
+            itemURL(service: service, account: account)
+        )
+    }
+
+    var storedItemCount: Int {
+        (try? FileManager.default.contentsOfDirectory(
+            atPath: directory.path
+        ))?.count ?? 0
+    }
+
+    private func itemURL(service: String, account: String) -> URL {
+        let name = "\(service)|\(account)"
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: ".", with: "_")
+        return directory.appending(path: name)
+    }
+}
+#endif
+
 enum SettingsWindowContract {
     static let styleMask: NSWindow.StyleMask = [
         .titled,
@@ -111,6 +272,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let viewModel: UsageDashboardViewModel
     private let localization: LocalizationController
     private let accountRegistryController: ProviderAccountRegistryController
+    private let companionCapture: (ProviderID) throws -> String
+    private let companionLaunch: (ProviderID) -> Result<
+        ProviderSetupOutcome,
+        ProviderSetupError
+    >
+    private let opensSettingsOnLaunch: Bool
     private let snapshotSync: UbiquitousUsageSnapshotStore
     private let webDashboardSnapshotStore: WebDashboardSnapshotStore
     private let webDashboardSettingsStore: WebDashboardSettingsStore
@@ -154,33 +321,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     )
 
     override init() {
+#if OMO_USAGE_FIXTURES
+        let companionFixture = CompanionAccountFixture.resolve(
+            requestKey: CompanionAccountFixture.userInterfaceKey
+        )
+        let defaults = companionFixture?.defaults ?? .standard
+#else
+        let defaults = UserDefaults.standard
+#endif
         let snapshotSync = UbiquitousUsageSnapshotStore()
         let localization = LocalizationController(
-            store: AppLanguageStore(defaults: .standard)
+            store: AppLanguageStore(defaults: defaults)
         )
         let webDashboardLanguageStore = WebDashboardLanguageStore(
-            defaults: .standard,
+            defaults: defaults,
             fallback: localization.language
         )
         let webLanguage = webDashboardLanguageStore.load()
         webDashboardLanguageStore.save(webLanguage)
         let orderStore = ProviderDisplayOrderStore(
-            defaults: .standard
+            defaults: defaults
         )
         let disconnectionStore = ProviderDisconnectionStore(
-            defaults: .standard
+            defaults: defaults
         )
         let presentationStyleStore = DashboardPresentationStyleStore(
-            defaults: .standard
+            defaults: defaults
         )
         let presentationStyle = presentationStyleStore.load()
         let sideNotchHideDelayStore = SideNotchHideDelayStore(
-            defaults: .standard
+            defaults: defaults
         )
         let sideNotchHideDelay = sideNotchHideDelayStore.load()
         let providerOrder = orderStore.load()
         let disconnectedProviders = disconnectionStore.load()
-        let accountStore = ProviderAccountStore.live(defaults: .standard)
+#if OMO_USAGE_FIXTURES
+        let accountStore = companionFixture?.accountStore()
+            ?? ProviderAccountStore.live(defaults: defaults)
+#else
+        let accountStore = ProviderAccountStore.live(defaults: defaults)
+#endif
         let registryLoadResult = ProviderMutationCoordinator(
             store: accountStore
         ).loadOrRecover()
@@ -202,10 +382,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 )
             )
         }
+#if OMO_USAGE_FIXTURES
+        let accountRegistryController = companionFixture.map { fixture in
+            ProviderAccountRegistryController(
+                store: accountStore,
+                loadResult: registryLoadResult,
+                keyStore: fixture.keyStore
+            )
+        } ?? ProviderAccountRegistryController(
+            store: accountStore,
+            loadResult: registryLoadResult
+        )
+        let companionCapture = companionFixture?.captureCredential
+            ?? SettingsView.captureCompanionCredential
+        let companionLaunch = companionFixture?.launchCompanion
+            ?? { ProviderSetup.perform(for: $0) }
+#else
         let accountRegistryController = ProviderAccountRegistryController(
             store: accountStore,
             loadResult: registryLoadResult
         )
+        let companionCapture = SettingsView.captureCompanionCredential
+        let companionLaunch: (ProviderID) -> Result<
+            ProviderSetupOutcome,
+            ProviderSetupError
+        > = { ProviderSetup.perform(for: $0) }
+#endif
         let accountComposition = AppAccountCompositionFactory.make(
             registry: registryLoadResult.registry
         )
@@ -328,6 +530,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         self.viewModel = viewModel
         self.localization = localization
         self.accountRegistryController = accountRegistryController
+        self.companionCapture = companionCapture
+        self.companionLaunch = companionLaunch
+#if OMO_USAGE_FIXTURES
+        self.opensSettingsOnLaunch = companionFixture != nil
+#else
+        self.opensSettingsOnLaunch = false
+#endif
         self.snapshotSync = snapshotSync
         self.webDashboardSnapshotStore = webDashboardSnapshotStore
         self.webDashboardSettingsStore = webDashboardSettingsStore
@@ -383,6 +592,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         }
 
         hasFinishedLaunching = true
+        if opensSettingsOnLaunch {
+            DispatchQueue.main.async { [weak self] in
+                self?.showSettings()
+            }
+        }
         if
             hasPendingSecondaryActivation
                 || ProcessInfo.processInfo.environment[
@@ -551,6 +765,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 presentationStyle: presentationStyle,
                 sideNotchHideDelay: sideNotchHideDelay,
                 accountRegistryController: accountRegistryController,
+                captureCompanionCredential: companionCapture,
+                launchCompanion: companionLaunch,
                 onRegistryChange: { [weak self] in
                     self?.applyAccountRegistryChange()
                 },

@@ -1,5 +1,6 @@
 import OmoUsageCore
 import AppKit
+import CryptoKit
 import Foundation
 import Observation
 
@@ -192,6 +193,195 @@ final class ProviderConnectionCoordinator {
                 providerID: provider
             )
         )
+    }
+}
+
+enum ProviderAccountAdditionOutcome: Equatable, Sendable {
+    case addedAccount(String)
+    case waitingForCompanion
+    case credentialUnchanged
+    case credentialMissing
+    case credentialUnavailable
+    case invalidLabel
+    case openedOfficialGuide(URL)
+    case launchFailed(ProviderSetupError)
+    case additionInProgress
+    case ignored
+    case failed
+}
+
+/// Owns adding a second account for a companion provider. The companion
+/// tool holds exactly one credential at a time, so an account may only be
+/// created after official authentication replaced the credential that was
+/// there before: persisting the pre-login credential would copy the
+/// already-connected account under a new alias.
+@Observable
+@MainActor
+final class ProviderAccountAdditionCoordinator {
+    struct PendingCompanionAddition: Equatable, Sendable {
+        let provider: ProviderID
+        let label: String
+        /// Opaque digest of the credential the companion held when the
+        /// addition started, or `nil` when it held none. Never the secret.
+        let credentialFingerprint: String?
+    }
+
+    private(set) var pending: PendingCompanionAddition?
+
+    @ObservationIgnored
+    private let controller: ProviderAccountRegistryController
+    @ObservationIgnored
+    private let captureCredential: (ProviderID) throws -> String
+    @ObservationIgnored
+    private let launchCompanion:
+        (ProviderID) -> Result<ProviderSetupOutcome, ProviderSetupError>
+    @ObservationIgnored
+    private let onAccountAdded: () -> Void
+
+    init(
+        controller: ProviderAccountRegistryController,
+        captureCredential: @escaping (ProviderID) throws -> String = {
+            try CredentialDiscovery.live().captureCredential(
+                for: $0,
+                now: Date()
+            )
+        },
+        launchCompanion: @escaping (ProviderID) -> Result<
+            ProviderSetupOutcome,
+            ProviderSetupError
+        > = { ProviderSetup.perform(for: $0) },
+        onAccountAdded: @escaping () -> Void
+    ) {
+        self.controller = controller
+        self.captureCredential = captureCredential
+        self.launchCompanion = launchCompanion
+        self.onAccountAdded = onAccountAdded
+    }
+
+    var isWaitingForCompanion: Bool { pending != nil }
+
+    func isWaiting(for provider: ProviderID) -> Bool {
+        pending?.provider == provider
+    }
+
+    @discardableResult
+    func addAccount(
+        provider: ProviderID,
+        label rawLabel: String,
+        key: String?
+    ) -> ProviderAccountAdditionOutcome {
+        guard
+            let label = try? ProviderAccountRegistryController
+                .validatedAccountLabel(rawLabel)
+        else {
+            return .invalidLabel
+        }
+        guard
+            ProviderSetup.descriptor(for: provider)?.acceptsAPIKey == false
+        else {
+            return addAPIKeyAccount(
+                provider: provider,
+                label: label,
+                key: key
+            )
+        }
+        guard pending == nil else { return .additionInProgress }
+
+        let baseline: String?
+        do {
+            baseline = Self.fingerprint(try captureCredential(provider))
+        } catch CredentialDiscoveryError.notFound {
+            // No credential to displace yet: the first one that appears
+            // belongs to the account the user is about to authenticate.
+            baseline = nil
+        } catch {
+            return .credentialUnavailable
+        }
+
+        switch launchCompanion(provider) {
+        case .success(.launched):
+            pending = PendingCompanionAddition(
+                provider: provider,
+                label: label,
+                credentialFingerprint: baseline
+            )
+            return .waitingForCompanion
+        case .success(.openedFallback(let url)):
+            return .openedOfficialGuide(url)
+        case .failure(let error):
+            return .launchFailed(error)
+        }
+    }
+
+    @discardableResult
+    func checkAgain() -> ProviderAccountAdditionOutcome {
+        guard let pending else { return .ignored }
+        let secret: String
+        do {
+            secret = try captureCredential(pending.provider)
+        } catch {
+            return .credentialMissing
+        }
+        guard Self.fingerprint(secret) != pending.credentialFingerprint else {
+            return .credentialUnchanged
+        }
+        guard
+            (try? CredentialSnapshot(
+                encodedSecret: secret,
+                provider: pending.provider
+            )) != nil
+        else {
+            return .credentialMissing
+        }
+        do {
+            _ = try controller.addCapturedCompanionAccount(
+                provider: pending.provider,
+                label: pending.label,
+                encodedSecret: secret
+            )
+        } catch {
+            // The addition stays pending so the user can retry without
+            // re-authenticating the companion.
+            return .failed
+        }
+        self.pending = nil
+        onAccountAdded()
+        return .addedAccount(pending.label)
+    }
+
+    @discardableResult
+    func applicationDidBecomeActive() -> ProviderAccountAdditionOutcome {
+        checkAgain()
+    }
+
+    func cancel() {
+        pending = nil
+    }
+
+    private func addAPIKeyAccount(
+        provider: ProviderID,
+        label: String,
+        key: String?
+    ) -> ProviderAccountAdditionOutcome {
+        do {
+            _ = try controller.addAPIKeyAccount(
+                provider: provider,
+                label: label,
+                key: key
+            )
+        } catch ProviderAccountRegistryControllerError.invalidLabel {
+            return .invalidLabel
+        } catch {
+            return .failed
+        }
+        onAccountAdded()
+        return .addedAccount(label)
+    }
+
+    private static func fingerprint(_ secret: String) -> String {
+        SHA256.hash(data: Data(secret.utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
     }
 }
 
