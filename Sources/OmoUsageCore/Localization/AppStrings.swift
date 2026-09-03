@@ -95,6 +95,11 @@ public enum AppStringKey: String, CaseIterable, Sendable {
     case addedAccount
     case removedAccount
     case accountChangeFailed
+    case checkAgainForCompanionCredentials
+    case companionCredentialMissing
+    case companionCredentialUnchanged
+    case companionCredentialUnavailable
+    case accountAdditionFailed
     case save
     case delete
     case openOfficialGuide
@@ -273,6 +278,14 @@ public struct AppStrings: Sendable {
         .addedAccount: "%@ 계정을 추가했습니다.",
         .removedAccount: "%@ 계정을 삭제했습니다.",
         .accountChangeFailed: "API 키 계정을 변경하지 못했습니다.",
+        .checkAgainForCompanionCredentials: "다시 확인",
+        .companionCredentialMissing:
+            "아직 새 인증값이 없습니다. 공식 로그인을 끝낸 뒤 다시 확인을 누르세요.",
+        .companionCredentialUnchanged:
+            "컴패니언에 이전 계정 인증값이 그대로 있습니다. 다른 계정으로 로그인한 뒤 다시 확인을 누르세요.",
+        .companionCredentialUnavailable:
+            "현재 컴패니언 인증값을 읽지 못해 계정 추가를 시작하지 않았습니다.",
+        .accountAdditionFailed: "계정을 추가하지 못했습니다.",
         .save: "저장",
         .delete: "삭제",
         .openOfficialGuide: "공식 안내 열기",
@@ -439,6 +452,14 @@ public struct AppStrings: Sendable {
         .addedAccount: "Added the %@ account.",
         .removedAccount: "Removed the %@ account.",
         .accountChangeFailed: "Could not update API key accounts.",
+        .checkAgainForCompanionCredentials: "Check Again",
+        .companionCredentialMissing:
+            "No new credential yet. Finish the official login, then choose Check Again.",
+        .companionCredentialUnchanged:
+            "The companion still holds the previous account's credential. Sign in as the other account, then choose Check Again.",
+        .companionCredentialUnavailable:
+            "Could not read the current companion credential, so the account was not started.",
+        .accountAdditionFailed: "Could not add the account.",
         .save: "Save",
         .delete: "Delete",
         .openOfficialGuide: "Open Official Guide",

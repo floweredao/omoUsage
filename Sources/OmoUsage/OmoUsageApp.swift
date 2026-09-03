@@ -34,6 +34,12 @@ enum OmoUsageApp {
             runDiagnosticFixture()
             return
         }
+        if ProcessInfo.processInfo.environment[
+            CompanionAccountFixture.headlessKey
+        ] == "1" {
+            runCompanionAccountAdditionQA()
+            return
+        }
 #endif
 
         let singleInstance: SingleInstanceController
@@ -394,6 +400,200 @@ enum OmoUsageApp {
             writeFixtureEvent("status=fixture-failed")
             Darwin.exit(EXIT_FAILURE)
         }
+    }
+
+    /// Exercises the real companion-addition coordinator inside the
+    /// packaged binary against an isolated registry, Keychain, credential
+    /// source, and stub companion launch. Emits only non-secret results.
+    @MainActor
+    private static func runCompanionAccountAdditionQA() {
+        guard
+            let fixture = CompanionAccountFixture.resolve(
+                requestKey: CompanionAccountFixture.headlessKey
+            )
+        else {
+            writeFixtureEvent("status=invalid-fixture-configuration")
+            Darwin.exit(EXIT_FAILURE)
+        }
+        defer {
+            fixture.defaults.removePersistentDomain(
+                forName: CompanionAccountFixture.suiteName(
+                    forRootPath: fixture.root.path
+                )
+            )
+        }
+
+        let accountIDs = [
+            AccountID(rawValue: "00000000-0000-0000-0000-0000000000c1")!,
+            AccountID(rawValue: "00000000-0000-0000-0000-0000000000c2")!,
+            AccountID(rawValue: "00000000-0000-0000-0000-0000000000c3")!
+        ]
+        var accountIndex = 0
+        var refreshCount = 0
+        var launchCount = 0
+
+        func fail(_ reason: String) -> Never {
+            writeFixtureEvent("status=\(reason)")
+            Darwin.exit(EXIT_FAILURE)
+        }
+
+        func require(_ condition: Bool, _ reason: String) {
+            guard condition else { fail(reason) }
+        }
+
+        func writeToken(_ token: String, for provider: ProviderID) {
+            do {
+                try ProviderFileDurability.atomicWrite(
+                    Data(token.utf8),
+                    to: fixture.credentialURL(for: provider),
+                    permissions: 0o600
+                )
+            } catch {
+                fail("credential-seed-failed")
+            }
+        }
+
+        do {
+            try ProviderFileDurability.preparePrivateDirectory(fixture.root)
+        } catch {
+            fail("fixture-root-unavailable")
+        }
+
+        let store = fixture.accountStore()
+        guard let registry = try? store.loadOrMigrate() else {
+            fail("registry-unavailable")
+        }
+        let controller = ProviderAccountRegistryController(
+            store: store,
+            registry: registry,
+            keyStore: fixture.keyStore,
+            makeAccountID: {
+                defer { accountIndex += 1 }
+                return accountIDs[min(accountIndex, accountIDs.count - 1)]
+            }
+        )
+        let coordinator = ProviderAccountAdditionCoordinator(
+            controller: controller,
+            captureCredential: fixture.captureCredential,
+            launchCompanion: { provider in
+                launchCount += 1
+                return fixture.launchCompanion(provider)
+            },
+            onAccountAdded: { refreshCount += 1 }
+        )
+
+        writeToken("qa-codex-token-a", for: .codex)
+        require(
+            coordinator.addAccount(
+                provider: .codex,
+                label: "QA Companion",
+                key: nil
+            ) == .waitingForCompanion,
+            "launch-before-persist-failed"
+        )
+        require(launchCount == 1, "companion-not-launched")
+        require(controller.accounts.isEmpty, "account-persisted-too-early")
+        require(refreshCount == 0, "refresh-requested-too-early")
+        require(
+            (fixture.keychain as? CompanionAccountFixtureKeychain)?
+                .storedItemCount == 0,
+            "secret-written-too-early"
+        )
+        writeFixtureEvent("launch-before-persist=passed")
+
+        require(
+            coordinator.checkAgain() == .credentialUnchanged,
+            "unchanged-credential-not-detected"
+        )
+        require(
+            coordinator.pending?.provider == .codex,
+            "unchanged-credential-dropped-pending"
+        )
+        require(
+            controller.accounts.isEmpty,
+            "unchanged-credential-persisted"
+        )
+        writeFixtureEvent("unchanged-remains-pending=passed")
+
+        writeToken("qa-codex-token-b", for: .codex)
+        let refreshBefore = refreshCount
+        require(
+            coordinator.applicationDidBecomeActive()
+                == .addedAccount("QA Companion"),
+            "changed-credential-not-persisted"
+        )
+        require(coordinator.pending == nil, "pending-not-cleared")
+        let companionAccounts = controller.accounts.filter {
+            $0.provider == .codex
+        }
+        require(companionAccounts.count == 1, "companion-account-count")
+        require(
+            companionAccounts[0].accountProviderID.accountID == accountIDs[0],
+            "companion-account-identity"
+        )
+        let storedSecret = fixture.keyStore(
+            .codex,
+            accountIDs[0]
+        )?.load()
+        let expectedSecret = try? fixture.captureCredential(for: .codex)
+        require(
+            storedSecret != nil && storedSecret == expectedSecret,
+            "companion-secret-mismatch"
+        )
+        writeFixtureEvent("changed-account-persisted=passed")
+        writeFixtureEvent("refresh-count=\(refreshCount - refreshBefore)")
+
+        let launchesBeforeAPIKey = launchCount
+        require(
+            coordinator.addAccount(
+                provider: .openrouter,
+                label: "QA Key",
+                key: "qa-openrouter-secret"
+            ) == .addedAccount("QA Key"),
+            "api-key-not-immediate"
+        )
+        require(
+            launchCount == launchesBeforeAPIKey,
+            "api-key-launched-companion"
+        )
+        require(
+            controller.accounts.contains { $0.provider == .openrouter },
+            "api-key-account-missing"
+        )
+        require(
+            fixture.keyStore(.openrouter, accountIDs[1])?.load()
+                == "qa-openrouter-secret",
+            "api-key-secret-mismatch"
+        )
+        writeFixtureEvent("api-key-immediate=passed")
+
+        require(
+            coordinator.addAccount(
+                provider: .codex,
+                label: "QA Cancelled",
+                key: nil
+            ) == .waitingForCompanion,
+            "cancellation-setup-failed"
+        )
+        coordinator.cancel()
+        require(coordinator.pending == nil, "cancellation-left-pending")
+        writeToken("qa-codex-token-c", for: .codex)
+        let accountsBeforeActivation = controller.accounts.count
+        let refreshBeforeActivation = refreshCount
+        require(
+            coordinator.applicationDidBecomeActive() == .ignored,
+            "cancelled-addition-still-active"
+        )
+        require(
+            controller.accounts.count == accountsBeforeActivation,
+            "cancelled-addition-persisted"
+        )
+        require(
+            refreshCount == refreshBeforeActivation,
+            "cancelled-addition-refreshed"
+        )
+        writeFixtureEvent("cancellation=passed")
+        writeFixtureEvent("status=passed")
     }
 
     private static func runDiagnosticFixture() {

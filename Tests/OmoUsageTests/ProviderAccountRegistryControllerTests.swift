@@ -10,26 +10,88 @@ struct ProviderAccountRegistryControllerTests {
     func addsCapturedAccountsForEveryCompanionProvider() throws {
         let fixture = try ControllerFixture()
         defer { fixture.remove() }
-        let controller = try fixture.makeController(
-            captureCredential: { "captured-\($0.rawValue)" }
-        )
+        let controller = try fixture.makeController()
         let companionProviders = ProviderID.allCases.filter {
             ProviderSetup.descriptor(for: $0)?.acceptsAPIKey == false
         }
 
         for provider in companionProviders {
-            let identity = try controller.addAccount(
+            let secret = try ControllerFixture.encodedSecret(
+                provider: provider,
+                accessToken: "captured-\(provider.rawValue)"
+            )
+            let identity = try controller.addCapturedCompanionAccount(
                 provider: provider,
                 label: "\(provider.displayName) Account",
-                key: nil
+                encodedSecret: secret
             )
             #expect(
                 fixture.keyStore(provider, identity.accountID)?.load()
-                    == "captured-\(provider.rawValue)"
+                    == secret
             )
         }
 
         #expect(controller.accounts.map(\.provider) == companionProviders)
+    }
+
+    @Test
+    func capturedCompanionAccountRejectsUnusableOrMisfiledSecrets() throws {
+        let fixture = try ControllerFixture()
+        defer { fixture.remove() }
+        let controller = try fixture.makeController()
+        let codexSecret = try ControllerFixture.encodedSecret(
+            provider: .codex,
+            accessToken: "codex-token"
+        )
+
+        #expect(
+            throws:
+                ProviderAccountRegistryControllerError.credentialUnavailable
+        ) {
+            try controller.addCapturedCompanionAccount(
+                provider: .claude,
+                label: "Misfiled",
+                encodedSecret: codexSecret
+            )
+        }
+        #expect(
+            throws:
+                ProviderAccountRegistryControllerError.credentialUnavailable
+        ) {
+            try controller.addCapturedCompanionAccount(
+                provider: .codex,
+                label: "Unusable",
+                encodedSecret: "not-a-credential"
+            )
+        }
+        #expect(
+            throws:
+                ProviderAccountRegistryControllerError.unsupportedProvider
+        ) {
+            try controller.addCapturedCompanionAccount(
+                provider: .openrouter,
+                label: "API Key Provider",
+                encodedSecret: codexSecret
+            )
+        }
+        #expect(
+            throws:
+                ProviderAccountRegistryControllerError.unsupportedProvider
+        ) {
+            try controller.addAPIKeyAccount(
+                provider: .codex,
+                label: "Companion Provider",
+                key: "manual-secret"
+            )
+        }
+
+        #expect(controller.accounts.isEmpty)
+        #expect(
+            fixture.keyStore(
+                .codex,
+                fixture.nextAccountIDs[0]
+            )?.load() == nil
+        )
     }
 
     @Test
@@ -347,13 +409,25 @@ private final class ControllerFixture {
         _ = try store.loadOrMigrate()
     }
 
+    static func encodedSecret(
+        provider: ProviderID,
+        accessToken: String
+    ) throws -> String {
+        try CredentialSnapshot(
+            provider: provider,
+            accessToken: accessToken,
+            refreshToken: nil,
+            accountReference: nil,
+            planName: nil,
+            expiresAt: nil,
+            source: .file
+        ).encodedSecret()
+    }
+
     @MainActor
     func makeController(
         persistenceEnabled: Bool = true,
-        failingAfter phase: ProviderMutationPhase? = nil,
-        captureCredential: @escaping (ProviderID) throws -> String = {
-            _ in "captured-credential"
-        }
+        failingAfter phase: ProviderMutationPhase? = nil
     ) throws -> ProviderAccountRegistryController {
         ProviderAccountRegistryController(
             store: store,
@@ -366,7 +440,6 @@ private final class ControllerFixture {
                 defer { self.accountIndex += 1 }
                 return self.nextAccountIDs[self.accountIndex]
             },
-            captureCredential: captureCredential,
             mutationAfterPhase: { reached in
                 if reached == phase { throw ControllerMutationFailure() }
             }
