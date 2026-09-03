@@ -4,7 +4,7 @@ import CoreImage
 import Observation
 import SwiftUI
 
-struct PhonePairingPresentationState {
+struct WebDashboardLinkPresentationState {
     struct PresentedItem: Identifiable {
         let id = UUID()
         let url: URL
@@ -12,14 +12,24 @@ struct PhonePairingPresentationState {
 
     var presentedItem: PresentedItem?
 
-    mutating func pairButtonAtomicallyCreatesPresentedItem(
+    mutating func openQRCode(
         _ makeURL: () -> URL?
     ) -> AppStringKey? {
         guard let url = makeURL() else {
             presentedItem = nil
-            return .phonePairingFailed
+            return AppStringKey.webDashboardLinkCreationFailed
         }
         presentedItem = PresentedItem(url: url)
+        return nil
+    }
+
+    func shareLink(
+        makeURL: () -> URL?,
+        present: (URL) -> Bool
+    ) -> AppStringKey? {
+        guard let url = makeURL(), present(url) else {
+            return AppStringKey.webDashboardLinkCreationFailed
+        }
         return nil
     }
 }
@@ -62,7 +72,8 @@ struct SettingsView: View {
     @Bindable var tailscaleDashboardController:
         TailscaleDashboardController
     let onOpenWebDashboard: () -> Bool
-    let onCreatePhonePairingURL: () -> URL?
+    let onCreateWebDashboardURL: () -> URL?
+    let onShareWebDashboardURL: (URL) -> Bool
     let onRetryWebDashboard: () -> Void
     let onExportDiagnostics: () -> DiagnosticExportOutcome
     @State private var keyDrafts: [ProviderID: String] = [:]
@@ -80,8 +91,8 @@ struct SettingsView: View {
     ).load()
     @State private var presentationStyle: DashboardPresentationStyle
     @State private var sideNotchHideDelay: SideNotchHideDelay
-    @State private var phonePairingPresentation =
-        PhonePairingPresentationState()
+    @State private var dashboardLinkPresentation =
+        WebDashboardLinkPresentationState()
 
     init(
         viewModel: UsageDashboardViewModel,
@@ -105,7 +116,8 @@ struct SettingsView: View {
         tailscaleDashboardController:
             TailscaleDashboardController,
         onOpenWebDashboard: @escaping () -> Bool,
-        onCreatePhonePairingURL: @escaping () -> URL?,
+        onCreateWebDashboardURL: @escaping () -> URL?,
+        onShareWebDashboardURL: @escaping (URL) -> Bool,
         onRetryWebDashboard: @escaping () -> Void,
         onExportDiagnostics: @escaping () -> DiagnosticExportOutcome
     ) {
@@ -121,7 +133,8 @@ struct SettingsView: View {
         self.tailscaleDashboardController =
             tailscaleDashboardController
         self.onOpenWebDashboard = onOpenWebDashboard
-        self.onCreatePhonePairingURL = onCreatePhonePairingURL
+        self.onCreateWebDashboardURL = onCreateWebDashboardURL
+        self.onShareWebDashboardURL = onShareWebDashboardURL
         self.onRetryWebDashboard = onRetryWebDashboard
         self.onExportDiagnostics = onExportDiagnostics
         _presentationStyle = State(initialValue: presentationStyle)
@@ -316,12 +329,22 @@ struct SettingsView: View {
 
                     TailscalePhoneAccessRow(
                         controller: tailscaleDashboardController,
-                        onPair: {
+                        onOpenQRCode: {
                             if let failureKey =
-                                phonePairingPresentation
-                                .pairButtonAtomicallyCreatesPresentedItem(
-                                    onCreatePhonePairingURL
-                                ) {
+                                dashboardLinkPresentation.openQRCode(
+                                    onCreateWebDashboardURL
+                                )
+                            {
+                                feedback = .key(failureKey)
+                            }
+                        },
+                        onShareLink: {
+                            if let failureKey =
+                                dashboardLinkPresentation.shareLink(
+                                    makeURL: onCreateWebDashboardURL,
+                                    present: onShareWebDashboardURL
+                                )
+                            {
                                 feedback = .key(failureKey)
                             }
                         }
@@ -438,8 +461,8 @@ struct SettingsView: View {
             idealHeight: 560
         )
         .environment(\.appLocalization, localization.context)
-        .sheet(item: $phonePairingPresentation.presentedItem) { item in
-            TailscalePhonePairingView(url: item.url)
+        .sheet(item: $dashboardLinkPresentation.presentedItem) { item in
+            WebDashboardQRCodeView(url: item.url)
                 .environment(
                     \.appLocalization,
                     localization.context
@@ -926,7 +949,8 @@ private struct ProviderAccountsSection: View {
 
 private struct TailscalePhoneAccessRow: View {
     @Bindable var controller: TailscaleDashboardController
-    let onPair: () -> Void
+    let onOpenQRCode: () -> Void
+    let onShareLink: () -> Void
     @Environment(\.appLocalization) private var localization
 
     var body: some View {
@@ -960,10 +984,32 @@ private struct TailscalePhoneAccessRow: View {
             Spacer(minLength: 8)
 
             VStack(alignment: .trailing, spacing: 6) {
-                Button(primaryButtonTitle, action: primaryAction)
+                if case .ready = controller.state {
+                    HStack(spacing: 6) {
+                        Button(
+                            localization.text(AppStringKey.openQRCode),
+                            action: onOpenQRCode
+                        )
+                        .accessibilityIdentifier(
+                            "open-dashboard-qr-code"
+                        )
+
+                        Button(
+                            localization.text(.shareLink),
+                            action: onShareLink
+                        )
+                        .accessibilityIdentifier(
+                            "share-dashboard-link"
+                        )
+                    }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
-                    .disabled(isBusy)
+                } else {
+                    Button(primaryButtonTitle, action: primaryAction)
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(isBusy)
+                }
 
                 if case .ready = controller.state {
                     Button(localization.text(.disablePhoneAccess)) {
@@ -1022,7 +1068,7 @@ private struct TailscalePhoneAccessRow: View {
         case .available:
             localization.text(.enablePhoneAccess)
         case .ready:
-            localization.text(.pairPhone)
+            localization.text(AppStringKey.openQRCode)
         case .checking, .enabling, .disabling:
             localization.text(.inProgress)
         case .unavailable, .signedOut, .failed:
@@ -1035,7 +1081,7 @@ private struct TailscalePhoneAccessRow: View {
         case .available:
             { Task { await controller.enable() } }
         case .ready:
-            onPair
+            onOpenQRCode
         case .unavailable, .signedOut, .failed:
             { Task { await controller.refresh() } }
         case .checking, .enabling, .disabling:
@@ -1055,7 +1101,7 @@ private struct TailscalePhoneAccessRow: View {
 
 @Observable
 @MainActor
-final class PhonePairingQRCodeLoader {
+final class WebDashboardQRCodeLoader {
     enum Phase: Equatable {
         case loading
         case ready(Data)
@@ -1125,15 +1171,19 @@ final class PhonePairingQRCodeLoader {
     }
 }
 
-private struct TailscalePhonePairingView: View {
+private struct WebDashboardQRCodeView: View {
     let url: URL
     @Environment(\.dismiss) private var dismiss
     @Environment(\.appLocalization) private var localization
-    @State private var qrCodeLoader = PhonePairingQRCodeLoader()
+    @State private var qrCodeLoader = WebDashboardQRCodeLoader()
 
     var body: some View {
         VStack(spacing: 14) {
-            Text(localization.text(.phonePairingTitle))
+            Text(
+                localization.text(
+                    AppStringKey.webDashboardQRCodeTitle
+                )
+            )
                 .font(.system(size: 18, weight: .bold))
 
             switch qrCodeLoader.phase {
@@ -1148,10 +1198,14 @@ private struct TailscalePhonePairingView: View {
                         .aspectRatio(1, contentMode: .fit)
                         .frame(width: 184, height: 184)
                         .accessibilityLabel(
-                            localization.text(.phonePairingQRCodeLabel)
+                            localization.text(.webDashboardQRCodeLabel)
                         )
 
-                    Text(localization.text(.phonePairingDescription))
+                    Text(
+                        localization.text(
+                            .webDashboardQRCodeDescription
+                        )
+                    )
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)

@@ -319,6 +319,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let dismissalController = PopoverDismissalController(
         monitor: AppKitPopoverMouseMonitor()
     )
+    private var sharingServicePicker: NSSharingServicePicker?
     private lazy var refreshScheduler = UsageRefreshScheduler {
         [weak self] in
         await self?.viewModel.refresh()
@@ -816,10 +817,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                         return false
                     }
                 },
-                onCreatePhonePairingURL: { [weak self] in
+                onCreateWebDashboardURL: { [weak self] in
                     guard let self else { return nil }
                     return try? webDashboardAccessStore
                         .makeBootstrapURL()
+                },
+                onShareWebDashboardURL: { [weak self] url in
+                    self?.presentSharingPicker(for: url) == true
                 },
                 onRetryWebDashboard: { [weak self] in
                     guard let self else { return }
@@ -863,6 +867,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         settingsWindow = window
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func presentSharingPicker(for url: URL) -> Bool {
+        guard let contentView = settingsWindow?.contentView else {
+            return false
+        }
+        let picker = NSSharingServicePicker(items: [url])
+        sharingServicePicker = picker
+        picker.show(
+            relativeTo: NSRect(
+                x: contentView.bounds.maxX,
+                y: contentView.bounds.maxY,
+                width: 1,
+                height: 1
+            ),
+            of: contentView,
+            preferredEdge: .minY
+        )
+        return true
     }
 
     private func applyAccountRegistryChange() {

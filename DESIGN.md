@@ -319,6 +319,11 @@ other privileged controls remain native-only.
 - `WebDashboardHeader`: identity, private-tailnet status, latest refresh time,
   a non-interactive live connection indicator, the dashboard/settings page
   link, and `WebRefreshButton`.
+- `TailscalePhoneAccessRow`: private web-dashboard access status, endpoint,
+  enable/disable controls, and two equal ready-state actions: `Open QR Code`
+  presents the bootstrap URL as a scannable sheet, while `Share Link` opens
+  the native macOS sharing picker. Each action mints its own one-use bootstrap
+  URL only when pressed; neither action precomputes or reuses a prior link.
 - `WebProviderCard`: provider mark, provider name, conditional sanitized account
   alias, plan, availability, grouped usage meters, credits, and provider
   timestamp in one semantic article keyed by `AccountProviderID`.
