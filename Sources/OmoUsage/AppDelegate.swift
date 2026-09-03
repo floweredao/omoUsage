@@ -605,7 +605,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         Task {
             await tailscaleDashboardController.refresh()
             do {
-                try FixtureWebBootstrapExporter.exportIfRequested(
+                try FixtureWebDashboardURLExporter.exportIfRequested(
                     accessStore: webDashboardAccessStore
                 )
             } catch {
@@ -809,21 +809,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                     tailscaleDashboardController,
                 onOpenWebDashboard: { [weak self] in
                     guard let self else { return false }
-                    do {
-                        let url = try self.webDashboardAccessStore
-                            .makeBootstrapURL()
-                        return NSWorkspace.shared.open(url)
-                    } catch {
-                        return false
-                    }
+                    return NSWorkspace.shared.open(
+                        self.webDashboardAccessStore.dashboardURL
+                    )
                 },
                 onCreateWebDashboardURL: { [weak self] in
                     guard let self else { return nil }
-                    return try? webDashboardAccessStore
-                        .makeBootstrapURL()
+                    return self.webDashboardAccessStore.dashboardURL
                 },
-                onShareWebDashboardURL: { [weak self] url in
-                    self?.presentSharingPicker(for: url) == true
+                onShareWebDashboardURL: {
+                    [weak self] url,
+                    anchorView in
+                    self?.presentSharingPicker(
+                        for: url,
+                        relativeTo: anchorView
+                    ) == true
                 },
                 onRetryWebDashboard: { [weak self] in
                     guard let self else { return }
@@ -869,21 +869,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    private func presentSharingPicker(for url: URL) -> Bool {
-        guard let contentView = settingsWindow?.contentView else {
+    private func presentSharingPicker(
+        for url: URL,
+        relativeTo anchorView: NSView
+    ) -> Bool {
+        guard anchorView.window === settingsWindow else {
             return false
         }
         let picker = NSSharingServicePicker(items: [url])
         sharingServicePicker = picker
         picker.show(
-            relativeTo: NSRect(
-                x: contentView.bounds.maxX,
-                y: contentView.bounds.maxY,
-                width: 1,
-                height: 1
-            ),
-            of: contentView,
-            preferredEdge: .minY
+            relativeTo: anchorView.bounds,
+            of: anchorView,
+            preferredEdge: .maxX
         )
         return true
     }

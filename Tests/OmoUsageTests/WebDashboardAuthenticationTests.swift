@@ -8,7 +8,7 @@ struct WebDashboardAuthenticationTests {
     private let localOrigin = "http://127.0.0.1:7827"
 
     @Test
-    func unauthenticatedReadsAndMutationsAreRejected() {
+    func acceptedHostsCanReadWithoutBrowserSession() {
         let gateway = makeGateway()
 
         let read = gateway.response(
@@ -22,12 +22,12 @@ struct WebDashboardAuthenticationTests {
             )
         )
 
-        #expect(read.statusCode == 401)
-        #expect(mutation.statusCode == 401)
+        #expect(read.statusCode == 200)
+        #expect(mutation.statusCode == 403)
     }
 
     @Test
-    func malformedAndForeignHostsAreRejectedBeforeAuthentication() {
+    func malformedAndForeignHostsAreRejected() {
         let gateway = makeGateway()
 
         let missing = gateway.response(
@@ -54,39 +54,22 @@ struct WebDashboardAuthenticationTests {
     }
 
     @Test
-    func bootstrapIsOneUseAndCreatesStrictHTTPOnlySessionCookie() throws {
+    func dashboardURLIsStableAndContainsNoCredentials() {
         let store = makeStore()
-        let gateway = makeGateway(store: store)
-        let bootstrapURL = try store.makeBootstrapURL()
-        let token = try #require(
-            URLComponents(url: bootstrapURL, resolvingAgainstBaseURL: false)?
-                .queryItems?.first { $0.name == "token" }?.value
-        )
-        let bootstrap = request(
-            method: "GET",
-            path: "/bootstrap",
-            query: "token=\(token)"
-        )
+        let first = store.dashboardURL
+        let second = store.dashboardURL
 
-        let first = gateway.response(request: bootstrap)
-        let replay = gateway.response(request: bootstrap)
-        let cookie = try #require(first.headers["Set-Cookie"])
-
-        #expect(first.statusCode == 303)
-        #expect(first.headers["Location"] == "/")
-        #expect(cookie.contains("HttpOnly"))
-        #expect(cookie.contains("SameSite=Strict"))
-        #expect(cookie.contains("Path=/"))
-        #expect(!cookie.contains(token))
-        #expect(replay.statusCode == 401)
+        #expect(first == second)
+        #expect(first.absoluteString == "http://127.0.0.1:7827")
+        #expect(first.query == nil)
     }
 
     @Test
-    func fixtureBootstrapExportIsExplicitPrivateAndNeverProduction() throws {
+    func fixtureDashboardURLExportIsExplicitAndNeverProduction() throws {
         let directory = FileManager.default.temporaryDirectory.appending(
-            path: "WebBootstrapExport-\(UUID().uuidString)"
+            path: "WebDashboardURLExport-\(UUID().uuidString)"
         )
-        let fixtureURL = directory.appending(path: "bootstrap-url.txt")
+        let fixtureURL = directory.appending(path: "dashboard-url.txt")
         defer { try? FileManager.default.removeItem(at: directory) }
         try FileManager.default.createDirectory(
             at: directory,
@@ -94,11 +77,11 @@ struct WebDashboardAuthenticationTests {
         )
         let store = makeStore()
 
-        try FixtureWebBootstrapExporter.exportIfRequested(
+        try FixtureWebDashboardURLExporter.exportIfRequested(
             accessStore: store,
             environment: [
                 "OMO_USAGE_FIXTURE_MODE": "1",
-                "OMO_USAGE_BOOTSTRAP_URL_FILE": fixtureURL.path
+                "OMO_USAGE_DASHBOARD_URL_FILE": fixtureURL.path
             ]
         )
 
@@ -108,35 +91,33 @@ struct WebDashboardAuthenticationTests {
                 atPath: fixtureURL.path
             )[.posixPermissions] as? NSNumber
         )
-        #expect(value.hasPrefix("http://127.0.0.1:7827/bootstrap?token=b_"))
+        #expect(value == "http://127.0.0.1:7827\n")
         #expect(permissions.intValue == 0o600)
 
         try FileManager.default.removeItem(at: fixtureURL)
-        try FixtureWebBootstrapExporter.exportIfRequested(
+        try FixtureWebDashboardURLExporter.exportIfRequested(
             accessStore: store,
             environment: [
-                "OMO_USAGE_BOOTSTRAP_URL_FILE": fixtureURL.path
+                "OMO_USAGE_DASHBOARD_URL_FILE": fixtureURL.path
             ]
         )
         #expect(!FileManager.default.fileExists(atPath: fixtureURL.path))
     }
 
     @Test
-    func validSessionAuthenticatesHTMLAndAPIReads() throws {
-        let authenticated = try authenticatedGateway()
+    func acceptedHostServesHTMLAndAPIReadsWithoutCookies() {
+        let gateway = makeGateway()
 
-        let html = authenticated.gateway.response(
+        let html = gateway.response(
             request: request(
                 method: "GET",
-                path: "/",
-                headers: ["cookie": authenticated.cookie]
+                path: "/"
             )
         )
-        let api = authenticated.gateway.response(
+        let api = gateway.response(
             request: request(
                 method: "GET",
-                path: "/api/snapshot",
-                headers: ["cookie": authenticated.cookie]
+                path: "/api/snapshot"
             )
         )
 
@@ -145,48 +126,36 @@ struct WebDashboardAuthenticationTests {
     }
 
     @Test
-    func authenticatedMutationsRequireExactOriginAndCSRF() throws {
-        let authenticated = try authenticatedGateway()
-        let cookieHeader = ["cookie": authenticated.cookie]
-
-        let missingOrigin = authenticated.gateway.response(
+    func mutationsRequireExactOriginAndCSRF() {
+        let gateway = makeGateway()
+        let missingOrigin = gateway.response(
             request: request(
                 method: "POST",
-                path: "/api/refresh",
-                headers: cookieHeader
+                path: "/api/refresh"
             )
         )
-        let foreignOrigin = authenticated.gateway.response(
+        let foreignOrigin = gateway.response(
             request: request(
                 method: "POST",
                 path: "/api/refresh",
-                headers: cookieHeader.merging(
-                    ["origin": "https://evil.example"],
-                    uniquingKeysWith: { _, new in new }
-                )
+                headers: ["origin": "https://evil.example"]
             )
         )
-        let missingCSRF = authenticated.gateway.response(
+        let missingCSRF = gateway.response(
             request: request(
                 method: "POST",
                 path: "/api/refresh",
-                headers: cookieHeader.merging(
-                    ["origin": localOrigin],
-                    uniquingKeysWith: { _, new in new }
-                )
+                headers: ["origin": localOrigin]
             )
         )
-        let accepted = authenticated.gateway.response(
+        let accepted = gateway.response(
             request: request(
                 method: "POST",
                 path: "/api/refresh",
-                headers: cookieHeader.merging(
-                    [
-                        "origin": localOrigin,
-                        "x-omo-csrf": "fixture-csrf"
-                    ],
-                    uniquingKeysWith: { _, new in new }
-                )
+                headers: [
+                    "origin": localOrigin,
+                    "x-omo-csrf": "fixture-csrf"
+                ]
             )
         )
 
@@ -197,7 +166,7 @@ struct WebDashboardAuthenticationTests {
     }
 
     @Test
-    func localIsDefaultAndRemoteModeRequiresExactTailscaleHost() throws {
+    func localIsDefaultAndRemoteModeRequiresExactTailscaleHost() {
         let local = WebDashboardAccessMode.resolve(
             environment: [:],
             port: 7_827
@@ -235,52 +204,31 @@ struct WebDashboardAuthenticationTests {
         )
         #expect(!remote.accepts(host: "other.fixture-tailnet.ts.net"))
 
-        let remoteStore = WebDashboardAccessStore(
-            mode: remote,
-            tokenGenerator: { "fixture-secret" }
-        )
-        let remoteURL = try remoteStore.makeBootstrapURL()
+        let remoteStore = WebDashboardAccessStore(mode: remote)
+        let remoteURL = remoteStore.dashboardURL
         #expect(
-            remoteURL.absoluteString.hasPrefix(
-                "https://fixture-device.fixture-tailnet.ts.net/bootstrap?"
-            )
-        )
-        let token = try #require(
-            URLComponents(url: remoteURL, resolvingAgainstBaseURL: false)?
-                .queryItems?.first?.value
+            remoteURL.absoluteString
+                == "https://fixture-device.fixture-tailnet.ts.net"
         )
         let remoteGateway = makeGateway(store: remoteStore)
-        let bootstrap = remoteGateway.response(
+        let read = remoteGateway.response(
             request: WebDashboardHTTPRequest(
                 method: "GET",
-                path: "/bootstrap",
-                query: "token=\(token)",
+                path: "/",
                 headers: [
                     "host": "fixture-device.fixture-tailnet.ts.net"
                 ]
             )
         )
-        #expect(bootstrap.headers["Set-Cookie"]?.contains("; Secure") == true)
+        #expect(read.statusCode == 200)
     }
 
     @Test
-    func switchingAccessModeInvalidatesSessionsAndUsesDedicatedHTTPSPort()
-        throws
-    {
+    func switchingAccessModeUpdatesStableDashboardURL() {
         let store = makeStore()
-        let localURL = try store.makeBootstrapURL()
-        let localToken = try #require(
-            URLComponents(url: localURL, resolvingAgainstBaseURL: false)?
-                .queryItems?.first?.value
-        )
-        let localSession = try #require(
-            try store.consumeBootstrapToken(localToken)
-        )
         #expect(
-            store.authenticates(
-                cookieHeader:
-                    "\(WebDashboardAccessStore.sessionCookieName)=\(localSession)"
-            )
+            store.dashboardURL.absoluteString
+                == "http://127.0.0.1:7827"
         )
 
         store.updateMode(
@@ -290,14 +238,9 @@ struct WebDashboardAuthenticationTests {
             )
         )
 
-        #expect(!store.authenticates(
-            cookieHeader:
-                "\(WebDashboardAccessStore.sessionCookieName)=\(localSession)"
-        ))
         #expect(
-            try store.makeBootstrapURL().absoluteString.hasPrefix(
-                "https://fixture-device.fixture-tailnet.ts.net:8443/bootstrap?"
-            )
+            store.dashboardURL.absoluteString
+                == "https://fixture-device.fixture-tailnet.ts.net:8443"
         )
     }
 
@@ -412,10 +355,7 @@ struct WebDashboardAuthenticationTests {
     }
 
     private func makeStore() -> WebDashboardAccessStore {
-        WebDashboardAccessStore(
-            mode: .local(port: 7_827),
-            tokenGenerator: { "fixture-secret" }
-        )
+        WebDashboardAccessStore(mode: .local(port: 7_827))
     }
 
     private func makeGateway(
@@ -429,29 +369,6 @@ struct WebDashboardAuthenticationTests {
                 mutationNonce: "fixture-csrf"
             )
         )
-    }
-
-    private func authenticatedGateway() throws -> (
-        gateway: WebDashboardAccessGateway,
-        cookie: String
-    ) {
-        let store = makeStore()
-        let gateway = makeGateway(store: store)
-        let bootstrapURL = try store.makeBootstrapURL()
-        let token = try #require(
-            URLComponents(url: bootstrapURL, resolvingAgainstBaseURL: false)?
-                .queryItems?.first { $0.name == "token" }?.value
-        )
-        let response = gateway.response(
-            request: request(
-                method: "GET",
-                path: "/bootstrap",
-                query: "token=\(token)"
-            )
-        )
-        let setCookie = try #require(response.headers["Set-Cookie"])
-        let cookie = try #require(setCookie.split(separator: ";").first)
-        return (gateway, String(cookie))
     }
 
     private func request(

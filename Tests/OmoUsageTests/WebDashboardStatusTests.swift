@@ -162,7 +162,7 @@ struct WebDashboardStatusTests {
     }
 
     @Test
-    func enablingPhoneAccessPublishesRemoteURLAndInvalidatesLocalMode()
+    func enablingTailscaleAccessPublishesRemoteDashboardURL()
         async throws
     {
         let service = StubTailscaleDashboardService(

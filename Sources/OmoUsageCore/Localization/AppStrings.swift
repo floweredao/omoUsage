@@ -49,16 +49,6 @@ public enum AppStringKey: String, CaseIterable, Sendable {
     case webDashboardPortInUse
     case webDashboardPermissionDenied
     case webDashboardUnavailable
-    case phoneAccess
-    case phoneAccessDescription
-    case phoneAccessUnavailable
-    case phoneAccessSignedOut
-    case phoneAccessAvailable
-    case phoneAccessReady
-    case phoneAccessChecking
-    case phoneAccessFailed
-    case enablePhoneAccess
-    case disablePhoneAccess
     case openQRCode
     case shareLink
     case webDashboardQRCodeTitle
@@ -213,40 +203,29 @@ public struct AppStrings: Sendable {
         .openLoginItems: "로그인 항목 설정 열기",
         .webDashboard: "웹 대시보드",
         .webDashboardDescription:
-            "일회용 보안 링크로 이 Mac의 대시보드를 엽니다.",
+            "이 Mac 또는 개인 Tailscale 네트워크에서 대시보드를 엽니다.",
         .openWebDashboard: "대시보드 열기",
         .webDashboardOpenFailed: "웹 대시보드를 열지 못했습니다.",
         .webDashboardDisabled: "비활성화됨",
         .webDashboardStarting: "시작 중",
         .webDashboardReady: "준비됨",
         .webDashboardFailed: "실패",
-        .webDashboardEndpointDetails: "포트 %d · 루프백 전용",
+        .webDashboardEndpointDetails: "포트 %@ · 루프백 전용",
         .webDashboardTailscaleEndpointDetails:
-            "Tailscale 전용 HTTPS %d · 로컬 포트 %d",
+            "Tailscale 전용 HTTPS %@ · 로컬 포트 %@",
         .webDashboardPortInUse:
-            "포트 %d이(가) 이미 사용 중입니다. 해당 포트를 사용하는 앱을 종료한 후 다시 시도하세요.",
+            "포트 %@이(가) 이미 사용 중입니다. 해당 포트를 사용하는 앱을 종료한 후 다시 시도하세요.",
         .webDashboardPermissionDenied:
-            "macOS에서 포트 %d 접근을 거부했습니다. 보안 설정을 확인한 후 다시 시도하세요.",
+            "macOS에서 포트 %@ 접근을 거부했습니다. 보안 설정을 확인한 후 다시 시도하세요.",
         .webDashboardUnavailable:
-            "포트 %d에서 로컬 대시보드를 시작하지 못했습니다. 다시 시도하거나 OmoUsage를 재시작하세요.",
-        .phoneAccess: "휴대폰 접속",
-        .phoneAccessDescription:
-            "Tailscale로 휴대폰에서 이 Mac의 웹 대시보드를 안전하게 엽니다.",
-        .phoneAccessUnavailable: "Tailscale CLI 없음",
-        .phoneAccessSignedOut: "Tailscale 연결 필요",
-        .phoneAccessAvailable: "설정 가능",
-        .phoneAccessReady: "준비됨",
-        .phoneAccessChecking: "확인 중",
-        .phoneAccessFailed: "설정 실패",
-        .enablePhoneAccess: "휴대폰 접속 켜기",
-        .disablePhoneAccess: "휴대폰 접속 끄기",
+            "포트 %@에서 로컬 대시보드를 시작하지 못했습니다. 다시 시도하거나 OmoUsage를 재시작하세요.",
         .openQRCode: "QR 코드 열기",
         .shareLink: "링크 공유",
         .webDashboardQRCodeTitle: "웹 대시보드 QR 코드",
         .webDashboardQRCodeDescription:
-            "같은 tailnet에 연결된 기기로 QR 코드를 스캔하세요. 이 링크는 한 번만 사용할 수 있습니다.",
+            "같은 개인 tailnet에 연결된 기기로 QR 코드를 스캔하세요.",
         .webDashboardQRCodeLabel:
-            "한 번만 사용할 수 있는 웹 대시보드 QR 코드",
+            "웹 대시보드 QR 코드",
         .webDashboardLinkCreationFailed:
             "웹 대시보드 링크를 만들지 못했습니다.",
         .diagnostics: "진단 정보",
@@ -389,40 +368,29 @@ public struct AppStrings: Sendable {
         .openLoginItems: "Open Login Items Settings",
         .webDashboard: "Web Dashboard",
         .webDashboardDescription:
-            "Open this Mac's dashboard with a one-use secure link.",
+            "Open the dashboard on this Mac or through your personal Tailscale network.",
         .openWebDashboard: "Open Dashboard",
         .webDashboardOpenFailed: "Could not open the web dashboard.",
         .webDashboardDisabled: "Disabled",
         .webDashboardStarting: "Starting",
         .webDashboardReady: "Ready",
         .webDashboardFailed: "Failed",
-        .webDashboardEndpointDetails: "Port %d · Loopback only",
+        .webDashboardEndpointDetails: "Port %@ · Loopback only",
         .webDashboardTailscaleEndpointDetails:
-            "Tailscale-only HTTPS %d · local port %d",
+            "Tailscale-only HTTPS %@ · local port %@",
         .webDashboardPortInUse:
-            "Port %d is already in use. Close the app using it, then retry.",
+            "Port %@ is already in use. Close the app using it, then retry.",
         .webDashboardPermissionDenied:
-            "macOS denied access to port %d. Check security settings, then retry.",
+            "macOS denied access to port %@. Check security settings, then retry.",
         .webDashboardUnavailable:
-            "The local dashboard could not start on port %d. Retry, or restart OmoUsage.",
-        .phoneAccess: "Phone Access",
-        .phoneAccessDescription:
-            "Open this Mac's web dashboard securely from your phone through Tailscale.",
-        .phoneAccessUnavailable: "Tailscale CLI Missing",
-        .phoneAccessSignedOut: "Connect Tailscale",
-        .phoneAccessAvailable: "Available",
-        .phoneAccessReady: "Ready",
-        .phoneAccessChecking: "Checking",
-        .phoneAccessFailed: "Setup Failed",
-        .enablePhoneAccess: "Enable Phone Access",
-        .disablePhoneAccess: "Disable Phone Access",
+            "The local dashboard could not start on port %@. Retry, or restart OmoUsage.",
         .openQRCode: "Open QR Code",
         .shareLink: "Share Link",
         .webDashboardQRCodeTitle: "Web Dashboard QR Code",
         .webDashboardQRCodeDescription:
-            "Scan this QR code from a device on the same tailnet. The link works once.",
+            "Scan this QR code from a device on your personal tailnet.",
         .webDashboardQRCodeLabel:
-            "One-use web dashboard QR code",
+            "Web dashboard QR code",
         .webDashboardLinkCreationFailed:
             "Could not create a web dashboard link.",
         .diagnostics: "Diagnostics",

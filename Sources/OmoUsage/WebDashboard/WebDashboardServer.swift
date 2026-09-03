@@ -926,7 +926,7 @@ final class WebDashboardStatusStore {
     func publishAccessMode(_ mode: WebDashboardAccessMode) {
         status = WebDashboardStatus(
             state: status.state,
-            url: mode.bootstrapBaseURL,
+            url: mode.dashboardURL,
             port: status.port,
             bindMode: status.bindMode
         )
