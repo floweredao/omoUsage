@@ -55,6 +55,9 @@ struct CompanionAccountFixture {
 
     var registryURL: URL { root.appending(path: "accounts.json") }
     var launchLogURL: URL { root.appending(path: "launch-log.txt") }
+    var accountRegistryRefreshCountURL: URL {
+        root.appending(path: "account-registry-refresh-count")
+    }
 
     func credentialURL(for provider: ProviderID) -> URL {
         root.appending(path: "credential-\(provider.rawValue).token")
@@ -101,6 +104,23 @@ struct CompanionAccountFixture {
             expiresAt: nil,
             source: .file
         ).encodedSecret()
+    }
+
+    /// Records only refreshes initiated after the registry changes, and
+    /// only after that refresh has completed. The count stays inside the
+    /// caller-confined fixture root and contains no account or secret data.
+    func recordAccountRegistryRefreshCompletion() throws {
+        let current = Int(
+            (try? String(
+                contentsOf: accountRegistryRefreshCountURL,
+                encoding: .utf8
+            ))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "0"
+        ) ?? 0
+        try ProviderFileDurability.atomicWrite(
+            Data("\(current + 1)\n".utf8),
+            to: accountRegistryRefreshCountURL,
+            permissions: 0o600
+        )
     }
 
     func launchCompanion(
@@ -277,6 +297,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         ProviderSetupOutcome,
         ProviderSetupError
     >
+#if OMO_USAGE_FIXTURES
+    private let companionFixture: CompanionAccountFixture?
+#endif
     private let opensSettingsOnLaunch: Bool
     private let snapshotSync: UbiquitousUsageSnapshotStore
     private let webDashboardSnapshotStore: WebDashboardSnapshotStore
@@ -533,6 +556,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         self.companionCapture = companionCapture
         self.companionLaunch = companionLaunch
 #if OMO_USAGE_FIXTURES
+        self.companionFixture = companionFixture
         self.opensSettingsOnLaunch = companionFixture != nil
 #else
         self.opensSettingsOnLaunch = false
@@ -851,7 +875,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             disconnected: composition.disconnected
         )
         Task { [weak self] in
-            await self?.viewModel.refresh()
+            guard let self else { return }
+            await viewModel.refresh()
+#if OMO_USAGE_FIXTURES
+            do {
+                try companionFixture?.recordAccountRegistryRefreshCompletion()
+            } catch {
+                DiagnosticStore.shared.record(
+                    error: error,
+                    category: .fixture
+                )
+            }
+#endif
         }
     }
 

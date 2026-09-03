@@ -147,6 +147,26 @@ struct DashboardVisualContractTests {
     }
 
     @Test
+    func dashboardProviderAccessibilityIdentifierIsAccountScoped() {
+        let usage = ProviderUsage(
+            provider: .codex,
+            accountID: AccountID(
+                rawValue: "00000000-0000-0000-0000-00000000000b"
+            )!,
+            accountLabel: "QA-Second",
+            planName: "",
+            groups: [],
+            availability: .available,
+            updatedAt: nil
+        )
+
+        #expect(
+            DashboardProviderSectionAccessibility.identifier(for: usage)
+                == "dashboard-provider-codex-QA-Second"
+        )
+    }
+
+    @Test
     func staleUsageKeepsItsMetersAndGainsANonColorOnlyBadge() {
         let stale = ProviderUsage(
             provider: .codex,

@@ -41,7 +41,12 @@ while [ "$#" -gt 0 ]; do
 done
 
 case "$scenario" in
-    changed|unchanged-cancel) ;;
+    changed)
+        account_alias="QA-Second"
+        ;;
+    unchanged-cancel)
+        account_alias="QA-Unchanged"
+        ;;
     *)
         printf 'Invalid or missing --scenario value: %s\n' "$scenario" >&2
         usage >&2
@@ -147,19 +152,33 @@ drive() {
     "$driver_binary" --pid "$app_pid" "$@"
 }
 
+assert_refresh_count() {
+    expected=$1
+    observed=$(drive --action wait-file-value \
+        --file "$fixture_root/account-registry-refresh-count" \
+        --value "$expected" --timeout 40)
+    [ "$observed" = "$expected" ] || {
+        printf 'Unexpected account-registry refresh count: %s\n' \
+            "$observed" >&2
+        exit 1
+    }
+    note "- fixture account-registry refresh-count=$observed"
+}
+
 assert_registry_lacks_account() {
     if [ -f "$fixture_root/accounts.json" ] \
-        && grep -q '"QA Companion"' "$fixture_root/accounts.json"; then
+        && grep -Fq "\"$account_alias\"" "$fixture_root/accounts.json"
+    then
         printf '%s\n' \
-            "fixture registry already contains the QA Companion account" >&2
+            "fixture registry already contains account $account_alias" >&2
         exit 1
     fi
 }
 
 assert_registry_has_account() {
-    grep -q '"QA Companion"' "$fixture_root/accounts.json" || {
+    grep -Fq "\"$account_alias\"" "$fixture_root/accounts.json" || {
         printf '%s\n' \
-            "fixture registry is missing the QA Companion account" >&2
+            "fixture registry is missing account $account_alias" >&2
         exit 1
     }
 }
@@ -198,17 +217,20 @@ note "- launched fixture app pid $app_pid"
 drive --action wait --identifier account-alias-codex --timeout 40
 note "- settings window is up"
 
+account_identifier="account-codex-$account_alias"
+dashboard_account_identifier="dashboard-provider-codex-$account_alias"
+
 drive --action set-value --identifier account-alias-codex \
-    --value "QA Companion"
-note "- typed alias QA Companion"
+    --value "$account_alias"
+note "- typed alias $account_alias"
 drive --action press --identifier add-account-codex
 note "- pressed Add Account for Codex"
 drive --action wait --identifier account-waiting-codex --timeout 20 --scroll
-note "- waiting state is shown (no account row yet)"
-drive --action wait-absent --identifier "account-codex-QA Companion" \
-    --timeout 5
+note "- waiting state is shown for $account_alias (no account row yet)"
+drive --action wait-absent --identifier "$account_identifier" --timeout 5
 assert_registry_lacks_account
-note "- confirmed nothing was persisted before authentication"
+assert_refresh_count 0
+note "- confirmed $account_alias was not persisted before authentication"
 grep -q '^launched:codex$' "$fixture_root/launch-log.txt" || {
     printf '%s\n' "fixture companion launch was not recorded" >&2
     exit 1
@@ -222,25 +244,32 @@ if [ "$scenario" = "changed" ]; then
     printf 'qa-codex-token-b' > "$fixture_root/credential-codex.token"
     note "- companion credential replaced (simulated official login)"
     drive --action press --identifier check-again-codex --scroll
-    drive --action wait --identifier "account-codex-QA Companion" \
+    drive --action wait --identifier "$account_identifier" \
         --timeout 40 --scroll
     assert_registry_has_account
-    note "- account row appeared after the credential changed"
-    drive --action scroll-to --identifier "account-codex-QA Companion"
+    assert_refresh_count 1
+    note "- account row for $account_alias appeared after the credential changed"
+    drive --action scroll-to --identifier "$account_identifier"
     capture_window settings-added.png normal
 
     drive --action menubar-press --timeout 20
     note "- opened the dashboard from the status item"
+    drive --action wait --identifier "$dashboard_account_identifier" \
+        --timeout 40 --scroll --highest-layer
+    drive --action scroll-to --identifier "$dashboard_account_identifier" \
+        --timeout 40 --highest-layer
+    note "- dashboard visibly targeted account $account_alias after one completed refresh"
     capture_window dashboard-added.png highest
 else
     drive --action press --identifier check-again-codex --scroll
     drive --action wait --identifier account-waiting-codex --timeout 20 \
         --scroll
-    drive --action wait-absent --identifier "account-codex-QA Companion" \
+    drive --action wait-absent --identifier "$account_identifier" \
         --timeout 5
     assert_registry_lacks_account
+    assert_refresh_count 0
     feedback=$(drive --action value --identifier settings-feedback)
-    note "- unchanged credential kept the addition pending: $feedback"
+    note "- unchanged credential kept $account_alias pending: $feedback"
     drive --action scroll-to --identifier account-waiting-codex
     capture_window unchanged-waiting.png normal
 
@@ -248,18 +277,25 @@ else
     drive --action wait --identifier add-account-codex --timeout 20 --scroll
     drive --action wait-absent --identifier account-waiting-codex \
         --timeout 5
-    drive --action wait-absent --identifier "account-codex-QA Companion" \
+    drive --action wait-absent --identifier "$account_identifier" \
         --timeout 5
-    assert_registry_lacks_account
-    alias_after_cancel=$(
-        drive --action value --identifier account-alias-codex
-    )
-    [ "$alias_after_cancel" = "QA Companion" ] || {
-        printf 'Cancel dropped the alias draft: %s\n' \
-            "$alias_after_cancel" >&2
+    activation=$(drive --action reactivate --timeout 20)
+    [ "$activation" = "target-left-active-and-reactivated" ] || {
+        printf 'Post-cancel activation did not complete: %s\n' "$activation" >&2
         exit 1
     }
-    note "- cancel returned to idle and kept the alias draft"
+    note "- post-cancel activation: $activation"
+    drive --action wait --identifier add-account-codex --timeout 20 --scroll
+    drive --action wait-absent --identifier account-waiting-codex \
+        --timeout 5
+    drive --action wait-absent --identifier "$account_identifier" \
+        --timeout 5
+    note "- post-cancel idle UI observed for $account_alias"
+    assert_registry_lacks_account
+    note "- post-cancel registry lacks account $account_alias"
+    note "- post-cancel alias scenario retained: $account_alias"
+    assert_refresh_count 0
+    note "- cancel returned to idle without adding $account_alias"
     drive --action scroll-to --identifier add-account-codex
     capture_window cancelled-idle.png normal
 fi

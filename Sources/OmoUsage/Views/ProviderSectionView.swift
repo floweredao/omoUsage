@@ -34,6 +34,12 @@ enum ProviderMetadataVisualTokens {
     }
 }
 
+enum DashboardProviderSectionAccessibility {
+    static func identifier(for usage: ProviderUsage) -> String {
+        "dashboard-provider-\(usage.provider.rawValue)-\(AccountLabel.sanitized(usage.accountLabel))"
+    }
+}
+
 struct ProviderSectionView: View {
     let usage: ProviderUsage
     var showsAccountLabel = false
@@ -128,6 +134,10 @@ struct ProviderSectionView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(
+            DashboardProviderSectionAccessibility.identifier(for: usage)
+        )
     }
 
 }

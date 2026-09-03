@@ -15,6 +15,7 @@ struct DriverArguments {
     var pid: pid_t = 0
     var identifier = ""
     var value = ""
+    var file = ""
     var timeout: TimeInterval = 20
     var prefersHighestLayer = false
     var scrolls = false
@@ -53,6 +54,7 @@ func parseArguments() -> DriverArguments {
             arguments.pid = value
         case "--identifier": arguments.identifier = next()
         case "--value": arguments.value = next()
+        case "--file": arguments.file = next()
         case "--timeout":
             guard let value = TimeInterval(next()), value > 0 else {
                 fail("invalid --timeout", .usage)
@@ -201,9 +203,12 @@ func windowIdentifier(
     ] as? CGWindowID
 }
 
-func windowCenter(pid: pid_t) -> CGPoint? {
+func windowCenter(
+    pid: pid_t,
+    prefersHighestLayer: Bool = false
+) -> CGPoint? {
     guard
-        let bounds = windowEntry(pid: pid, prefersHighestLayer: false)?[
+        let bounds = windowEntry(pid: pid, prefersHighestLayer: prefersHighestLayer)?[
             kCGWindowBounds as String
         ] as? [String: Any],
         let x = bounds["X"] as? Double,
@@ -231,9 +236,12 @@ func scrollStep(at point: CGPoint, lines: Int32) {
     )?.post(tap: .cghidEventTap)
 }
 
-func windowFrame(pid: pid_t) -> CGRect? {
+func windowFrame(
+    pid: pid_t,
+    prefersHighestLayer: Bool = false
+) -> CGRect? {
     guard
-        let bounds = windowEntry(pid: pid, prefersHighestLayer: false)?[
+        let bounds = windowEntry(pid: pid, prefersHighestLayer: prefersHighestLayer)?[
             kCGWindowBounds as String
         ] as? [String: Any],
         let x = bounds["X"] as? Double,
@@ -268,6 +276,51 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
     return CGRect(origin: origin, size: size)
 }
 
+func ancestor(
+    of element: AXUIElement,
+    withRole expectedRole: String
+) -> AXUIElement? {
+    var current: AXUIElement? = element
+    for _ in 0..<60 {
+        guard let candidate = current else { return nil }
+        if attribute(candidate, kAXRoleAttribute as String) as? String
+            == expectedRole {
+            return candidate
+        }
+        guard
+            let value = attribute(candidate, kAXParentAttribute as String),
+            CFGetTypeID(value) == AXUIElementGetTypeID()
+        else {
+            return nil
+        }
+        // swiftlint:disable:next force_cast
+        current = (value as! AXUIElement)
+    }
+    return nil
+}
+
+func containingWindow(of element: AXUIElement) -> AXUIElement? {
+    if
+        let popover = ancestor(of: element, withRole: "AXPopover"),
+        elementFrame(popover) != nil
+    {
+        return popover
+    }
+    if
+        let value = attribute(element, kAXWindowAttribute as String),
+        CFGetTypeID(value) == AXUIElementGetTypeID()
+    {
+        // swiftlint:disable:next force_cast
+        let window = value as! AXUIElement
+        if elementFrame(window) != nil { return window }
+    }
+    return nil
+}
+
+func scrollableAncestor(of element: AXUIElement) -> AXUIElement? {
+    ancestor(of: element, withRole: kAXScrollAreaRole as String)
+}
+
 var sweepCounter = 0
 var sweepDirection: Int32 = -3
 
@@ -278,13 +331,20 @@ func locate(
     pid: pid_t,
     identifier target: String,
     timeout: TimeInterval,
-    scrolls: Bool
+    scrolls: Bool,
+    prefersHighestLayer: Bool = false
 ) -> AXUIElement? {
     var element: AXUIElement?
     let found = waitUntil(timeout: timeout) {
         element = findElement(application: application, identifier: target)
         if element != nil { return true }
-        guard scrolls, let center = windowCenter(pid: pid) else {
+        guard
+            scrolls,
+            let center = windowCenter(
+                pid: pid,
+                prefersHighestLayer: prefersHighestLayer
+            )
+        else {
             return false
         }
         let origin = CGEvent(source: nil)?.location
@@ -298,6 +358,41 @@ func locate(
         return element != nil
     }
     return found ? element : nil
+}
+
+func isCompanionFixtureFile(_ path: String) -> Bool {
+    path.hasPrefix("/tmp/omousage-companion-qa-")
+}
+
+func fixtureFileValue(at path: String) -> String? {
+    guard isCompanionFixtureFile(path) else { return nil }
+    return try? String(
+        contentsOfFile: path,
+        encoding: .utf8
+    ).trimmingCharacters(in: .whitespacesAndNewlines)
+}
+
+func reactivateTargetApplication(pid: pid_t, timeout: TimeInterval) {
+    guard let target = NSRunningApplication(processIdentifier: pid) else {
+        fail("target application process \(pid) is unavailable", .failed)
+    }
+    guard let finder = NSWorkspace.shared.runningApplications.first(where: {
+        $0.bundleIdentifier == "com.apple.finder"
+    }) else {
+        fail("Finder is unavailable to drive target deactivation", .failed)
+    }
+    guard finder.activate(options: []) else {
+        fail("Finder could not be activated to deactivate the target", .failed)
+    }
+    guard waitUntil(timeout: timeout, { !target.isActive }) else {
+        fail("target application did not leave active state", .failed)
+    }
+    guard target.activate(options: []) else {
+        fail("target application could not be reactivated", .failed)
+    }
+    guard waitUntil(timeout: timeout, { target.isActive }) else {
+        fail("target application did not return to active state", .failed)
+    }
 }
 
 let arguments = parseArguments()
@@ -315,6 +410,25 @@ case "window-id":
     }
     print(identifier)
 
+case "wait-file-value":
+    guard !arguments.file.isEmpty else {
+        fail("missing --file", .usage)
+    }
+    guard isCompanionFixtureFile(arguments.file) else {
+        fail("fixture file must be confined to the companion QA root", .usage)
+    }
+    guard
+        waitUntil(timeout: arguments.timeout, {
+            (fixtureFileValue(at: arguments.file) ?? "0") == arguments.value
+        })
+    else {
+        fail(
+            "fixture file \(arguments.file) did not reach \(arguments.value)",
+            .failed
+        )
+    }
+    print(arguments.value)
+
 case "wait":
     requireAccessibilityTrust()
     guard
@@ -323,7 +437,8 @@ case "wait":
             pid: arguments.pid,
             identifier: arguments.identifier,
             timeout: arguments.timeout,
-            scrolls: arguments.scrolls
+            scrolls: arguments.scrolls,
+            prefersHighestLayer: arguments.prefersHighestLayer
         ) != nil
     else {
         fail(
@@ -425,15 +540,23 @@ case "scroll-to":
             pid: arguments.pid,
             identifier: arguments.identifier,
             timeout: arguments.timeout,
-            scrolls: true
+            scrolls: true,
+            prefersHighestLayer: arguments.prefersHighestLayer
         )
     else {
         fail("element \(arguments.identifier) not found", .failed)
     }
-    guard let window = windowFrame(pid: arguments.pid) else {
-        fail("no on-screen window for pid \(arguments.pid)", .failed)
+    guard
+        let owningWindow = containingWindow(of: element),
+        let window = elementFrame(owningWindow),
+        let scrollArea = scrollableAncestor(of: element),
+        let visible = elementFrame(scrollArea)
+    else {
+        fail(
+            "element \(arguments.identifier) has no owning AX scroll area",
+            .failed
+        )
     }
-    let visible = window.insetBy(dx: 0, dy: 60)
     guard
         waitUntil(timeout: arguments.timeout, {
             guard let frame = elementFrame(element) else { return false }
@@ -444,18 +567,20 @@ case "scroll-to":
             {
                 return true
             }
-            let lines: Int32 = frame.midY < visible.midY ? 2 : -2
+            let lines: Int32 = frame.midY < visible.midY ? 3 : -3
             let origin = CGEvent(source: nil)?.location
             scrollStep(
-                at: CGPoint(x: window.midX, y: window.midY),
+                at: CGPoint(x: visible.midX, y: visible.midY),
                 lines: lines
             )
             if let origin { CGWarpMouseCursorPosition(origin) }
             return false
         })
     else {
+        let targetFrame = elementFrame(element)?.debugDescription ?? "none"
         fail(
-            "could not bring \(arguments.identifier) fully into view",
+            "could not bring \(arguments.identifier) fully into view "
+                + "(target=\(targetFrame), window=\(window.debugDescription))",
             .failed
         )
     }
@@ -475,6 +600,14 @@ case "value":
         fail("no value for \(arguments.identifier)", .failed)
     }
     print(value)
+
+case "reactivate":
+    requireAccessibilityTrust()
+    reactivateTargetApplication(
+        pid: arguments.pid,
+        timeout: arguments.timeout
+    )
+    print("target-left-active-and-reactivated")
 
 case "menubar-press":
     requireAccessibilityTrust()
