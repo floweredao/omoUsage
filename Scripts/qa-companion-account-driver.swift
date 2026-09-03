@@ -400,13 +400,22 @@ let application = AXUIElementCreateApplication(arguments.pid)
 
 switch arguments.action {
 case "window-id":
+    var identifier: CGWindowID?
     guard
-        let identifier = windowIdentifier(
-            pid: arguments.pid,
-            prefersHighestLayer: arguments.prefersHighestLayer
-        )
+        waitUntil(timeout: arguments.timeout, {
+            identifier = windowIdentifier(
+                pid: arguments.pid,
+                prefersHighestLayer: arguments.prefersHighestLayer
+            )
+            return identifier != nil
+        }),
+        let identifier
     else {
-        fail("no on-screen window for pid \(arguments.pid)", .failed)
+        fail(
+            "no on-screen window for pid \(arguments.pid) within "
+                + "\(arguments.timeout)s",
+            .failed
+        )
     }
     print(identifier)
 
