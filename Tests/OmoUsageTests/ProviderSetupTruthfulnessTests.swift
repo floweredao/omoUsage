@@ -332,16 +332,17 @@ struct ProviderSetupTruthfulnessTests {
 
     @Test
     @MainActor
-    func reconnectDoesNotRefreshBeforeApplicationActivation() {
+    func claudeReconnectStartsOfficialLoginWithoutRefreshing() {
         var events: [String] = []
 
         ProviderConnectionControl.performReconnect(
             provider: .claude,
             reenable: { events.append("reenable-\($0.rawValue)") },
-            startConnection: { events.append("start-\($0.rawValue)") }
+            startConnection: { events.append("start-\($0.rawValue)") },
+            launchOfficialLogin: { events.append("login-\($0.rawValue)") }
         )
 
-        #expect(events == ["reenable-claude", "start-claude"])
+        #expect(events == ["reenable-claude", "login-claude"])
     }
 
     @Test

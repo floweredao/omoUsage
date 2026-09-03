@@ -44,7 +44,43 @@ struct ProviderConnectionControlTests {
 
     @Test
     @MainActor
-    func reconnectReenablesAndStartsWithoutRefreshing() {
+    func claudeRetryReauthorizesBeforeRefreshing() {
+        var events: [String] = []
+
+        ProviderConnectionControl.performRetry(
+            provider: .claude,
+            reauthorizeClaude: {
+                events.append("authorize-\($0.rawValue)")
+            },
+            refresh: {
+                events.append("refresh-\($0.rawValue)")
+            }
+        )
+
+        #expect(events == ["authorize-claude"])
+    }
+
+    @Test
+    @MainActor
+    func nonClaudeRetryUsesDirectRefresh() {
+        var events: [String] = []
+
+        ProviderConnectionControl.performRetry(
+            provider: .codex,
+            reauthorizeClaude: {
+                events.append("authorize-\($0.rawValue)")
+            },
+            refresh: {
+                events.append("refresh-\($0.rawValue)")
+            }
+        )
+
+        #expect(events == ["refresh-codex"])
+    }
+
+    @Test
+    @MainActor
+    func explicitClaudeReconnectLaunchesOfficialLogin() {
         var events: [String] = []
 
         ProviderConnectionControl.performReconnect(
@@ -54,9 +90,12 @@ struct ProviderConnectionControlTests {
             },
             startConnection: {
                 events.append("start-\($0.rawValue)")
+            },
+            launchOfficialLogin: {
+                events.append("login-\($0.rawValue)")
             }
         )
 
-        #expect(events == ["reenable-claude", "start-claude"])
+        #expect(events == ["reenable-claude", "login-claude"])
     }
 }

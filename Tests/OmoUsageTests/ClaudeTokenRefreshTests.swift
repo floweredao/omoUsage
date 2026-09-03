@@ -247,20 +247,56 @@ struct ClaudeTokenRefreshTests {
     }
 
     @Test
-    func rejectedRefreshKeepsStoredCredentialAndDoesNotRetry() async throws {
+    func rejectedRefreshGrantRequiresAuthentication() async throws {
         ClaudeRefreshExchange.shared.reset(
             tokenResponse: .failure(statusCode: 400)
         )
         let writer = RecordingClaudeKeychainWriter()
         let provider = ClaudeRefreshFixtures.provider(writer: writer)
 
-        await #expect(throws: (any Error).self) {
+        await #expect(
+            throws: ProviderTransportError.authenticationRequired(.claude)
+        ) {
             _ = try await provider.fetch(now: Self.now)
         }
 
         #expect(writer.lastWrite() == nil)
         #expect(ClaudeRefreshExchange.shared.tokenRequestCount() == 1)
         #expect(ClaudeRefreshExchange.shared.usageAuthorizations() == [])
+    }
+
+    @Test
+    func refreshServerFailureRemainsRequestFailure() async throws {
+        ClaudeRefreshExchange.shared.reset(
+            tokenResponse: .failure(statusCode: 500)
+        )
+        let provider = ClaudeRefreshFixtures.provider(
+            writer: RecordingClaudeKeychainWriter()
+        )
+
+        await #expect(
+            throws: ProviderTransportError.requestFailed(.claude, 500)
+        ) {
+            _ = try await provider.fetch(now: Self.now)
+        }
+    }
+
+    @Test
+    func malformedRefreshPayloadRemainsSchemaFailure() async throws {
+        ClaudeRefreshExchange.shared.reset(tokenResponse: .malformedSuccess)
+        let provider = ClaudeRefreshFixtures.provider(
+            writer: RecordingClaudeKeychainWriter()
+        )
+
+        await #expect(
+            throws: ProviderContractError.schemaChanged(
+                provider: .claude,
+                purpose: .claudeTokenRefresh,
+                contractRevision: 1
+            )
+        ) {
+            _ = try await provider.fetch(now: Self.now)
+        }
     }
 
     /// The dashboard refreshes every minute. Without a cooldown a rejected
@@ -423,6 +459,7 @@ private final class ClaudeRefreshExchange: @unchecked Sendable {
             expiresIn: Double
         )
         case failure(statusCode: Int)
+        case malformedSuccess
     }
 
     struct TokenRequest {
@@ -571,6 +608,8 @@ private final class ClaudeRefreshURLProtocol: URLProtocol, @unchecked Sendable {
                 statusCode: statusCode,
                 body: Data(#"{"error":"invalid_grant"}"#.utf8)
             )
+        case .malformedSuccess:
+            respond(statusCode: 200, body: Data("{}".utf8))
         }
     }
 
