@@ -1172,10 +1172,11 @@ private struct WebDashboardSettingsRow: View {
                             "open-web-dashboard"
                         )
 
-                    Button(
-                        tailscaleButtonTitle,
-                        action: tailscaleButtonAction
-                    )
+                    if let tailscaleButtonTitle {
+                        Button(
+                            tailscaleButtonTitle,
+                            action: tailscaleButtonAction
+                        )
                         .buttonStyle(.bordered)
                         .controlSize(.small)
                         .disabled(isTailscaleBusy)
@@ -1183,6 +1184,7 @@ private struct WebDashboardSettingsRow: View {
                         .accessibilityIdentifier(
                             "toggle-tailscale-dashboard-access"
                         )
+                    }
                 }
             }
 
@@ -1294,16 +1296,17 @@ private struct WebDashboardSettingsRow: View {
         }
     }
 
-    private var tailscaleButtonTitle: String {
-        let action = switch tailscaleController.state {
+    private var tailscaleButtonTitle: String? {
+        let action: String
+        switch tailscaleController.state {
         case .available:
-            localization.text(.startConnection)
+            action = localization.text(.startConnection)
         case .ready:
-            localization.text(.disconnect)
+            return nil
         case .checking, .enabling, .disabling:
-            localization.text(.inProgress)
+            action = localization.text(.inProgress)
         case .unavailable, .signedOut, .failed:
-            localization.text(.retry)
+            action = localization.text(.retry)
         }
         return "Tailscale · \(action)"
     }
@@ -1313,7 +1316,7 @@ private struct WebDashboardSettingsRow: View {
         case .available:
             { Task { await tailscaleController.enable() } }
         case .ready:
-            { Task { await tailscaleController.disable() } }
+            {}
         case .unavailable, .signedOut, .failed:
             { Task { await tailscaleController.refresh() } }
         case .checking, .enabling, .disabling:
