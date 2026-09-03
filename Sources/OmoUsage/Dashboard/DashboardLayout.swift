@@ -6,6 +6,10 @@ enum DashboardLayout {
     static let maximumPanelHeight: CGFloat = 632
     static let footerHeight: CGFloat = 44
     static let contentBottomPadding: CGFloat = 8
+    private static let meterValueRowHeight: CGFloat = 15
+    private static let meterQuotaTrackHeight: CGFloat = 7
+    private static let meterResetRowHeight: CGFloat = 16
+    private static let metadataRowHeight: CGFloat = 16
 
     static func panelHeight(
         for providers: [ProviderUsage]
@@ -57,7 +61,7 @@ enum DashboardLayout {
         )
         children.append(
             contentsOf: repeatElement(
-                CGFloat(14),
+                metadataRowHeight,
                 count: freshness.rowCount
             )
         )
@@ -73,15 +77,30 @@ enum DashboardLayout {
             children.append(14)
         }
         children.append(
-            contentsOf: repeatElement(
-                CGFloat(40),
-                count: group.meters.count
-            )
+            contentsOf: group.meters.map(meterHeight)
         )
         if group.creditText != nil {
             children.append(15)
         }
         return children.reduce(0, +)
             + CGFloat(max(0, children.count - 1)) * 7
+    }
+
+    private static func meterHeight(
+        _ meter: UsageMeter
+    ) -> CGFloat {
+        let trackHeight: CGFloat = switch meter.metric.kind {
+        case .quotaRemaining:
+            meter.metric.progressFraction == nil
+                ? 0
+                : meterQuotaTrackHeight
+        case .spend, .credit, .count, .informational:
+            0
+        }
+        let resetHeight =
+            meter.resetText == nil && meter.resetsAt == nil
+            ? 0
+            : meterResetRowHeight
+        return meterValueRowHeight + trackHeight + resetHeight
     }
 }

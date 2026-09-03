@@ -316,8 +316,37 @@ struct SideNotchPanelLayoutTests {
                 )
         )
         #expect(detail.height > revealed.height)
-        #expect(detail.midY == revealed.midY)
+        #expect(detail.maxY == revealed.maxY)
         #expect(detail.maxX == revealed.maxX)
+    }
+
+    @Test
+    func detailTransitionPreservesRailTopEdge() {
+        let providers = capturedTwoProviderUsage()
+        let visibleFrame = NSRect(
+            x: 0,
+            y: 25,
+            width: 1_920,
+            height: 1_055
+        )
+        let revealed = SideNotchPanelLayout.presentationFrame(
+            in: visibleFrame,
+            providers: providers,
+            mode: .revealed,
+            anchorY: 780
+        )
+        let detail = SideNotchPanelLayout.presentationFrame(
+            in: visibleFrame,
+            providers: providers,
+            mode: .detail(.claude),
+            anchorY: 780
+        )
+
+        #expect(detail.height > revealed.height)
+        #expect(detail.maxY == revealed.maxY)
+        #expect(detail.maxX == revealed.maxX)
+        #expect(detail.minY >= visibleFrame.minY + 20)
+        #expect(detail.maxY <= visibleFrame.maxY - 20)
     }
 
     @Test

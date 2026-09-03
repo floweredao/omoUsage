@@ -23,10 +23,6 @@ enum SideNotchPanelLayout {
     static let railCornerRadius: CGFloat = 20
     static let ringDiameter: CGFloat = 36
     static let providerIconSize: CGFloat = 22
-    private static let dashboardMeterEstimate: CGFloat = 40
-    private static let meterValueRowHeight: CGFloat = 15
-    private static let meterQuotaTrackHeight: CGFloat = 7
-    private static let meterResetRowHeight: CGFloat = 16
     private static let koreanTypographyAllowance: CGFloat = 2
 
     static func detailHeight(
@@ -50,36 +46,10 @@ enum SideNotchPanelLayout {
         for usage: ProviderUsage,
         showsAccountLabel: Bool
     ) -> CGFloat {
-        let meters = usage.groups.flatMap(\.meters)
-        let dashboardMeterTotal =
-            CGFloat(meters.count) * dashboardMeterEstimate
-        let renderedMeterTotal = meters.reduce(CGFloat.zero) {
-            $0 + detailMeterHeight(for: $1)
-        }
-        return DashboardLayout.sectionHeight(
+        DashboardLayout.sectionHeight(
             usage,
             showsAccountLabel: showsAccountLabel
         )
-            - dashboardMeterTotal
-            + renderedMeterTotal
-    }
-
-    private static func detailMeterHeight(
-        for meter: UsageMeter
-    ) -> CGFloat {
-        let trackHeight: CGFloat = switch meter.metric.kind {
-        case .quotaRemaining:
-            meter.metric.progressFraction == nil
-                ? 0
-                : meterQuotaTrackHeight
-        case .spend, .credit, .count, .informational:
-            0
-        }
-        let resetHeight =
-            meter.resetText == nil && meter.resetsAt == nil
-            ? 0
-            : meterResetRowHeight
-        return meterValueRowHeight + trackHeight + resetHeight
     }
 
     static func requiredPanelHeight(
@@ -217,9 +187,24 @@ enum SideNotchPanelLayout {
         case .detail:
             expandedWidth
         }
-        let proposedY = (anchorY ?? visibleFrame.midY) - height / 2
         let minimumY = visibleFrame.minY + screenMargin
         let maximumY = visibleFrame.maxY - screenMargin - height
+        let anchor = anchorY ?? visibleFrame.midY
+        let proposedY: CGFloat
+        switch mode {
+        case .hidden:
+            proposedY = minimumY
+        case .revealed:
+            proposedY = anchor - height / 2
+        case .detail:
+            let maximumRailY =
+                visibleFrame.maxY - screenMargin - railHeight
+            let railY = min(
+                max(anchor - railHeight / 2, minimumY),
+                maximumRailY
+            )
+            proposedY = railY + railHeight - height
+        }
         let y = min(max(proposedY, minimumY), maximumY)
 
         return NSRect(

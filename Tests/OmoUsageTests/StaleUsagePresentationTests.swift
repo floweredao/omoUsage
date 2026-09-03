@@ -196,7 +196,7 @@ struct StaleUsagePresentationTests {
         let growth = DashboardLayout.sectionHeight(stale)
             - DashboardLayout.sectionHeight(current)
 
-        #expect(growth == StaleUsageVisualTokens.badgeRowHeight + 8 + 14 + 8)
+        #expect(growth == StaleUsageVisualTokens.badgeRowHeight + 8 + 16 + 8)
         #expect(
             DashboardLayout.panelHeight(for: [stale])
                 > DashboardLayout.panelHeight(for: [current])
