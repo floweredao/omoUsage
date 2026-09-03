@@ -4,18 +4,20 @@ import Testing
 @testable import OmoUsageCore
 
 @Suite
-struct PhonePairingPresentationTests {
+struct DashboardLinkPresentationTests {
     @Test(.timeLimit(.minutes(1)))
     @MainActor
     func qrLoadingTransitionsToReadyAfterGenerationSignal() async throws {
         let gate = QRGenerationEventGate()
         let sampleData = Data([0x01, 0x02, 0x03])
-        let loader = PhonePairingQRCodeLoader { url in
+        let loader = WebDashboardQRCodeLoader { url in
             #expect(url.scheme == "https")
             await gate.signalStarted()
             return await gate.waitForData()
         }
-        let url = try #require(URL(string: "https://example.com/pair/one-use"))
+        let url = try #require(
+            URL(string: "https://example.com/bootstrap?token=test")
+        )
 
         await gate.subscribeToStartedEvent()
         let loadTask = Task { await loader.load(url: url) }
@@ -32,12 +34,14 @@ struct PhonePairingPresentationTests {
     func cancelledQRLoadingDoesNotPublishReady() async throws {
         let gate = QRGenerationEventGate()
         let sampleData = Data([0x01, 0x02, 0x03])
-        let loader = PhonePairingQRCodeLoader { url in
+        let loader = WebDashboardQRCodeLoader { url in
             #expect(url.scheme == "https")
             await gate.signalStarted()
             return await gate.waitForData()
         }
-        let url = try #require(URL(string: "https://example.com/pair/one-use"))
+        let url = try #require(
+            URL(string: "https://example.com/bootstrap?token=test")
+        )
 
         await gate.subscribeToStartedEvent()
         let loadTask = Task { await loader.load(url: url) }
@@ -51,12 +55,14 @@ struct PhonePairingPresentationTests {
     }
 
     @Test
-    func pairButtonAtomicallyCreatesPresentedItem() throws {
-        var state = PhonePairingPresentationState()
-        let url = try #require(URL(string: "https://example.com/pair/one-use"))
+    func qrButtonAtomicallyCreatesPresentedItem() throws {
+        var state = WebDashboardLinkPresentationState()
+        let url = try #require(
+            URL(string: "https://example.com/bootstrap?token=qr")
+        )
 
         #expect(state.presentedItem == nil)
-        let failureKey = state.pairButtonAtomicallyCreatesPresentedItem {
+        let failureKey = state.openQRCode {
             url
         }
 
@@ -65,16 +71,64 @@ struct PhonePairingPresentationTests {
     }
 
     @Test
-    func pairButtonLeavesItemNilAndReturnsFailureKeyWhenURLCreationFails() {
-        var state = PhonePairingPresentationState()
+    func qrButtonLeavesItemNilAndReturnsFailureKeyWhenURLCreationFails() {
+        var state = WebDashboardLinkPresentationState()
 
         #expect(state.presentedItem == nil)
-        let failureKey = state.pairButtonAtomicallyCreatesPresentedItem {
+        let failureKey = state.openQRCode {
             nil as URL?
         }
 
         #expect(state.presentedItem == nil)
-        #expect(failureKey == .phonePairingFailed)
+        #expect(failureKey == .webDashboardLinkCreationFailed)
+    }
+
+    @Test
+    func shareButtonMintsAndPresentsExactlyOneFreshURL() throws {
+        let state = WebDashboardLinkPresentationState()
+        let url = try #require(
+            URL(string: "https://example.com/bootstrap?token=share")
+        )
+        var generationCount = 0
+        var sharedURLs: [URL] = []
+
+        let failureKey = state.shareLink(
+            makeURL: {
+                generationCount += 1
+                return url
+            },
+            present: {
+                sharedURLs.append($0)
+                return true
+            }
+        )
+
+        #expect(generationCount == 1)
+        #expect(sharedURLs == [url])
+        #expect(state.presentedItem == nil)
+        #expect(failureKey == nil)
+    }
+
+    @Test
+    func shareButtonReportsFailureWithoutPresentingStaleURL() throws {
+        var state = WebDashboardLinkPresentationState()
+        let staleURL = try #require(
+            URL(string: "https://example.com/bootstrap?token=stale")
+        )
+        _ = state.openQRCode { staleURL }
+        var sharedURLs: [URL] = []
+
+        let failureKey = state.shareLink(
+            makeURL: { nil },
+            present: {
+                sharedURLs.append($0)
+                return true
+            }
+        )
+
+        #expect(sharedURLs.isEmpty)
+        #expect(state.presentedItem?.url == staleURL)
+        #expect(failureKey == .webDashboardLinkCreationFailed)
     }
 }
 

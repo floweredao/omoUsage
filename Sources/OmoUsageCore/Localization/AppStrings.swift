@@ -59,11 +59,12 @@ public enum AppStringKey: String, CaseIterable, Sendable {
     case phoneAccessFailed
     case enablePhoneAccess
     case disablePhoneAccess
-    case pairPhone
-    case phonePairingTitle
-    case phonePairingDescription
-    case phonePairingQRCodeLabel
-    case phonePairingFailed
+    case openQRCode
+    case shareLink
+    case webDashboardQRCodeTitle
+    case webDashboardQRCodeDescription
+    case webDashboardQRCodeLabel
+    case webDashboardLinkCreationFailed
     case diagnostics
     case diagnosticsDescription
     case exportDiagnostics
@@ -239,13 +240,15 @@ public struct AppStrings: Sendable {
         .phoneAccessFailed: "설정 실패",
         .enablePhoneAccess: "휴대폰 접속 켜기",
         .disablePhoneAccess: "휴대폰 접속 끄기",
-        .pairPhone: "휴대폰 연결",
-        .phonePairingTitle: "휴대폰 연결",
-        .phonePairingDescription:
-            "같은 tailnet에 연결된 휴대폰으로 QR 코드를 스캔하세요. 이 링크는 한 번만 사용할 수 있습니다.",
-        .phonePairingQRCodeLabel:
-            "한 번만 사용할 수 있는 휴대폰 연결 QR 코드",
-        .phonePairingFailed: "휴대폰 연결 링크를 만들지 못했습니다.",
+        .openQRCode: "QR 코드 열기",
+        .shareLink: "링크 공유",
+        .webDashboardQRCodeTitle: "웹 대시보드 QR 코드",
+        .webDashboardQRCodeDescription:
+            "같은 tailnet에 연결된 기기로 QR 코드를 스캔하세요. 이 링크는 한 번만 사용할 수 있습니다.",
+        .webDashboardQRCodeLabel:
+            "한 번만 사용할 수 있는 웹 대시보드 QR 코드",
+        .webDashboardLinkCreationFailed:
+            "웹 대시보드 링크를 만들지 못했습니다.",
         .diagnostics: "진단 정보",
         .diagnosticsDescription:
             "민감한 내용을 제외한 기계 판독용 진단 정보를 내보냅니다.",
@@ -413,13 +416,15 @@ public struct AppStrings: Sendable {
         .phoneAccessFailed: "Setup Failed",
         .enablePhoneAccess: "Enable Phone Access",
         .disablePhoneAccess: "Disable Phone Access",
-        .pairPhone: "Pair Phone",
-        .phonePairingTitle: "Pair Phone",
-        .phonePairingDescription:
-            "Scan this QR code with a phone on the same tailnet. The link works once.",
-        .phonePairingQRCodeLabel:
-            "One-use phone pairing QR code",
-        .phonePairingFailed: "Could not create a phone pairing link.",
+        .openQRCode: "Open QR Code",
+        .shareLink: "Share Link",
+        .webDashboardQRCodeTitle: "Web Dashboard QR Code",
+        .webDashboardQRCodeDescription:
+            "Scan this QR code from a device on the same tailnet. The link works once.",
+        .webDashboardQRCodeLabel:
+            "One-use web dashboard QR code",
+        .webDashboardLinkCreationFailed:
+            "Could not create a web dashboard link.",
         .diagnostics: "Diagnostics",
         .diagnosticsDescription:
             "Export machine-readable diagnostics with sensitive data excluded.",
