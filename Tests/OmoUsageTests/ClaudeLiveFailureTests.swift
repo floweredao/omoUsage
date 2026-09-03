@@ -552,6 +552,41 @@ struct ClaudeSourceFallbackTests {
     }
 
     @Test
+    func rejectedOAuthPreservesAuthenticationWhenDesktopDiscoveryFails()
+        async throws
+    {
+        ClaudeFallbackExchange.shared.reset(acceptedUsageTokens: [])
+        try await withFallbackHome { home in
+            let provider = try ClaudeFallbackFixtures.provider(
+                home: home,
+                keychainCredential: ClaudeFallbackFixtures.credential(
+                    accessToken: "rejected-oauth-access",
+                    refreshToken: nil,
+                    expiresAtMilliseconds: 1_790_000_000_000
+                ),
+                fileCredential: nil,
+                desktopSessionDiscovery: ClaudeDesktopSessionDiscovery {
+                    throw ClaudeFallbackDesktopDiscoveryFailure()
+                }
+            )
+
+            let failure = await ClaudeFallbackFixtures.failure {
+                _ = try await provider.fetch(now: Self.now)
+            }
+
+            #expect(
+                failure as? ProviderTransportError
+                    == .authenticationRequired(.claude)
+            )
+            #expect(
+                ClaudeFallbackExchange.shared.authorizations()
+                    == ["Bearer rejected-oauth-access"]
+            )
+            #expect(ClaudeFallbackExchange.shared.desktopRequests() == 0)
+        }
+    }
+
+    @Test
     func missingOAuthCredentialMayUseDesktop() async throws {
         ClaudeFallbackExchange.shared.reset(acceptedUsageTokens: [])
         try await withFallbackHome { home in
@@ -803,6 +838,7 @@ private enum ClaudeFallbackFixtures {
         fileCredential: String?,
         environmentToken: String? = nil,
         desktopPresent: Bool = false,
+        desktopSessionDiscovery: ClaudeDesktopSessionDiscovery? = nil,
         keychainWriter: (any KeychainWriting)? = nil
     ) throws -> ClaudeUsageProvider {
         let claudeURL = home.appending(path: "credentials.json")
@@ -834,20 +870,23 @@ private enum ClaudeFallbackFixtures {
                 retryPolicy: ProviderRetryPolicy(maximumAttempts: 1)
             ),
             desktopUsageURL: home.appending(path: "missing-history.json"),
-            desktopSessionDiscovery: ClaudeDesktopSessionDiscovery {
-                desktopPresent
-                    ? ClaudeDesktopSession(
-                        organizationID: "desktop-organization",
-                        cookieHeader:
-                            "sessionKey=desktop-session-secret"
-                    )
-                    : nil
-            },
+            desktopSessionDiscovery: desktopSessionDiscovery
+                ?? ClaudeDesktopSessionDiscovery {
+                    desktopPresent
+                        ? ClaudeDesktopSession(
+                            organizationID: "desktop-organization",
+                            cookieHeader:
+                                "sessionKey=desktop-session-secret"
+                        )
+                        : nil
+                },
             refreshCooldown: ClaudeRefreshCooldown(),
             usageCooldown: ClaudeUsageCooldown()
         )
     }
 }
+
+private struct ClaudeFallbackDesktopDiscoveryFailure: Error {}
 
 private struct ClaudeFallbackFailingWriter: KeychainWriting {
     struct Failure: Error {}

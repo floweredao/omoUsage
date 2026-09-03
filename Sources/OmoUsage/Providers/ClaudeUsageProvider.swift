@@ -296,6 +296,12 @@ struct ClaudeUsageProvider: UsageProvider {
                 provider: id,
                 category: .providerRefresh
             )
+            if
+                error as? ProviderTransportError
+                    == .requestFailed(id, 400)
+            {
+                throw ProviderTransportError.authenticationRequired(id)
+            }
             throw error
         }
         await refreshCooldown.recordSuccess(for: accountProviderID)
@@ -374,6 +380,13 @@ struct ClaudeUsageProvider: UsageProvider {
             throw authenticationFailure
         } catch {
             logDesktopFailure(error)
+            if
+                !allowsCachedHistory,
+                cause as? ProviderTransportError
+                    == .authenticationRequired(id)
+            {
+                throw cause
+            }
             throw error
         }
         guard let session else {
