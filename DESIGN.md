@@ -162,8 +162,9 @@ other privileged controls remain native-only.
   container and scroll inside it. Only provider detail reserves the largest
   visible provider detail height plus 12 pt top and bottom margins: the
   panel resizes once on entering or leaving detail and never while moving
-  between providers inside it. Both states stay centered on the same reveal
-  anchor, keep the same right edge, and stay within the 128 pt minimum and
+  between providers inside it. Detail expansion preserves the revealed
+  rail's top screen edge so provider rows never shift under the pointer; both
+  states keep the same right edge and stay within the 128 pt minimum and
   540 pt maximum height.
 - The side-notch detail card is 280 pt wide and at most 320 pt high. It uses
   the existing provider section, applies 14 pt content padding, and scrolls

@@ -1,10 +1,43 @@
+import AppKit
 import Foundation
+import SwiftUI
 import Testing
 @testable import OmoUsage
 @testable import OmoUsageCore
 
 @Suite
 struct DashboardLayoutTests {
+    @Test
+    @MainActor
+    func popoverHeightFitsTwoProviderContentWithoutBlankBand() {
+        let providers = screenshotProviders()
+        let contentWidth: CGFloat = 320 - 28
+        let hostingView = NSHostingView(
+            rootView:
+                VStack(spacing: 0) {
+                    ProviderSectionView(usage: providers[0])
+                    Divider()
+                        .padding(.vertical, 10)
+                    ProviderSectionView(usage: providers[1])
+                }
+                .frame(width: contentWidth)
+                .environment(
+                    \.appLocalization,
+                    LocalizationContext(language: .english)
+                )
+        )
+        let renderedContentHeight = hostingView.fittingSize.height
+        let calculatedContentHeight =
+            DashboardLayout.panelHeight(for: providers)
+            - DashboardLayout.footerHeight
+        let expectedContentHeight: CGFloat =
+            12
+            + renderedContentHeight
+            + DashboardLayout.contentBottomPadding
+
+        #expect(calculatedContentHeight == expectedContentHeight)
+    }
+
     @Test
     func shrinksForOneProviderAndCapsLargeRosters() {
         let one = usage(provider: .codex, meterCount: 1)
@@ -20,7 +53,7 @@ struct DashboardLayoutTests {
     func codexTimestampUsesCompactSectionHeight() {
         let codex = usage(provider: .codex, meterCount: 1)
 
-        #expect(DashboardLayout.panelHeight(for: [codex]) == 176)
+        #expect(DashboardLayout.panelHeight(for: [codex]) == 160)
     }
 
     @Test
@@ -35,7 +68,7 @@ struct DashboardLayoutTests {
         #expect(
             DashboardLayout.panelHeight(
                 for: [claude, codex]
-            ) == 334
+            ) == 284
         )
     }
 
@@ -116,5 +149,86 @@ struct DashboardLayoutTests {
             availability: .available,
             updatedAt: updatedAt
         )
+    }
+
+    private func screenshotProviders() -> [ProviderUsage] {
+        [
+            ProviderUsage(
+                provider: .codex,
+                planName: "Pro",
+                groups: [
+                    UsageGroup(
+                        id: "codex.main",
+                        title: nil,
+                        meters: [
+                            UsageMeter(
+                                id: "codex.week",
+                                title: "Weekly",
+                                period: .week,
+                                percentRemaining: 12,
+                                resetText: "Resets in 4 days"
+                            ),
+                            UsageMeter(
+                                id: "codex.credits",
+                                title: "Credits",
+                                period: .extra,
+                                metric: .credit(
+                                    balance: 0,
+                                    unit: .credits
+                                )
+                            ),
+                            UsageMeter(
+                                id: "codex.tickets",
+                                title: "Full reset tickets",
+                                period: .extra,
+                                metric: .count(
+                                    value: 0,
+                                    unit: .tickets
+                                )
+                            ),
+                        ],
+                        creditText: nil
+                    )
+                ],
+                availability: .available,
+                updatedAt: Date(timeIntervalSince1970: 1_788_467_380)
+            ),
+            ProviderUsage(
+                provider: .claude,
+                planName: "Max 5x",
+                groups: [
+                    UsageGroup(
+                        id: "claude.main",
+                        title: nil,
+                        meters: [
+                            UsageMeter(
+                                id: "claude.session",
+                                title: "Session (5 hours)",
+                                period: .session,
+                                percentRemaining: 77,
+                                resetText: "Resets in 3 hr 56 min"
+                            ),
+                            UsageMeter(
+                                id: "claude.week",
+                                title: "Weekly",
+                                period: .week,
+                                percentRemaining: 78,
+                                resetText: "Resets in 6 days"
+                            ),
+                            UsageMeter(
+                                id: "claude.fable",
+                                title: "Fable weekly",
+                                period: .week,
+                                percentRemaining: 83,
+                                resetText: "Resets in 6 days"
+                            ),
+                        ],
+                        creditText: nil
+                    )
+                ],
+                availability: .available,
+                updatedAt: Date(timeIntervalSince1970: 1_788_467_380)
+            ),
+        ]
     }
 }
