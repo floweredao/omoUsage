@@ -348,6 +348,16 @@ drive --action press --identifier add-account-codex
 note "- pressed Add Account for Codex"
 drive --action wait --identifier account-waiting-codex --timeout 20 --scroll
 note "- waiting state is shown for $account_alias (no account row yet)"
+if [ "$scenario" = "changed" ]; then
+    if drive --action press --identifier disconnect-codex --scroll; then
+        note "- Disconnect press was accepted by the accessibility layer"
+    else
+        note "- Disconnect press was rejected while the account addition waits"
+    fi
+    drive --action wait --identifier account-waiting-codex --timeout 5 --scroll
+    drive --action wait-absent --identifier reconnect-codex --timeout 5 --scroll
+    note "connection-controls-blocked-while-addition-waits=passed"
+fi
 drive --action wait-absent --identifier "$account_identifier" --timeout 5
 assert_registry_lacks_account
 assert_refresh_count 0
