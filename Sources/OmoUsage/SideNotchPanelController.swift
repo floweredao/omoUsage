@@ -15,6 +15,7 @@ enum SideNotchPanelLayout {
     static let verticalPadding: CGFloat = 14
     static let footerClearance: CGFloat = 8
     static let footerHeight: CGFloat = 58
+    static let footerControlHeight: CGFloat = 28
     static let detailContentPadding: CGFloat = 14
     static let detailCardMargin: CGFloat = 12
     static let maximumPanelHeight: CGFloat = 540
@@ -23,23 +24,18 @@ enum SideNotchPanelLayout {
     static let railCornerRadius: CGFloat = 20
     static let ringDiameter: CGFloat = 36
     static let providerIconSize: CGFloat = 22
-    private static let koreanTypographyAllowance: CGFloat = 2
 
     static func detailHeight(
         for usage: ProviderUsage,
         showsAccountLabel: Bool = false,
-        language: AppLanguage = .english
+        language _: AppLanguage = .english
     ) -> CGFloat {
         detailSectionHeight(
             for: usage,
             showsAccountLabel: showsAccountLabel
         )
             + detailContentPadding * 2
-            + (
-                language == .korean
-                    ? koreanTypographyAllowance
-                    : 0
-            )
+            + narrowResetTextAllowance(for: usage)
     }
 
     private static func detailSectionHeight(
@@ -49,6 +45,19 @@ enum SideNotchPanelLayout {
         DashboardLayout.sectionHeight(
             usage,
             showsAccountLabel: showsAccountLabel
+        )
+    }
+
+    private static func narrowResetTextAllowance(
+        for usage: ProviderUsage
+    ) -> CGFloat {
+        CGFloat(
+            usage.groups
+                .flatMap(\.meters)
+                .filter {
+                    $0.resetText != nil || $0.resetsAt != nil
+                }
+                .count
         )
     }
 
@@ -62,7 +71,7 @@ enum SideNotchPanelLayout {
             showsAccountLabel: showsAccountLabel,
             language: language
         )
-            + detailCardMargin * 2
+            + detailCardMargin
     }
 
     /// Rail height for `providerCount` rows: padding, rows, footer
@@ -907,10 +916,6 @@ final class SideNotchPanelController: NSObject {
                 .accessibilityDisplayShouldReduceMotion,
             environment: ProcessInfo.processInfo.environment
         )
-        let shouldAnimate = SideNotchMotionPolicy.shouldAnimate(
-            requested: animated,
-            reduceMotion: reduceMotion
-        )
         let shouldAnimateSelection =
             SideNotchMotionPolicy.shouldAnimateSelectionMutation(
                 current: state.selection,
@@ -941,7 +946,12 @@ final class SideNotchPanelController: NSObject {
 
         cancelTransitionCompletion()
         onExpansionChange(state.mode.isPresented)
-        reposition(animated: shouldAnimate)
+        // AppKit snapshots translucent SwiftUI content while animating a
+        // window resize. That renders the rail at both the old and new
+        // heights during detail collapse, which reads as a vertical jump.
+        // Selection changes therefore resize atomically; hidden-edge
+        // reveal/hide remains the only panel-frame animation.
+        reposition(animated: false)
         activate(plan)
         if state.selection == nil, !pointerInside {
             scheduleAutoHide()
@@ -1024,8 +1034,8 @@ final class SideNotchPanelController: NSObject {
             }
         }
 
-        transitionState(to: mode, animated: shouldAnimate)
-        reposition(animated: shouldAnimate)
+        transitionState(to: mode, animated: false)
+        reposition(animated: false)
     }
 
     private func transitionSidewaysToHidden(
@@ -1201,6 +1211,17 @@ final class SideNotchPanelController: NSObject {
     }
 
     private func animatePanel(to frame: NSRect) {
+        let horizontalStartFrame = NSRect(
+            x: panel.frame.minX,
+            y: frame.minY,
+            width: panel.frame.width,
+            height: frame.height
+        )
+        if panel.frame != horizontalStartFrame {
+            panel.setFrame(horizontalStartFrame, display: true)
+        }
+        guard horizontalStartFrame != frame else { return }
+
         NSAnimationContext.runAnimationGroup { context in
             context.duration = SideNotchMotionPolicy.duration
             context.timingFunction = CAMediaTimingFunction(

@@ -64,15 +64,11 @@ struct SideNotchPanelView: View {
                                         - SideNotchPanelLayout.collapsedWidth
                                         - SideNotchPanelLayout.detailSpacing
                                         - SideNotchPanelLayout.detailWidth / 2,
-                                    y: detailTop(
-                                        in: geometry.size.height
-                                    )
-                                        + SideNotchPanelLayout.detailHeight(
-                                            for: usage,
-                                            showsAccountLabel:
-                                                showsAccountLabel,
-                                            language: localization.language
-                                        ) / 2
+                                    y: SideNotchPanelLayout.detailHeight(
+                                        for: usage,
+                                        showsAccountLabel: showsAccountLabel,
+                                        language: localization.language
+                                    ) / 2
                                 )
                                 .transition(.opacity)
                         }
@@ -109,14 +105,14 @@ struct SideNotchPanelView: View {
                     .frame(
                         width: geometry.size.width,
                         height: geometry.size.height,
-                        alignment: .trailing
+                        alignment: .topTrailing
                     )
                 }
             }
             .frame(
                 maxWidth: .infinity,
                 maxHeight: .infinity,
-                alignment: .trailing
+                alignment: .topTrailing
             )
         }
         .background {
@@ -141,43 +137,6 @@ struct SideNotchPanelView: View {
         .onExitCommand {
             onSelectionIntent(.collapse, !reduceMotion)
         }
-    }
-
-    private func detailTop(in containerHeight: CGFloat) -> CGFloat {
-        guard
-            let target = state.selectedTarget,
-            let index = viewModel.snapshot.providers.firstIndex(
-                where: { $0.accountProviderID == target }
-            )
-        else {
-            return SideNotchPanelLayout.detailCardMargin
-        }
-        let usage = viewModel.snapshot.providers[index]
-        let showsAccountLabel = DashboardAccountIdentityRule.showsAlias(
-            for: usage,
-            sameProviderCount:
-                viewModel.snapshot.providers.count {
-                    $0.provider == usage.provider
-                }
-        )
-        let rowCenter = SideNotchPanelLayout.detailCardMargin
-            + CGFloat(index) * SideNotchPanelLayout.providerRowHeight
-            + SideNotchPanelLayout.providerRowHeight / 2
-        let desiredTop = rowCenter - 24
-        let maximumTop = max(
-            SideNotchPanelLayout.detailCardMargin,
-            containerHeight
-                - SideNotchPanelLayout.detailHeight(
-                    for: usage,
-                    showsAccountLabel: showsAccountLabel,
-                    language: localization.language
-                )
-                - SideNotchPanelLayout.detailCardMargin
-        )
-        return min(
-            max(SideNotchPanelLayout.detailCardMargin, desiredTop),
-            maximumTop
-        )
     }
 
     private var selectedUsage: ProviderUsage? {
@@ -367,6 +326,11 @@ private struct SideNotchRailView: View {
 
             VStack(spacing: 2) {
                 refreshButton
+                    .frame(
+                        width: SideNotchPanelLayout.collapsedWidth,
+                        height: SideNotchPanelLayout.footerControlHeight,
+                        alignment: .center
+                    )
 
                 Menu {
                     Button(
@@ -381,12 +345,22 @@ private struct SideNotchRailView: View {
                 } label: {
                     Image(systemName: "ellipsis")
                         .font(.system(size: 13, weight: .semibold))
-                        .frame(width: 28, height: 28)
+                        .frame(width: 22, height: 22)
+                        .frame(
+                            width:
+                                SideNotchPanelLayout.footerControlHeight,
+                            height:
+                                SideNotchPanelLayout.footerControlHeight
+                        )
                         .contentShape(Rectangle())
                 }
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
-                .fixedSize()
+                .frame(
+                    width: SideNotchPanelLayout.collapsedWidth,
+                    height: SideNotchPanelLayout.footerControlHeight,
+                    alignment: .center
+                )
                 .help(localization.text(.settings))
                 .accessibilityLabel(localization.text(.settings))
             }
@@ -437,7 +411,7 @@ private struct SideNotchRailView: View {
                 isActive: isRefreshing,
                 isDisabled: isRefreshing,
                 dimsWhenDisabled: false,
-                hitTargetSize: 28,
+                hitTargetSize: SideNotchPanelLayout.footerControlHeight,
                 action: onRefresh
             )
         }
@@ -464,7 +438,7 @@ private struct SideNotchSpinningRefreshButton: View {
             isActive: true,
             isDisabled: true,
             dimsWhenDisabled: false,
-            hitTargetSize: 28,
+            hitTargetSize: SideNotchPanelLayout.footerControlHeight,
             action: {}
         )
         .rotationEffect(.degrees(rotation))
