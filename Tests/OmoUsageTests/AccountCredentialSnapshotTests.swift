@@ -148,6 +148,37 @@ struct AccountCredentialSnapshotTests {
     }
 
     @Test
+    func legacyCodexPrefersPreservedSnapshotWhileCaptureReadsCompanion() throws {
+        try withAccountSnapshotHome { home in
+            let keychain = AccountSnapshotKeychain()
+            let discoveryA = try makeDiscovery(home: home, marker: "legacy", providerKeychain: keychain)
+            let preserved = try discoveryA.captureCredential(for: .codex, now: now)
+            try keychain.set(
+                preserved,
+                service: ProviderAPIKeyStore.serviceName,
+                account: ProviderCredentialSnapshotStore.account(for: AccountProviderID(accountID: .legacy, providerID: .codex))
+            )
+            let discoveryB = try makeDiscovery(home: home, marker: "companion", providerKeychain: keychain)
+
+            #expect(try discoveryB.codex(now: now).accessToken == expectedToken(.codex, marker: "legacy"))
+            let captured = try CredentialSnapshot(encodedSecret: discoveryB.captureCredential(for: .codex, now: now), provider: .codex)
+            #expect(captured.accessToken == expectedToken(.codex, marker: "companion"))
+        }
+    }
+
+    @Test
+    func malformedLegacyCodexSnapshotFailsClosed() throws {
+        let keychain = AccountSnapshotKeychain()
+        let identity = AccountProviderID(accountID: .legacy, providerID: .codex)
+        try keychain.set("not-a-snapshot", service: ProviderAPIKeyStore.serviceName, account: ProviderCredentialSnapshotStore.account(for: identity))
+        let discovery = makeEmptyDiscovery(providerKeychain: keychain)
+
+        #expect(throws: CredentialDiscoveryError.malformed(.codex)) {
+            try discovery.codex(now: now)
+        }
+    }
+
+    @Test
     func snapshotFiledUnderAnotherProviderIsMalformed() throws {
         let keychain = AccountSnapshotKeychain()
         let identity = AccountProviderID(
@@ -579,6 +610,37 @@ struct AccountCredentialRotationTests {
     }
 
     @Test
+    func legacyCodexSnapshotRotatesWithoutTouchingCompanion() async throws {
+        try await withAccountRotationHome { home in
+            let fixture = try AccountRotationFixture(
+                home: home,
+                provider: .codex,
+                accountID: .legacy,
+                snapshot: CredentialSnapshot(
+                    provider: .codex,
+                    accessToken: "captured-codex-access",
+                    refreshToken: "captured-codex-refresh",
+                    accountReference: "captured-codex-account",
+                    planName: nil,
+                    expiresAt: now.addingTimeInterval(-60),
+                    source: .file
+                ),
+                now: now
+            )
+            let provider = CodexUsageProvider(
+                discovery: fixture.discovery,
+                http: providerHTTPTestClient(session: AccountRotationURLProtocol.session())
+            )
+
+            let usage = try await provider.fetch(now: now)
+            let rotated = try #require(try fixture.rotatedSnapshot())
+            #expect(usage.availability == .available)
+            #expect(rotated.refreshToken == "rotated-codex-refresh")
+            try fixture.expectOnlyCapturedAccountChanged()
+        }
+    }
+
+    @Test
     func codexRotationWritesOnlyTheCapturedAccountSecret() async throws {
         try await withAccountRotationHome { home in
             let fixture = try AccountRotationFixture(
@@ -702,12 +764,14 @@ private struct AccountRotationFixture {
     init(
         home: URL,
         provider: ProviderID,
+        accountID: AccountID? = nil,
         snapshot: CredentialSnapshot,
         now: Date
     ) throws {
         keychain = AccountSnapshotKeychain()
+        let selectedAccountID = accountID ?? self.accountID
         identity = AccountProviderID(
-            accountID: accountID,
+            accountID: selectedAccountID,
             providerID: provider
         )
         controlIdentity = AccountProviderID(

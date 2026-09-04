@@ -289,7 +289,13 @@ final class ProviderAccountAdditionCoordinator {
 
         let baseline: String?
         do {
-            baseline = Self.fingerprint(try captureCredential(provider))
+            let encodedSecret = try captureCredential(provider)
+            if provider == .codex {
+                try controller.preserveLegacyCodexCredentialIfAbsent(
+                    encodedSecret
+                )
+            }
+            baseline = Self.fingerprint(encodedSecret)
         } catch CredentialDiscoveryError.notFound {
             // No credential to displace yet: the first one that appears
             // belongs to the account the user is about to authenticate.
@@ -378,10 +384,120 @@ final class ProviderAccountAdditionCoordinator {
         return .addedAccount(label)
     }
 
-    private static func fingerprint(_ secret: String) -> String {
+    fileprivate static func fingerprint(_ secret: String) -> String {
         SHA256.hash(data: Data(secret.utf8))
             .map { String(format: "%02x", $0) }
             .joined()
+    }
+}
+
+enum CodexLegacyReconnectOutcome: Equatable, Sendable {
+    case waitingForCredential
+    case credentialUnchanged
+    case credentialMissing
+    case credentialUnavailable
+    case reconnected
+    case launchFailed(ProviderSetupError)
+    case ignored
+}
+
+/// Keeps a disconnected legacy Codex account pinned until the official
+/// companion login has actually changed. The mutable companion credential
+/// is sampled directly; only a changed, valid snapshot may replace the pin.
+@Observable
+@MainActor
+final class CodexLegacyReconnectCoordinator {
+    private(set) var baselineFingerprint: String?
+    private(set) var isWaiting = false
+
+    @ObservationIgnored
+    private let captureCredential: () throws -> String
+    @ObservationIgnored
+    private let persistLegacySnapshot: (String) throws -> Void
+    @ObservationIgnored
+    private let launchCompanion: () -> Result<
+        ProviderSetupOutcome,
+        ProviderSetupError
+    >
+    @ObservationIgnored
+    private let reenable: () -> Void
+
+    init(
+        captureCredential: @escaping () throws -> String,
+        persistLegacySnapshot: @escaping (String) throws -> Void,
+        launchCompanion: @escaping () -> Result<
+            ProviderSetupOutcome,
+            ProviderSetupError
+        >,
+        reenable: @escaping () -> Void
+    ) {
+        self.captureCredential = captureCredential
+        self.persistLegacySnapshot = persistLegacySnapshot
+        self.launchCompanion = launchCompanion
+        self.reenable = reenable
+    }
+
+    @discardableResult
+    func start() -> CodexLegacyReconnectOutcome {
+        let baseline: String?
+        do {
+            baseline = ProviderAccountAdditionCoordinator.fingerprint(
+                try captureCredential()
+            )
+        } catch CredentialDiscoveryError.notFound {
+            baseline = nil
+        } catch {
+            return .credentialUnavailable
+        }
+        switch launchCompanion() {
+        case .success(.launched):
+            baselineFingerprint = baseline
+            isWaiting = true
+            return .waitingForCredential
+        case .success(.openedFallback(let url)):
+            return .launchFailed(.unableToOpen(url))
+        case .failure(let error):
+            return .launchFailed(error)
+        }
+    }
+
+    @discardableResult
+    func checkAgain() -> CodexLegacyReconnectOutcome {
+        guard isWaiting else { return .ignored }
+        let secret: String
+        do {
+            secret = try captureCredential()
+        } catch {
+            return .credentialMissing
+        }
+        guard
+            ProviderAccountAdditionCoordinator.fingerprint(secret)
+                != baselineFingerprint
+        else {
+            return .credentialUnchanged
+        }
+        guard
+            (try? CredentialSnapshot(
+                encodedSecret: secret,
+                provider: .codex
+            )) != nil
+        else {
+            return .credentialMissing
+        }
+        do {
+            try persistLegacySnapshot(secret)
+        } catch {
+            return .credentialUnavailable
+        }
+        baselineFingerprint = nil
+        isWaiting = false
+        reenable()
+        return .reconnected
+    }
+
+    func cancel() {
+        baselineFingerprint = nil
+        isWaiting = false
     }
 }
 

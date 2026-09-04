@@ -66,6 +66,9 @@ final class ProviderAccountRegistryController {
     @ObservationIgnored
     private let makeAccountID: () -> AccountID
     @ObservationIgnored
+    private let credentialSnapshotStore:
+        () -> ProviderCredentialSnapshotStore?
+    @ObservationIgnored
     private let persistenceEnabled: Bool
     @ObservationIgnored
     private let mutationCoordinator: ProviderMutationCoordinator
@@ -81,6 +84,9 @@ final class ProviderAccountRegistryController {
             ProviderAPIKeyStore.live(for: $0, accountID: $1)
         },
         makeAccountID: @escaping () -> AccountID = { AccountID() },
+        credentialSnapshotStore: @escaping () -> ProviderCredentialSnapshotStore? = {
+            CredentialDiscovery.live().snapshotStore
+        },
         mutationAfterPhase: @escaping ProviderMutationCoordinator.PhaseHook = { _ in }
     ) {
         self.store = store
@@ -89,6 +95,7 @@ final class ProviderAccountRegistryController {
         self.persistenceEnabled = persistenceEnabled
         self.keyStore = keyStore
         self.makeAccountID = makeAccountID
+        self.credentialSnapshotStore = credentialSnapshotStore
         self.mutationCoordinator = ProviderMutationCoordinator(
             store: store,
             keyStore: keyStore,
@@ -103,6 +110,9 @@ final class ProviderAccountRegistryController {
             ProviderAPIKeyStore.live(for: $0, accountID: $1)
         },
         makeAccountID: @escaping () -> AccountID = { AccountID() },
+        credentialSnapshotStore: @escaping () -> ProviderCredentialSnapshotStore? = {
+            CredentialDiscovery.live().snapshotStore
+        },
         mutationAfterPhase: @escaping ProviderMutationCoordinator.PhaseHook = { _ in }
     ) {
         self.store = store
@@ -111,6 +121,7 @@ final class ProviderAccountRegistryController {
         self.persistenceEnabled = true
         self.keyStore = keyStore
         self.makeAccountID = makeAccountID
+        self.credentialSnapshotStore = credentialSnapshotStore
         self.mutationCoordinator = ProviderMutationCoordinator(
             store: store,
             keyStore: keyStore,
@@ -195,6 +206,69 @@ final class ProviderAccountRegistryController {
                 disconnected: ordered,
                 providerReferences: registry.providerReferences
             )
+        }
+    }
+
+    /// Pins the Codex credential that currently belongs to the legacy
+    /// account before the companion is allowed to replace its mutable
+    /// credential. An existing pin is authoritative and is never replaced
+    /// by a repeated Add Account flow.
+    func preserveLegacyCodexCredentialIfAbsent(
+        _ encodedSecret: String
+    ) throws {
+        _ = try requireRegistry()
+        guard
+            let snapshot = try? CredentialSnapshot(
+                encodedSecret: encodedSecret,
+                provider: .codex
+            )
+        else {
+            throw ProviderAccountRegistryControllerError.credentialUnavailable
+        }
+        guard let snapshotStore = credentialSnapshotStore() else {
+            throw ProviderAccountRegistryControllerError.keyStoreUnavailable
+        }
+        guard persistenceEnabled else {
+            throw ProviderAccountRegistryControllerError.persistenceUnavailable
+        }
+        let identity = AccountProviderID(
+            accountID: .legacy,
+            providerID: .codex
+        )
+        do {
+            if try snapshotStore.snapshot(for: identity) != nil { return }
+            try snapshotStore.save(snapshot, for: identity)
+        } catch {
+            throw ProviderAccountRegistryControllerError.credentialUnavailable
+        }
+    }
+
+    /// Reconnect is the only operation allowed to replace the legacy Codex
+    /// pin, and calls this only after observing a changed companion login.
+    func replaceLegacyCodexCredential(_ encodedSecret: String) throws {
+        _ = try requireRegistry()
+        guard
+            let snapshot = try? CredentialSnapshot(
+                encodedSecret: encodedSecret,
+                provider: .codex
+            ),
+            let snapshotStore = credentialSnapshotStore()
+        else {
+            throw ProviderAccountRegistryControllerError.credentialUnavailable
+        }
+        guard persistenceEnabled else {
+            throw ProviderAccountRegistryControllerError.persistenceUnavailable
+        }
+        do {
+            try snapshotStore.save(
+                snapshot,
+                for: AccountProviderID(
+                    accountID: .legacy,
+                    providerID: .codex
+                )
+            )
+        } catch {
+            throw ProviderAccountRegistryControllerError.credentialUnavailable
         }
     }
 

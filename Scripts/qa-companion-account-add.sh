@@ -69,6 +69,8 @@ cleanup_report="$evidence_dir/cleanup.txt"
 app_pid=
 fixture_root=
 driver_binary=
+legacy_snapshot=
+legacy_snapshot_checksum=
 
 note() {
     printf '%s\n' "$1" | tee -a "$log"
@@ -236,6 +238,13 @@ grep -q '^launched:codex$' "$fixture_root/launch-log.txt" || {
     exit 1
 }
 note "- stub companion launch recorded"
+legacy_snapshot=$(find "$fixture_root/keychain" -type f | head -n 1)
+[ -n "$legacy_snapshot" ] && [ "$(find "$fixture_root/keychain" -type f | wc -l | tr -d ' ')" = 1 ] || {
+    printf '%s\n' "legacy Codex snapshot was not preserved before launch" >&2
+    exit 1
+}
+legacy_snapshot_checksum=$(shasum -a 256 "$legacy_snapshot" | awk '{print $1}')
+note "legacy-credential-preserved=passed"
 
 if [ "$scenario" = "changed" ]; then
     drive --action scroll-to --identifier account-waiting-codex
@@ -248,6 +257,15 @@ if [ "$scenario" = "changed" ]; then
         --timeout 40 --scroll
     assert_registry_has_account
     assert_refresh_count 1
+    [ "$(shasum -a 256 "$legacy_snapshot" | awk '{print $1}')" = "$legacy_snapshot_checksum" ] || {
+        printf '%s\n' "legacy Codex snapshot changed during account addition" >&2
+        exit 1
+    }
+    [ "$(find "$fixture_root/keychain" -type f | wc -l | tr -d ' ')" = 2 ] || {
+        printf '%s\n' "new Codex account snapshot was not isolated" >&2
+        exit 1
+    }
+    note "new-account-credential-isolated=passed"
     note "- account row for $account_alias appeared after the credential changed"
     drive --action scroll-to --identifier "$account_identifier"
     capture_window settings-added.png normal
@@ -279,6 +297,7 @@ else
         --timeout 5
     drive --action wait-absent --identifier "$account_identifier" \
         --timeout 5
+    capture_window cancelled-idle.png normal
     activation=$(drive --action reactivate --timeout 20)
     [ "$activation" = "target-left-active-and-reactivated" ] || {
         printf 'Post-cancel activation did not complete: %s\n' "$activation" >&2
@@ -295,8 +314,16 @@ else
     note "- post-cancel registry lacks account $account_alias"
     note "- post-cancel alias scenario retained: $account_alias"
     assert_refresh_count 0
+    [ "$(shasum -a 256 "$legacy_snapshot" | awk '{print $1}')" = "$legacy_snapshot_checksum" ] || {
+        printf '%s\n' "legacy Codex snapshot changed during unchanged/cancel" >&2
+        exit 1
+    }
+    [ "$(find "$fixture_root/keychain" -type f | wc -l | tr -d ' ')" = 1 ] || {
+        printf '%s\n' "unchanged/cancel wrote an extra account snapshot" >&2
+        exit 1
+    }
+    note "legacy-credential-preserved=passed"
     note "- cancel returned to idle without adding $account_alias"
-    capture_window cancelled-idle.png normal
 fi
 
 note "- finished: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
