@@ -420,6 +420,118 @@ struct ProviderSetupTruthfulnessTests {
 
     @Test
     @MainActor
+    func codexReconnectCancelClearsWaitingWithoutReenablingOrPersisting()
+        throws
+    {
+        let secret = try codexSnapshotSecret("a")
+        var events: [String] = []
+        let coordinator = CodexLegacyReconnectCoordinator(
+            captureCredential: { secret },
+            persistLegacySnapshot: { _ in events.append("persist") },
+            launchCompanion: {
+                events.append("launch")
+                return .success(.launched)
+            },
+            reenable: { events.append("reenable") }
+        )
+
+        #expect(coordinator.start() == .waitingForCredential)
+        #expect(coordinator.isWaiting)
+
+        coordinator.cancel()
+
+        #expect(!coordinator.isWaiting)
+        #expect(coordinator.baselineFingerprint == nil)
+        #expect(coordinator.checkAgain() == .ignored)
+        #expect(events == ["launch"])
+    }
+
+    @Test
+    func codexGuardedReconnectWaitingOffersCheckAgainAndCancel() {
+        #expect(
+            ProviderConnectionControl.resolve(
+                availability: nil,
+                isDisconnected: true,
+                isAwaitingCredential: true
+            ) == [.checkAgainConnection, .cancelConnection]
+        )
+        #expect(
+            ProviderConnectionControl.resolve(
+                availability: .authenticationRequired,
+                isDisconnected: false,
+                isAwaitingCredential: true
+            ) == [.checkAgainConnection, .cancelConnection]
+        )
+        #expect(
+            ProviderConnectionControl.resolve(
+                availability: nil,
+                isDisconnected: true,
+                isAwaitingCredential: false
+            ) == [.reconnect]
+        )
+        #expect(
+            ProviderConnectionControl.resolve(
+                availability: .available,
+                isDisconnected: false
+            ) == [.disconnect]
+        )
+    }
+
+    @Test
+    func codexAddAccountIsBlockedWhileGuardedReconnectWaits() {
+        #expect(
+            ProviderAccountAdditionRowState.resolve(
+                provider: .codex,
+                pendingAddition: nil,
+                guardedReconnectProvider: .codex
+            ) == .blockedByOtherAddition
+        )
+        #expect(
+            ProviderAccountAdditionRowState.resolve(
+                provider: .claude,
+                pendingAddition: nil,
+                guardedReconnectProvider: .codex
+            ) == .idle
+        )
+        #expect(
+            ProviderAccountAdditionRowState.resolve(
+                provider: .openrouter,
+                pendingAddition: nil,
+                guardedReconnectProvider: .codex
+            ) == .idle
+        )
+        #expect(
+            ProviderAccountAdditionRowState.resolve(
+                provider: .codex,
+                pendingAddition: nil,
+                guardedReconnectProvider: nil
+            ) == .idle
+        )
+        #expect(
+            ProviderAccountAdditionRowState.resolve(
+                provider: .codex,
+                pendingAddition: .codex,
+                guardedReconnectProvider: nil
+            ) == .waiting
+        )
+        #expect(
+            ProviderAccountAdditionRowState.resolve(
+                provider: .claude,
+                pendingAddition: .codex,
+                guardedReconnectProvider: nil
+            ) == .blockedByOtherAddition
+        )
+        #expect(
+            ProviderAccountAdditionRowState.resolve(
+                provider: .openrouter,
+                pendingAddition: .codex,
+                guardedReconnectProvider: nil
+            ) == .idle
+        )
+    }
+
+    @Test
+    @MainActor
     func claudeReconnectStartsOfficialLoginWithoutRefreshing() {
         var events: [String] = []
 
