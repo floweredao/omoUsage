@@ -447,6 +447,22 @@ struct ProviderSetupTruthfulnessTests {
     }
 
     @Test
+    func codexConnectionControlsDisableWhileAccountAdditionWaits() {
+        #expect(
+            !ProviderConnectionMutationPolicy.allows(
+                provider: .codex,
+                pendingAddition: .codex
+            )
+        )
+        #expect(
+            ProviderConnectionMutationPolicy.allows(
+                provider: .claude,
+                pendingAddition: .codex
+            )
+        )
+    }
+
+    @Test
     func codexGuardedReconnectWaitingOffersCheckAgainAndCancel() {
         #expect(
             ProviderConnectionControl.resolve(

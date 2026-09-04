@@ -45,6 +45,15 @@ enum ClaudeConnectionAuthorizationDecision: Equatable {
     case stop
 }
 
+enum ProviderConnectionMutationPolicy {
+    static func allows(
+        provider: ProviderID,
+        pendingAddition: ProviderID?
+    ) -> Bool {
+        pendingAddition != provider
+    }
+}
+
 enum ClaudeConnectionAuthorizationPolicy {
     static func decision(
         for outcome: ClaudeKeychainAuthorizationOutcome
@@ -403,6 +412,8 @@ struct SettingsView: View {
                                 ],
                                 connectionPresentation:
                                     connectionCoordinator.state(for: provider),
+                                connectionControlsDisabled:
+                                    connectionControlsDisabled(for: provider),
                                 keyDraft: binding(for: provider),
                                 keySource: accountRegistryController
                                     .keyStorageSource(for: provider),
@@ -639,7 +650,17 @@ struct SettingsView: View {
         )
     }
 
+    private func connectionControlsDisabled(
+        for provider: ProviderID
+    ) -> Bool {
+        !ProviderConnectionMutationPolicy.allows(
+            provider: provider,
+            pendingAddition: additionCoordinator.pending?.provider
+        )
+    }
+
     private func connectProvider(_ provider: ProviderID) {
+        guard !connectionControlsDisabled(for: provider) else { return }
         ProviderConnectionControl.performConnect(
             provider: provider,
             startConnection: startConnection,
@@ -664,6 +685,7 @@ struct SettingsView: View {
     }
 
     private func disconnectProvider(_ provider: ProviderID) {
+        guard !connectionControlsDisabled(for: provider) else { return }
         viewModel.disconnectProvider(provider)
         feedback = .formatted(
             .disconnectedProvider,
@@ -727,6 +749,7 @@ struct SettingsView: View {
     }
 
     private func reconnectProvider(_ provider: ProviderID) {
+        guard !connectionControlsDisabled(for: provider) else { return }
         if provider == .codex {
             connectProvider(provider)
             return
@@ -1684,6 +1707,7 @@ private struct ProviderSettingsRow: View {
     let provider: ProviderID
     let availability: ProviderAvailability?
     let connectionPresentation: ProviderConnectionPresentationState?
+    let connectionControlsDisabled: Bool
     @Binding var keyDraft: String
     let keySource: ProviderKeyStorageSource?
     let needsLegacyCleanup: Bool
@@ -1830,6 +1854,7 @@ private struct ProviderSettingsRow: View {
                                 )
                         }
                     }
+                    .disabled(connectionControlsDisabled)
                 }
             }
 
