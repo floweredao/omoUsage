@@ -10,7 +10,7 @@ set -eu
 
 usage() {
     printf '%s\n' \
-        "Usage: sh Scripts/qa-companion-account-add.sh --scenario <changed|unchanged-cancel> --evidence-dir <path>"
+        "Usage: sh Scripts/qa-companion-account-add.sh --scenario <changed|unchanged-cancel|reconnect-waiting> --evidence-dir <path>"
 }
 
 scenario=
@@ -46,6 +46,9 @@ case "$scenario" in
         ;;
     unchanged-cancel)
         account_alias="QA-Unchanged"
+        ;;
+    reconnect-waiting)
+        account_alias="QA-Reconnect"
         ;;
     *)
         printf 'Invalid or missing --scenario value: %s\n' "$scenario" >&2
@@ -185,6 +188,26 @@ assert_registry_has_account() {
     }
 }
 
+registry_labels() {
+    if [ -f "$fixture_root/accounts.json" ]; then
+        grep -o '"label":"[^"]*"' "$fixture_root/accounts.json" | sort
+    else
+        printf 'absent\n'
+    fi
+}
+
+# The registry records the disconnected identities, so a cancelled
+# reconnect must leave that list holding the legacy Codex identity.
+registry_disconnected_entry() {
+    tr -d ' \n' < "$fixture_root/accounts.json" \
+        | sed -n 's/.*"disconnected":\(\[[^]]*\]\).*/\1/p'
+}
+
+keychain_state() {
+    find "$fixture_root/keychain" -type f -exec shasum -a 256 {} ';' \
+        | awk '{print $1}' | sort
+}
+
 capture_window() {
     target=$1
     layer_flag=$2
@@ -218,6 +241,102 @@ note "- launched fixture app pid $app_pid"
 
 drive --action wait --identifier account-alias-codex --timeout 40
 note "- settings window is up"
+
+# Guarded legacy Codex reconnect: the waiting state must stay on screen
+# with reachable Check Again and Cancel controls, and Cancel must return
+# the card to the disconnected Reconnect control without re-enabling the
+# provider or touching the registry.
+if [ "$scenario" = "reconnect-waiting" ]; then
+    registry_labels_before=$(registry_labels)
+    keychain_before=$(keychain_state)
+
+    drive --action press --identifier disconnect-codex --scroll
+    note "- pressed Disconnect for Codex"
+    drive --action wait --identifier reconnect-codex --timeout 20 --scroll
+    note "- Codex is disconnected and offers Reconnect"
+
+    drive --action set-value --identifier account-alias-codex \
+        --value "$account_alias"
+    note "- typed alias $account_alias to arm the conflicting Add Account"
+
+    drive --action press --identifier reconnect-codex --scroll
+    note "- pressed Reconnect for Codex"
+
+    drive --action wait --identifier connection-waiting-codex \
+        --timeout 20 --scroll
+    drive --action wait --identifier check-again-connection-codex \
+        --timeout 20 --scroll
+    drive --action wait --identifier cancel-connection-codex \
+        --timeout 20 --scroll
+    drive --action wait-absent --identifier reconnect-codex --timeout 5
+    note "reconnect-waiting-controls=passed"
+    waiting_feedback=$(drive --action value --identifier settings-feedback)
+    note "- reconnect waiting feedback: $waiting_feedback"
+    grep -q '^launched:codex$' "$fixture_root/launch-log.txt" || {
+        printf '%s\n' "guarded reconnect did not launch the stub companion" >&2
+        exit 1
+    }
+    note "- stub companion launch recorded for the guarded reconnect"
+    drive --action scroll-to --identifier connection-waiting-codex
+    capture_window reconnect-waiting.png normal
+
+    drive --action press --identifier check-again-connection-codex --scroll
+    drive --action wait --identifier connection-waiting-codex \
+        --timeout 20 --scroll
+    drive --action wait --identifier cancel-connection-codex --timeout 5
+    unchanged_feedback=$(drive --action value --identifier settings-feedback)
+    note "- unchanged credential kept the waiting state: $unchanged_feedback"
+
+    if drive --action press --identifier add-account-codex --scroll; then
+        note "- Add Account press was accepted by the accessibility layer"
+    else
+        note "- Add Account press was rejected while the reconnect waits"
+    fi
+    drive --action wait-absent --identifier account-waiting-codex --timeout 5
+    drive --action wait-absent --identifier "account-codex-$account_alias" \
+        --timeout 5
+    note "add-account-blocked-while-reconnect-waits=passed"
+
+    drive --action press --identifier cancel-connection-codex --scroll
+    drive --action wait --identifier reconnect-codex --timeout 20 --scroll
+    drive --action wait-absent --identifier connection-waiting-codex \
+        --timeout 5
+    drive --action wait-absent --identifier check-again-connection-codex \
+        --timeout 5
+    drive --action wait-absent --identifier cancel-connection-codex \
+        --timeout 5
+    note "cancel-restores-disconnected-reconnect=passed"
+    capture_window reconnect-cancelled.png normal
+
+    assert_refresh_count 0
+    [ "$(registry_labels)" = "$registry_labels_before" ] || {
+        printf '%s\n' \
+            "fixture registry accounts changed during guarded reconnect" >&2
+        exit 1
+    }
+    note "registry-accounts-unchanged=passed"
+    disconnected_entry=$(registry_disconnected_entry)
+    case "$disconnected_entry" in
+        *'"providerID":"codex"'*)
+            ;;
+        *)
+            printf 'cancel did not keep Codex disconnected: %s\n' \
+                "$disconnected_entry" >&2
+            exit 1
+            ;;
+    esac
+    note "cancel-kept-codex-disconnected=passed"
+    [ "$(keychain_state)" = "$keychain_before" ] || {
+        printf '%s\n' \
+            "fixture Codex credential store changed during guarded reconnect" >&2
+        exit 1
+    }
+    note "legacy-credential-preserved=passed"
+
+    note "- finished: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    printf 'PASS scenario=%s evidence=%s\n' "$scenario" "$evidence_dir"
+    exit 0
+fi
 
 account_identifier="account-codex-$account_alias"
 dashboard_account_identifier="dashboard-provider-codex-$account_alias"

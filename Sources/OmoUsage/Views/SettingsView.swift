@@ -445,6 +445,13 @@ struct SettingsView: View {
                                 ),
                                 onCheckAgain: checkForCompanionCredential,
                                 onCancelAddition: cancelAddition,
+                                isAwaitingConnectionCredential:
+                                    provider == .codex
+                                        && codexReconnectCoordinator
+                                            .isWaiting,
+                                onCheckAgainConnection:
+                                    checkForCodexReconnectCredential,
+                                onCancelConnection: cancelCodexReconnect,
                                 codexPlanMultiplier:
                                     provider == .codex
                                         ? $codexPlanMultiplier
@@ -800,13 +807,40 @@ struct SettingsView: View {
     private func additionState(
         for provider: ProviderID
     ) -> ProviderAccountAdditionRowState {
-        guard let pending = additionCoordinator.pending else {
-            return .idle
+        ProviderAccountAdditionRowState.resolve(
+            provider: provider,
+            pendingAddition: additionCoordinator.pending?.provider,
+            guardedReconnectProvider: codexReconnectCoordinator.isWaiting
+                ? .codex
+                : nil
+        )
+    }
+
+    /// Re-samples the companion credential without leaving the waiting
+    /// state: an unchanged, missing, or unwritable credential keeps the
+    /// legacy Codex account pinned and the provider disconnected.
+    private func checkForCodexReconnectCredential() {
+        switch codexReconnectCoordinator.checkAgain() {
+        case .credentialUnchanged:
+            feedback = .key(.companionCredentialUnchanged)
+        case .credentialMissing:
+            feedback = .key(.companionCredentialMissing)
+        case .credentialUnavailable:
+            feedback = .key(.companionCredentialUnavailable)
+        case .launchFailed(let error):
+            setupError = error
+        case .reconnected:
+            feedback = nil
+        case .waitingForCredential, .ignored:
+            break
         }
-        if pending.provider == provider { return .waiting }
-        return ProviderSetup.descriptor(for: provider)?.acceptsAPIKey == true
-            ? .idle
-            : .blockedByOtherAddition
+    }
+
+    /// Cancelling stops the guarded reconnect only: the provider stays
+    /// disconnected and nothing is persisted or re-enabled.
+    private func cancelCodexReconnect() {
+        codexReconnectCoordinator.cancel()
+        feedback = nil
     }
 
     private func apply(
@@ -919,6 +953,26 @@ enum ProviderAccountAdditionRowState: Equatable, Sendable {
     case idle
     case waiting
     case blockedByOtherAddition
+
+    /// A guarded reconnect owns the same companion login an addition would
+    /// start, so that provider's Add Account stays disabled until the
+    /// reconnect completes or is cancelled. Providers that only need an API
+    /// key never share that login and stay usable.
+    static func resolve(
+        provider: ProviderID,
+        pendingAddition: ProviderID?,
+        guardedReconnectProvider: ProviderID?
+    ) -> ProviderAccountAdditionRowState {
+        guard let pendingAddition else {
+            return guardedReconnectProvider == provider
+                ? .blockedByOtherAddition
+                : .idle
+        }
+        if pendingAddition == provider { return .waiting }
+        return ProviderSetup.descriptor(for: provider)?.acceptsAPIKey == true
+            ? .idle
+            : .blockedByOtherAddition
+    }
 }
 
 private struct ProviderAccountsSection: View {
@@ -1557,6 +1611,8 @@ enum ProviderConnectionControl: Equatable, Hashable {
     case disconnect
     case reconnect
     case retry
+    case checkAgainConnection
+    case cancelConnection
 
     @MainActor
     static func performRetry(
@@ -1599,10 +1655,17 @@ enum ProviderConnectionControl: Equatable, Hashable {
         }
     }
 
+    /// A guarded companion login stays on screen until the credential
+    /// actually changes, so the waiting card keeps its own Check Again and
+    /// Cancel controls instead of the control that started it.
     static func resolve(
         availability: ProviderAvailability?,
-        isDisconnected: Bool
+        isDisconnected: Bool,
+        isAwaitingCredential: Bool = false
     ) -> [ProviderConnectionControl] {
+        if isAwaitingCredential {
+            return [.checkAgainConnection, .cancelConnection]
+        }
         if isDisconnected {
             return [.reconnect]
         }
@@ -1640,6 +1703,9 @@ private struct ProviderSettingsRow: View {
     let additionState: ProviderAccountAdditionRowState
     let onCheckAgain: () -> Void
     let onCancelAddition: () -> Void
+    let isAwaitingConnectionCredential: Bool
+    let onCheckAgainConnection: () -> Void
+    let onCancelConnection: () -> Void
     let codexPlanMultiplier: Binding<CodexPlanMultiplier>?
 
     @State private var isHovered = false
@@ -1691,7 +1757,9 @@ private struct ProviderSettingsRow: View {
                     ForEach(
                         ProviderConnectionControl.resolve(
                             availability: availability,
-                            isDisconnected: isDisconnected
+                            isDisconnected: isDisconnected,
+                            isAwaitingCredential:
+                                isAwaitingConnectionCredential
                         ),
                         id: \.self
                     ) { control in
@@ -1703,6 +1771,9 @@ private struct ProviderSettingsRow: View {
                             )
                                 .buttonStyle(.bordered)
                                 .controlSize(.small)
+                                .accessibilityIdentifier(
+                                    "connect-\(provider.rawValue)"
+                                )
                         case .disconnect:
                             Button(
                                 localization.text(.disconnect),
@@ -1711,6 +1782,9 @@ private struct ProviderSettingsRow: View {
                                 .buttonStyle(.bordered)
                                 .controlSize(.small)
                                 .tint(.red)
+                                .accessibilityIdentifier(
+                                    "disconnect-\(provider.rawValue)"
+                                )
                         case .reconnect:
                             Button(
                                 localization.text(.reconnectProvider),
@@ -1718,6 +1792,9 @@ private struct ProviderSettingsRow: View {
                             )
                                 .buttonStyle(.borderedProminent)
                                 .controlSize(.small)
+                                .accessibilityIdentifier(
+                                    "reconnect-\(provider.rawValue)"
+                                )
                         case .retry:
                             Button(
                                 localization.text(.refresh),
@@ -1725,9 +1802,46 @@ private struct ProviderSettingsRow: View {
                             )
                                 .buttonStyle(.borderedProminent)
                                 .controlSize(.small)
+                                .accessibilityIdentifier(
+                                    "retry-connection-\(provider.rawValue)"
+                                )
+                        case .checkAgainConnection:
+                            Button(
+                                localization.text(
+                                    .checkAgainForCompanionCredentials
+                                ),
+                                action: onCheckAgainConnection
+                            )
+                                .buttonStyle(.borderedProminent)
+                                .controlSize(.small)
+                                .accessibilityIdentifier(
+                                    "check-again-connection-"
+                                        + provider.rawValue
+                                )
+                        case .cancelConnection:
+                            Button(
+                                localization.text(.cancel),
+                                action: onCancelConnection
+                            )
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                                .accessibilityIdentifier(
+                                    "cancel-connection-\(provider.rawValue)"
+                                )
                         }
                     }
                 }
+            }
+
+            if isAwaitingConnectionCredential {
+                Text(
+                    localization.text(.waitingForCompanionCredentials)
+                )
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier(
+                    "connection-waiting-\(provider.rawValue)"
+                )
             }
 
             if let codexPlanMultiplier {
