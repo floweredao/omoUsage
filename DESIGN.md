@@ -160,12 +160,14 @@ other privileged controls remain native-only.
   its own height inside the taller detail container. Only the zero-provider
   checking state and a rail too crowded for the panel take the full
   container and scroll inside it. Only provider detail reserves the largest
-  visible provider detail height plus 12 pt top and bottom margins: the
-  panel resizes once on entering or leaving detail and never while moving
-  between providers inside it. Detail expansion preserves the revealed
-  rail's top screen edge so provider rows never shift under the pointer; both
-  states keep the same right edge and stay within the 128 pt minimum and
-  540 pt maximum height.
+  visible provider detail height plus 12 pt bottom clearance. Its top edge
+  is flush with the rail's top edge, and the bottom clearance preserves room
+  for the downward shadow. The panel resizes once on entering or leaving
+  detail and never while moving between providers inside it. Detail expansion
+  preserves the revealed rail's top screen edge, and every SwiftUI container
+  uses top-trailing alignment while AppKit resizes, so provider rows never
+  shift under the pointer. Both states keep the same right edge and stay
+  within the 128 pt minimum and 540 pt maximum height.
 - The side-notch detail card is 280 pt wide and at most 320 pt high. It uses
   the existing provider section, applies 14 pt content padding, and scrolls
   only when that provider's complete usage content exceeds the cap.
@@ -291,6 +293,9 @@ other privileged controls remain native-only.
 - `ProviderHelpView`: native Korean setup guidance plus an optional official
   provider link; it never routes through OpenUsage.
 - `InteractiveIconButton`: 28 pt hit target with hover, focus, and press state.
+  Side-notch footer controls occupy explicit 56×28 pt centered slots; Refresh
+  and the indicator-free menu use the same 22 pt symbol frame so native
+  control intrinsic sizing cannot offset either symbol inside the rail.
 - `SideNotchPanelController`: one retained nonactivating floating `NSPanel`,
   authoritative hidden/revealed/detail state, cancellable 0.18 s edge-reveal
   dwell, user-configurable auto-hide, screen-aware frame calculation,
@@ -381,14 +386,16 @@ other privileged controls remain native-only.
 - When the selected provider disappears from a refresh, the composite
   selection reconciles: it is cleared rather than left pointing at a row that
   no longer exists.
-- Provider detail uses opacity-only insertion/removal while the AppKit panel
-  alone owns the inward width animation; no second directional SwiftUI move
-  competes with panel geometry.
+- Provider detail insertion, removal, and panel resizing are one atomic
+  geometry change, so no stale window snapshot competes with the live rail.
 - In Side Notch mode, clicking the menu-bar status item only reveals or hides
   the rail. It never selects a provider or opens provider detail.
-- Side-notch width changes use a 200 ms interruptible ease-out. Hover-driven
-  preview and spatial retarget obey the same motion policy. Reduced Motion
-  makes geometry changes immediate while retaining opacity/color feedback.
+- Hidden-edge reveal and hide use a 200 ms interruptible ease-out. Detail
+  open, collapse, and provider retarget resize atomically because AppKit
+  snapshots translucent SwiftUI content during animated window resizing,
+  which otherwise paints the provider rail at both old and new heights.
+  Reduced Motion still makes hidden-edge geometry immediate while retaining
+  opacity/color feedback.
 - Dashboard-order drag, keyboard move, and reset are one intent with one
   effect. Every logical move writes the composite order exactly once, reorders
   the snapshot once, and publishes control state once. A boundary move (up at
