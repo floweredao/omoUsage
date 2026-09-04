@@ -610,6 +610,23 @@ struct CredentialDiscovery: Sendable {
                 now: now
             )
         }
+        let legacyIdentity = AccountProviderID(
+            accountID: .legacy,
+            providerID: .codex
+        )
+        if let snapshot = try snapshotStore.snapshot(for: legacyIdentity) {
+            return snapshot.credential(
+                storage: .accountSnapshot(legacyIdentity)
+            )
+        }
+        return try mutableCodexCredential(now: now)
+    }
+
+    /// Reads only Codex's mutable companion stores. This deliberately
+    /// bypasses the legacy pin for Add Account and reconnect fingerprinting.
+    private func mutableCodexCredential(
+        now: Date
+    ) throws -> DiscoveredCredential {
         let resolution = resolveCodexCandidates(now: now)
         if let best = resolution.candidates.first {
             return best
@@ -629,6 +646,19 @@ struct CredentialDiscovery: Sendable {
                 accountID: accountID,
                 now: now
             )).map { [$0] } ?? []
+        }
+        let identity = AccountProviderID(
+            accountID: .legacy,
+            providerID: .codex
+        )
+        do {
+            if let snapshot = try snapshotStore.snapshot(for: identity) {
+                return [snapshot.credential(
+                    storage: .accountSnapshot(identity)
+                )]
+            }
+        } catch {
+            return []
         }
         return resolveCodexCandidates(now: now).candidates
     }
@@ -948,7 +978,7 @@ struct CredentialDiscovery: Sendable {
             // the refresh path revives it on the first fetch.
             try claude(now: now, allowingExpired: true)
         case .codex:
-            try codex(now: now)
+            try mutableCodexCredential(now: now)
         case .cursor:
             try cursor(now: now)
         case .antigravity:

@@ -411,7 +411,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             ProviderAccountRegistryController(
                 store: accountStore,
                 loadResult: registryLoadResult,
-                keyStore: fixture.keyStore
+                keyStore: fixture.keyStore,
+                credentialSnapshotStore: {
+                    ProviderCredentialSnapshotStore(
+                        keychain: fixture.keychain
+                    )
+                }
             )
         } ?? ProviderAccountRegistryController(
             store: accountStore,

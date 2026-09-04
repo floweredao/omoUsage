@@ -22,7 +22,7 @@ struct ProviderAccountAdditionCoordinatorTests {
         #expect(outcome == .waitingForCompanion)
         #expect(fixture.events == ["capture:codex", "launch:codex"])
         #expect(fixture.controller.accounts.isEmpty)
-        #expect(fixture.keychain.isEmpty)
+        #expect(fixture.legacyCodexSecret == fixture.codexSecretA)
         #expect(fixture.refreshCount == 0)
         #expect(coordinator.pending?.provider == .codex)
         #expect(coordinator.pending?.label == "Work")
@@ -71,7 +71,7 @@ struct ProviderAccountAdditionCoordinatorTests {
         #expect(coordinator.pending?.provider == .codex)
         #expect(coordinator.pending?.label == "Work")
         #expect(fixture.controller.accounts.isEmpty)
-        #expect(fixture.keychain.isEmpty)
+        #expect(fixture.legacyCodexSecret == fixture.codexSecretA)
         #expect(fixture.refreshCount == 0)
         #expect(fixture.events == ["capture:codex"])
 
@@ -83,8 +83,51 @@ struct ProviderAccountAdditionCoordinatorTests {
 
         #expect(coordinator.pending?.provider == .codex)
         #expect(fixture.controller.accounts.isEmpty)
-        #expect(fixture.keychain.isEmpty)
+        #expect(fixture.legacyCodexSecret == fixture.codexSecretA)
         #expect(fixture.refreshCount == 0)
+    }
+
+    @Test
+    func changedCredentialPreservesLegacyAndAddsFreshAccount() throws {
+        let fixture = try AdditionFixture()
+        defer { fixture.remove() }
+        let coordinator = fixture.makeCoordinator()
+        fixture.capture[.codex] = .success(fixture.codexSecretA)
+
+        #expect(coordinator.addAccount(provider: .codex, label: "Work", key: nil) == .waitingForCompanion)
+        fixture.capture[.codex] = .success(fixture.codexSecretB)
+        #expect(coordinator.checkAgain() == .addedAccount("Work"))
+
+        #expect(fixture.legacyCodexSecret == fixture.codexSecretA)
+        let account = try #require(fixture.controller.accounts.first)
+        #expect(fixture.keyStore(.codex, account.accountProviderID.accountID)?.load() == fixture.codexSecretB)
+    }
+
+    @Test
+    func legacyPreservationFailurePreventsLaunch() throws {
+        let fixture = try AdditionFixture()
+        defer { fixture.remove() }
+        fixture.keychain.failWritesToAccount = "codex/\(AccountID.legacy.rawValue)"
+        let coordinator = fixture.makeCoordinator()
+        fixture.capture[.codex] = .success(fixture.codexSecretA)
+
+        #expect(coordinator.addAccount(provider: .codex, label: "Work", key: nil) == .credentialUnavailable)
+        #expect(fixture.events == ["capture:codex"])
+        #expect(coordinator.pending == nil)
+    }
+
+    @Test
+    func repeatedCodexAdditionKeepsOriginalLegacySnapshot() throws {
+        let fixture = try AdditionFixture()
+        defer { fixture.remove() }
+        let coordinator = fixture.makeCoordinator()
+        fixture.capture[.codex] = .success(fixture.codexSecretA)
+        #expect(coordinator.addAccount(provider: .codex, label: "Work", key: nil) == .waitingForCompanion)
+        fixture.capture[.codex] = .success(fixture.codexSecretB)
+        #expect(coordinator.checkAgain() == .addedAccount("Work"))
+
+        #expect(coordinator.addAccount(provider: .codex, label: "Third", key: nil) == .waitingForCompanion)
+        #expect(fixture.legacyCodexSecret == fixture.codexSecretA)
     }
 
     @Test
@@ -154,7 +197,7 @@ struct ProviderAccountAdditionCoordinatorTests {
         #expect(coordinator.applicationDidBecomeActive() == .ignored)
         #expect(coordinator.checkAgain() == .ignored)
         #expect(fixture.controller.accounts.isEmpty)
-        #expect(fixture.keychain.isEmpty)
+        #expect(fixture.legacyCodexSecret == fixture.codexSecretA)
         #expect(fixture.refreshCount == 0)
     }
 
@@ -404,6 +447,9 @@ private final class AdditionFixture {
                 defer { self.accountIndex += 1 }
                 return self.nextAccountIDs[self.accountIndex]
             },
+            credentialSnapshotStore: { [unowned self] in
+                ProviderCredentialSnapshotStore(keychain: self.keychain)
+            },
             mutationAfterPhase: { reached in
                 if reached == phase { throw AdditionMutationFailure() }
             }
@@ -416,6 +462,13 @@ private final class AdditionFixture {
 
     var codexSecretB: String {
         Self.encodedCodexSecret(accessToken: "codex-access-b")
+    }
+
+    var legacyCodexSecret: String? {
+        try? keychain.value(
+            service: ProviderAPIKeyStore.serviceName,
+            account: "codex/\(AccountID.legacy.rawValue)"
+        )
     }
 
     func keyStore(
@@ -455,6 +508,7 @@ private struct AdditionMutationFailure: Error {}
 private final class AdditionFakeKeychain: ProviderKeychain, @unchecked Sendable {
     private let lock = NSLock()
     private var values: [String: String] = [:]
+    var failWritesToAccount: String?
 
     var isEmpty: Bool { lock.withLock { values.isEmpty } }
 
@@ -463,6 +517,7 @@ private final class AdditionFakeKeychain: ProviderKeychain, @unchecked Sendable 
     }
 
     func set(_ value: String, service: String, account: String) throws {
+        if account == failWritesToAccount { throw AdditionMutationFailure() }
         lock.withLock { values[service + "|" + account] = value }
     }
 

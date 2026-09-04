@@ -201,6 +201,39 @@ struct ProviderAccountRecoveryTests {
 
     @Test
     @MainActor
+    func resetRegistryPreservesPinnedLegacyCodexSnapshot() throws {
+        let fixture = try RecoveryFixture()
+        defer { fixture.remove() }
+        let legacyIdentity = AccountProviderID(
+            accountID: .legacy,
+            providerID: .codex
+        )
+        let snapshotStore = fixture.snapshotStore
+        let snapshotA = CredentialSnapshot(
+            provider: .codex,
+            accessToken: "snapshot-a",
+            refreshToken: "refresh-a",
+            accountReference: "account-a",
+            planName: "Plan A",
+            expiresAt: nil,
+            source: .file
+        )
+        try snapshotStore.save(snapshotA, for: legacyIdentity)
+        let legacyMetadata = try fixture.store.resetToLegacy()
+        let controller = ProviderAccountRegistryController(
+            store: fixture.store,
+            registry: fixture.registry(label: "Configured"),
+            credentialSnapshotStore: { snapshotStore }
+        )
+
+        try controller.resetRegistry()
+
+        #expect(controller.registry == legacyMetadata)
+        #expect(try snapshotStore.snapshot(for: legacyIdentity) == snapshotA)
+    }
+
+    @Test
+    @MainActor
     func explicitResetCreatesFreshRegistryWithoutDeletingQuarantine() throws {
         let fixture = try RecoveryFixture()
         defer { fixture.remove() }
@@ -229,6 +262,7 @@ private final class RecoveryFixture {
     let rootURL: URL
     let registryURL: URL
     let defaults: UserDefaults
+    let snapshotKeychain = RecoverySnapshotKeychain()
     private(set) var legacyProbeCount = 0
     lazy var store = ProviderAccountStore(
         registryURL: registryURL,
@@ -246,6 +280,10 @@ private final class RecoveryFixture {
         )
         registryURL = rootURL.appending(path: "accounts.json")
         defaults = try #require(UserDefaults(suiteName: suiteName))
+    }
+
+    var snapshotStore: ProviderCredentialSnapshotStore {
+        ProviderCredentialSnapshotStore(keychain: snapshotKeychain)
     }
 
     func registry(label: String) -> ProviderAccountRegistry {
@@ -279,6 +317,27 @@ private final class RecoveryFixture {
     func remove() {
         defaults.removePersistentDomain(forName: suiteName)
         try? FileManager.default.removeItem(at: rootURL)
+    }
+}
+
+private final class RecoverySnapshotKeychain: ProviderKeychain,
+    @unchecked Sendable
+{
+    private let lock = NSLock()
+    private var values: [String: String] = [:]
+
+    func value(service: String, account: String) throws -> String? {
+        lock.withLock { values[service + "|" + account] }
+    }
+
+    func set(_ value: String, service: String, account: String) throws {
+        lock.withLock { values[service + "|" + account] = value }
+    }
+
+    func remove(service: String, account: String) throws {
+        _ = lock.withLock {
+            values.removeValue(forKey: service + "|" + account)
+        }
     }
 }
 

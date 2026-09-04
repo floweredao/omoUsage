@@ -86,6 +86,8 @@ struct SettingsView: View {
         ProviderConnectionCoordinator()
     @State private var additionCoordinator:
         ProviderAccountAdditionCoordinator
+    @State private var codexReconnectCoordinator:
+        CodexLegacyReconnectCoordinator
     @State private var codexPlanMultiplier = CodexPlanMultiplierStore(
         defaults: .standard
     ).load()
@@ -145,6 +147,22 @@ struct SettingsView: View {
                 captureCredential: captureCompanionCredential,
                 launchCompanion: launchCompanion,
                 onAccountAdded: onRegistryChange
+            )
+        )
+        _codexReconnectCoordinator = State(
+            initialValue: CodexLegacyReconnectCoordinator(
+                captureCredential: {
+                    try captureCompanionCredential(.codex)
+                },
+                persistLegacySnapshot: {
+                    try accountRegistryController
+                        .replaceLegacyCodexCredential($0)
+                },
+                launchCompanion: { launchCompanion(.codex) },
+                reenable: {
+                    viewModel.reconnectProvider(.codex)
+                    onRegistryChange()
+                }
             )
         )
     }
@@ -395,7 +413,7 @@ struct SettingsView: View {
                                     },
                                 onCleanupLegacy: retryLegacyKeyCleanup,
                                 onSetup: {
-                                    startConnection(for: provider)
+                                    connectProvider(provider)
                                 },
                                 onSave: { saveKey(for: provider) },
                                 onRemove: { removeKey(for: provider) },
@@ -479,6 +497,9 @@ struct SettingsView: View {
                 additionCoordinator.applicationDidBecomeActive(),
                 for: pendingProvider
             )
+            if codexReconnectCoordinator.isWaiting {
+                _ = codexReconnectCoordinator.checkAgain()
+            }
             Task {
                 await refreshPendingConnectionsAfterActivation()
             }
@@ -611,6 +632,14 @@ struct SettingsView: View {
         )
     }
 
+    private func connectProvider(_ provider: ProviderID) {
+        ProviderConnectionControl.performConnect(
+            provider: provider,
+            startConnection: startConnection,
+            startGuardedCodexConnection: startGuardedCodexConnection
+        )
+    }
+
     private func startConnection(for provider: ProviderID) {
         let result = ProviderSetup.perform(for: provider)
         connectionCoordinator.record(result, for: provider)
@@ -675,7 +704,26 @@ struct SettingsView: View {
         }
     }
 
+    private func startGuardedCodexConnection(_ provider: ProviderID) {
+        precondition(provider == .codex)
+        let outcome = codexReconnectCoordinator.start()
+        switch outcome {
+        case .waitingForCredential:
+            feedback = .key(.waitingForCompanionCredentials)
+        case .launchFailed(let error):
+            setupError = error
+        case .credentialUnavailable:
+            feedback = .key(.authenticationRequired)
+        default:
+            break
+        }
+    }
+
     private func reconnectProvider(_ provider: ProviderID) {
+        if provider == .codex {
+            connectProvider(provider)
+            return
+        }
         ProviderConnectionControl.performReconnect(
             provider: provider,
             reenable: viewModel.reconnectProvider,
@@ -1520,6 +1568,19 @@ enum ProviderConnectionControl: Equatable, Hashable {
             reauthorizeClaude(provider)
         } else {
             refresh(provider)
+        }
+    }
+
+    @MainActor
+    static func performConnect(
+        provider: ProviderID,
+        startConnection: (ProviderID) -> Void,
+        startGuardedCodexConnection: (ProviderID) -> Void
+    ) {
+        if provider == .codex {
+            startGuardedCodexConnection(provider)
+        } else {
+            startConnection(provider)
         }
     }
 

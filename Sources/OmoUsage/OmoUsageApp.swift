@@ -470,6 +470,9 @@ enum OmoUsageApp {
             makeAccountID: {
                 defer { accountIndex += 1 }
                 return accountIDs[min(accountIndex, accountIDs.count - 1)]
+            },
+            credentialSnapshotStore: {
+                ProviderCredentialSnapshotStore(keychain: fixture.keychain)
             }
         )
         let coordinator = ProviderAccountAdditionCoordinator(
@@ -494,11 +497,21 @@ enum OmoUsageApp {
         require(launchCount == 1, "companion-not-launched")
         require(controller.accounts.isEmpty, "account-persisted-too-early")
         require(refreshCount == 0, "refresh-requested-too-early")
-        require(
-            (fixture.keychain as? CompanionAccountFixtureKeychain)?
-                .storedItemCount == 0,
-            "secret-written-too-early"
+        let legacyIdentity = AccountProviderID(
+            accountID: .legacy,
+            providerID: .codex
         )
+        let snapshotStore = ProviderCredentialSnapshotStore(
+            keychain: fixture.keychain
+        )
+        let originalLegacySnapshot = try? snapshotStore.snapshot(
+            for: legacyIdentity
+        )
+        require(
+            originalLegacySnapshot?.accessToken == "qa-codex-token-a",
+            "legacy-credential-not-preserved"
+        )
+        writeFixtureEvent("legacy-credential-preserved=passed")
         writeFixtureEvent("launch-before-persist=passed")
 
         require(
@@ -540,8 +553,79 @@ enum OmoUsageApp {
             storedSecret != nil && storedSecret == expectedSecret,
             "companion-secret-mismatch"
         )
+        let preservedAfterAddition = try? snapshotStore.snapshot(
+            for: legacyIdentity
+        )
+        require(
+            preservedAfterAddition?.accessToken == "qa-codex-token-a",
+            "legacy-credential-overwritten"
+        )
+        require(
+            (try? CredentialSnapshot(
+                encodedSecret: storedSecret ?? "",
+                provider: .codex
+            ))?.accessToken == "qa-codex-token-b",
+            "new-account-not-isolated"
+        )
+        writeFixtureEvent("new-account-credential-isolated=passed")
         writeFixtureEvent("changed-account-persisted=passed")
         writeFixtureEvent("refresh-count=\(refreshCount - refreshBefore)")
+
+        let rotatedLegacy = originalLegacySnapshot?.rotated(
+            accessToken: "qa-codex-token-a-rotated",
+            refreshToken: "qa-codex-refresh-a-rotated",
+            expiresAt: nil
+        )
+        if let rotatedLegacy {
+            try? snapshotStore.save(rotatedLegacy, for: legacyIdentity)
+        }
+        require(
+            (try? snapshotStore.snapshot(for: legacyIdentity))?.refreshToken
+                == "qa-codex-refresh-a-rotated",
+            "legacy-snapshot-not-rotated"
+        )
+        require(
+            (try? String(
+                contentsOf: fixture.credentialURL(for: .codex),
+                encoding: .utf8
+            )) == "qa-codex-token-b",
+            "legacy-rotation-touched-companion"
+        )
+        writeFixtureEvent("legacy-snapshot-rotation=passed")
+
+        var reconnectEnabled = false
+        let reconnect = CodexLegacyReconnectCoordinator(
+            captureCredential: { try fixture.captureCredential(for: .codex) },
+            persistLegacySnapshot: {
+                try controller.replaceLegacyCodexCredential($0)
+            },
+            launchCompanion: { fixture.launchCompanion(.codex) },
+            reenable: { reconnectEnabled = true }
+        )
+        require(
+            reconnect.start() == .waitingForCredential,
+            "reconnect-launch-failed"
+        )
+        require(
+            reconnect.checkAgain() == .credentialUnchanged
+                && !reconnectEnabled,
+            "reconnect-reenabled-before-change"
+        )
+        writeToken("qa-codex-token-c", for: .codex)
+        require(
+            reconnect.checkAgain() == .reconnected && reconnectEnabled,
+            "reconnect-did-not-complete"
+        )
+        require(
+            (try? snapshotStore.snapshot(for: legacyIdentity))?.accessToken
+                == "qa-codex-token-c",
+            "reconnect-did-not-replace-legacy"
+        )
+        require(
+            fixture.keyStore(.codex, accountIDs[0])?.load() == storedSecret,
+            "reconnect-touched-added-account"
+        )
+        writeFixtureEvent("reconnect-guard=passed")
 
         let launchesBeforeAPIKey = launchCount
         require(
@@ -577,7 +661,7 @@ enum OmoUsageApp {
         )
         coordinator.cancel()
         require(coordinator.pending == nil, "cancellation-left-pending")
-        writeToken("qa-codex-token-c", for: .codex)
+        writeToken("qa-codex-token-d", for: .codex)
         let accountsBeforeActivation = controller.accounts.count
         let refreshBeforeActivation = refreshCount
         require(
@@ -593,6 +677,18 @@ enum OmoUsageApp {
             "cancelled-addition-refreshed"
         )
         writeFixtureEvent("cancellation=passed")
+
+        do {
+            try controller.resetRegistry()
+        } catch {
+            fail("registry-reset-failed")
+        }
+        require(
+            (try? snapshotStore.snapshot(for: legacyIdentity))?.accessToken
+                == "qa-codex-token-c",
+            "registry-reset-removed-legacy-pin"
+        )
+        writeFixtureEvent("registry-reset-preserves-legacy-pin=passed")
         writeFixtureEvent("status=passed")
     }
 

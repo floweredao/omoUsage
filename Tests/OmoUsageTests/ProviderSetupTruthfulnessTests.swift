@@ -332,6 +332,94 @@ struct ProviderSetupTruthfulnessTests {
 
     @Test
     @MainActor
+    func codexConnectUsesGuardedLegacySnapshotReplacement() {
+        var events: [String] = []
+        ProviderConnectionControl.performConnect(
+            provider: .codex,
+            startConnection: { events.append("start-\($0.rawValue)") },
+            startGuardedCodexConnection: {
+                events.append("guarded-\($0.rawValue)")
+            }
+        )
+
+        #expect(events == ["guarded-codex"])
+
+        events.removeAll()
+        ProviderConnectionControl.performConnect(
+            provider: .claude,
+            startConnection: { events.append("start-\($0.rawValue)") },
+            startGuardedCodexConnection: {
+                events.append("guarded-\($0.rawValue)")
+            }
+        )
+        #expect(events == ["start-claude"])
+    }
+
+    @Test
+    @MainActor
+    func codexReconnectWaitsForChangedCompanionCredential() throws {
+        let secretA = try codexSnapshotSecret("a")
+        let mutableSecret = secretA
+        var events: [String] = []
+        let coordinator = CodexLegacyReconnectCoordinator(
+            captureCredential: { mutableSecret },
+            persistLegacySnapshot: { _ in events.append("persist") },
+            launchCompanion: {
+                events.append("launch")
+                return .success(.launched)
+            },
+            reenable: { events.append("reenable") }
+        )
+
+        #expect(coordinator.start() == .waitingForCredential)
+        #expect(coordinator.checkAgain() == .credentialUnchanged)
+        #expect(coordinator.isWaiting)
+        #expect(events == ["launch"])
+    }
+
+    @Test
+    @MainActor
+    func codexReconnectReplacesOnlyLegacySnapshotAfterCredentialChanges() throws {
+        var mutableSecret = try codexSnapshotSecret("a")
+        let secretB = try codexSnapshotSecret("b")
+        var persisted: [String] = []
+        var reenabled = false
+        let coordinator = CodexLegacyReconnectCoordinator(
+            captureCredential: { mutableSecret },
+            persistLegacySnapshot: { persisted.append($0) },
+            launchCompanion: { .success(.launched) },
+            reenable: { reenabled = true }
+        )
+
+        #expect(coordinator.start() == .waitingForCredential)
+        mutableSecret = secretB
+        #expect(coordinator.checkAgain() == .reconnected)
+        #expect(persisted == [secretB])
+        #expect(reenabled)
+        #expect(!coordinator.isWaiting)
+    }
+
+    @Test
+    @MainActor
+    func codexReconnectPersistenceFailureStaysDisconnected() throws {
+        var mutableSecret = try codexSnapshotSecret("a")
+        var reenabled = false
+        let coordinator = CodexLegacyReconnectCoordinator(
+            captureCredential: { mutableSecret },
+            persistLegacySnapshot: { _ in throw TruthfulnessPersistenceFailure() },
+            launchCompanion: { .success(.launched) },
+            reenable: { reenabled = true }
+        )
+
+        #expect(coordinator.start() == .waitingForCredential)
+        mutableSecret = try codexSnapshotSecret("b")
+        #expect(coordinator.checkAgain() == .credentialUnavailable)
+        #expect(!reenabled)
+        #expect(coordinator.isWaiting)
+    }
+
+    @Test
+    @MainActor
     func claudeReconnectStartsOfficialLoginWithoutRefreshing() {
         var events: [String] = []
 
@@ -440,6 +528,20 @@ struct ProviderSetupTruthfulnessTests {
         #expect(try discovery.opencode().accessToken == "omo-opencode-key")
     }
 }
+
+private func codexSnapshotSecret(_ marker: String) throws -> String {
+    try CredentialSnapshot(
+        provider: .codex,
+        accessToken: "codex-\(marker)",
+        refreshToken: "refresh-\(marker)",
+        accountReference: "account-\(marker)",
+        planName: nil,
+        expiresAt: nil,
+        source: .file
+    ).encodedSecret()
+}
+
+private struct TruthfulnessPersistenceFailure: Error {}
 
 private struct TruthfulnessKeychain: KeychainReading {
     func value(service: String, account: String) throws -> String? { nil }
