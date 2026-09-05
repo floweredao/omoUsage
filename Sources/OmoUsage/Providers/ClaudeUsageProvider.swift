@@ -245,9 +245,9 @@ struct ClaudeUsageProvider: UsageProvider {
         return usage
     }
 
-    /// Exchanges the stored refresh token for a fresh access token and writes
-    /// the rotated pair back where Claude Code keeps it, so the CLI and this
-    /// app stay on the same credential chain.
+    /// Exchanges the stored refresh token and persists the rotated pair to its
+    /// originating store. App-authorized Keychain credentials belong to the
+    /// isolated OmoUsage login, not the user's interactive Claude Code session.
     private func refreshedCredential(
         _ credential: DiscoveredCredential,
         now: Date
@@ -378,6 +378,11 @@ struct ClaudeUsageProvider: UsageProvider {
                 )
             }
             throw authenticationFailure
+        } catch let error as ClaudeDesktopSessionError
+            where error == .keychainUnavailable || error == .cookiesUnavailable
+        {
+            logDesktopFailure(error)
+            throw ProviderTransportError.authenticationRequired(id)
         } catch {
             logDesktopFailure(error)
             if

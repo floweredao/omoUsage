@@ -16,7 +16,7 @@ struct SecurityKeychainReader: KeychainReading {
 
     func value(service: String, account: String) throws -> String? {
         if ClaudeKeychainAccessSession.isProtected(service: service) {
-            return claudeSession.cachedValue(
+            return try claudeSession.authorizedValue(
                 service: service,
                 account: account
             )
@@ -77,16 +77,25 @@ enum ClaudeKeychainAuthorizationOutcome: Equatable, Sendable {
 final class ClaudeKeychainAccessSession: @unchecked Sendable {
     static let shared = ClaudeKeychainAccessSession()
 
-    private struct CacheKey: Hashable {
+    /// One explicitly selected OAuth origin, not a scan of foreign stores.
+    /// Keep the raw JSON so rotation preserves fields owned by Claude Code.
+    private struct AuthorizedCredential: Codable {
         let service: String
         let account: String
+        let value: String
     }
 
+    private static let mirrorService = "com.omo.usage.claude-authorized-credential"
+    private static let mirrorAccount = "oauth"
     private static let safeStorageService = "Claude Safe Storage"
-    private static let safeStorageAccount = "Claude Key"
+
+    private let providerKeychain: any ProviderKeychain
+
+    init(providerKeychain: any ProviderKeychain = SecurityProviderKeychain()) {
+        self.providerKeychain = providerKeychain
+    }
 
     private let lock = NSLock()
-    private var values: [CacheKey: String] = [:]
     private var interactionDepth = 0
 
     static func isProtected(service: String) -> Bool {
@@ -98,83 +107,100 @@ final class ClaudeKeychainAccessSession: @unchecked Sendable {
         lock.withLock { interactionDepth > 0 }
     }
 
-    func cachedValue(
-        service: String,
-        account: String
-    ) -> String? {
-        lock.withLock {
-            if let value = values[
-                CacheKey(service: service, account: account)
-            ] {
-                return value
-            }
-            guard account.isEmpty else { return nil }
-            return values.first {
-                $0.key.service == service
-            }?.value
+    func authorizedValue(service: String, account: String) throws -> String? {
+        guard CredentialDiscovery.claudeKeychainServices.contains(service) else {
+            return nil
+        }
+        return try lock.withLock {
+            guard let stored = try storedCredential(),
+                  stored.service == service, stored.account == account
+            else { return nil }
+            return stored.value
         }
     }
 
-    func cache(
+    func updateAuthorizedValue(
         _ value: String,
         service: String,
         account: String
-    ) {
-        lock.withLock {
-            values[CacheKey(service: service, account: account)] =
-                value
+    ) throws {
+        try lock.withLock {
+            guard let stored = try storedCredential(),
+                  stored.service == service, stored.account == account
+            else {
+                throw KeychainReadError(status: errSecInteractionNotAllowed)
+            }
+            try save(AuthorizedCredential(
+                service: service, account: account, value: value
+            ))
         }
+    }
+
+    private func storedCredential() throws -> AuthorizedCredential? {
+        guard let encoded = try providerKeychain.value(
+            service: Self.mirrorService, account: Self.mirrorAccount
+        ) else { return nil }
+        guard let stored = try? JSONDecoder().decode(
+            AuthorizedCredential.self, from: Data(encoded.utf8)
+        ), stored.service == CredentialDiscovery.claudeLoginKeychainService,
+           stored.account.isEmpty, !stored.value.isEmpty
+        else {
+            throw KeychainReadError(status: errSecDecode)
+        }
+        return stored
+    }
+
+    private func save(_ credential: AuthorizedCredential) throws {
+        let encoded = try JSONEncoder().encode(credential)
+        try providerKeychain.set(
+            String(decoding: encoded, as: UTF8.self),
+            service: Self.mirrorService, account: Self.mirrorAccount
+        )
     }
 
     func authorizeClaude(
         api: any SecurityItemAPI = SecurityFrameworkItemAPI()
     ) throws -> ClaudeKeychainAuthorizationOutcome {
-        let targets = CredentialDiscovery.claudeKeychainServices.map {
-            (service: $0, account: "")
-        } + [(
-            service: Self.safeStorageService,
-            account: Self.safeStorageAccount
-        )]
-
-        for target in targets {
-            var query: [String: Any] = [
-                keychainKey(kSecClass):
-                    keychainKey(kSecClassGenericPassword),
-                keychainKey(kSecAttrService): target.service,
-                keychainKey(kSecReturnData): true,
-                keychainKey(kSecMatchLimit):
-                    keychainKey(kSecMatchLimitOne)
-            ]
-            if !target.account.isEmpty {
-                query[keychainKey(kSecAttrAccount)] =
-                    target.account
-            }
-            let result = api.copyMatching(query)
-            switch result.status {
-            case errSecSuccess:
-                guard
-                    let data = result.value as? Data,
-                    let value = String(data: data, encoding: .utf8),
-                    !value.isEmpty
-                else {
-                    throw KeychainReadError(status: errSecDecode)
+        try lock.withLock {
+            // Explicit login replaces the old grant even when permission is
+            // denied or saving the new grant fails. Never publish memory-only
+            // authorization that would disappear on the next launch.
+            try providerKeychain.remove(
+                service: Self.mirrorService, account: Self.mirrorAccount
+            )
+            // This grant was created in OmoUsage's private CLI configuration.
+            // Importing the interactive CLI's grant would race its token rotation.
+            for service in [CredentialDiscovery.claudeLoginKeychainService] {
+                let query: [String: Any] = [
+                    keychainKey(kSecClass): keychainKey(kSecClassGenericPassword),
+                    keychainKey(kSecAttrService): service,
+                    keychainKey(kSecReturnData): true,
+                    keychainKey(kSecMatchLimit): keychainKey(kSecMatchLimitOne)
+                ]
+                let result = api.copyMatching(query)
+                switch result.status {
+                case errSecSuccess:
+                    guard let data = result.value as? Data,
+                          let value = String(data: data, encoding: .utf8),
+                          !value.isEmpty
+                    else {
+                        throw KeychainReadError(status: errSecDecode)
+                    }
+                    try save(AuthorizedCredential(
+                        service: service, account: "", value: value
+                    ))
+                    return .authorized(service: service)
+                case errSecItemNotFound:
+                    continue
+                case errSecInteractionNotAllowed, errSecAuthFailed,
+                     errSecUserCanceled:
+                    return .cancelled
+                default:
+                    throw KeychainReadError(status: result.status)
                 }
-                cache(
-                    value,
-                    service: target.service,
-                    account: target.account
-                )
-                return .authorized(service: target.service)
-            case errSecItemNotFound:
-                continue
-            case errSecInteractionNotAllowed, errSecAuthFailed,
-                 errSecUserCanceled:
-                return .cancelled
-            default:
-                throw KeychainReadError(status: result.status)
             }
+            return .notFound
         }
-        return .notFound
     }
 
     func withInteractionAllowed<T: Sendable>(
