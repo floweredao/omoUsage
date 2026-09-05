@@ -73,24 +73,25 @@ struct RefreshTimestampPresenterTests {
 
 @Suite
 struct UsageRefreshSchedulerTests {
-    @Test
+    @Test(arguments: [ProviderID.claude, .codex])
     @MainActor
-    func companionLaunchWaitsForActivationBeforeRefresh() async {
+    func companionLaunchUsesItsProviderCompletionSignal(provider: ProviderID) async {
         let coordinator = ProviderConnectionCoordinator()
-        coordinator.record(.success(.launched), for: .claude)
+        coordinator.record(.success(.launched), for: provider)
         var refreshCount = 0
 
         #expect(refreshCount == 0)
         #expect(
-            coordinator.state(for: .claude) == .waitingForCredential
+            coordinator.state(for: provider) == .waitingForCredential
         )
         await coordinator.applicationDidBecomeActive(
             refresh: { refreshCount += 1 },
             availability: { (_: ProviderID) in .authenticationRequired }
         )
-        #expect(refreshCount == 1)
+        // Claude waits for the observed CLI exit; Codex retains activation refresh.
+        #expect(refreshCount == (provider == .claude ? 0 : 1))
         #expect(
-            coordinator.state(for: .claude) == .waitingForCredential
+            coordinator.state(for: provider) == .waitingForCredential
         )
     }
 

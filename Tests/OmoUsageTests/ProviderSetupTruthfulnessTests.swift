@@ -209,6 +209,112 @@ struct ProviderSetupTruthfulnessTests {
         )
     }
 
+    @Test(.timeLimit(.minutes(1)), arguments: [0, 7])
+    @MainActor
+    func officialClaudeTerminalCommandDeliversActualCompletion(exitCode: Int) async throws {
+        let home = FileManager.default.temporaryDirectory.appending(
+            path: "ClaudeLoginFixture-'quoted space'-\(UUID().uuidString)"
+        )
+        defer { try? FileManager.default.removeItem(at: home) }
+        let executable = home.appending(path: ".local/bin/claude")
+        try FileManager.default.createDirectory(
+            at: executable.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try """
+        #!/bin/zsh
+        [ "$#" -eq 2 ] && [ "$1" = auth ] && [ "$2" = login ] || exit 9
+        exit \(exitCode)
+        """.write(to: executable, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executable.path)
+        let completion = AsyncStream<Bool>.makeStream()
+        let receipt = try OfficialLoginReceipt { completion.continuation.yield($0) }
+        defer { receipt.cancel() }
+        let attributes = try FileManager.default.attributesOfItem(atPath: receipt.url.path)
+        let directoryAttributes = try FileManager.default.attributesOfItem(
+            atPath: receipt.url.deletingLastPathComponent().path
+        )
+        #expect(attributes[.posixPermissions] as? Int == 0o600)
+        #expect(directoryAttributes[.posixPermissions] as? Int == 0o700)
+        let commandFile = home.appending(path: "login.command")
+        let process = Process()
+        process.executableURL = URL(filePath: "/bin/zsh")
+        let termination = AsyncStream<Int32>.makeStream()
+        process.terminationHandler = { termination.continuation.yield($0.terminationStatus) }
+        let result = ProviderSetup.performClaudeLogin(
+            receipt: receipt,
+            environment: ["PATH": ""],
+            homeDirectory: home,
+            isExecutable: { $0 == executable.path },
+            launchTerminal: { command in
+                do {
+                    try ProviderSetup.terminalCommandFile(command: command, at: commandFile)
+                        .write(to: commandFile, atomically: true, encoding: .utf8)
+                    process.arguments = ["-f", commandFile.path]
+                    try process.run()
+                    return true
+                } catch {
+                    Issue.record(error)
+                    return false
+                }
+            }
+        )
+        #expect(result == .success(.launched))
+        for await succeeded in completion.stream {
+            #expect(succeeded == (exitCode == 0))
+            break
+        }
+        for await status in termination.stream {
+            #expect(status == Int32(exitCode))
+            break
+        }
+        #expect(!FileManager.default.fileExists(atPath: commandFile.path))
+        #expect(!FileManager.default.fileExists(atPath: receipt.url.deletingLastPathComponent().path))
+    }
+
+    @Test(arguments: [ProviderID.claude, .codex])
+    @MainActor
+    func companionAdditionActivationNeverCapturesProtectedClaudeCredential(provider: ProviderID) throws {
+        let home = FileManager.default.temporaryDirectory.appending(path: "AdditionActivation-\(UUID().uuidString)")
+        let suite = "AdditionActivation-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: home)
+        }
+        let store = ProviderAccountStore(
+            registryURL: home.appending(path: "registry.json"),
+            defaults: defaults,
+            legacyAPIKeyPresence: { _ in false }
+        )
+        let controller = ProviderAccountRegistryController(
+            store: store,
+            registry: try store.loadOrMigrate(),
+            keyStore: { _, _ in nil },
+            credentialSnapshotStore: { nil }
+        )
+        var captures = 0
+        let coordinator = ProviderAccountAdditionCoordinator(
+            controller: controller,
+            captureCredential: {
+                captures += 1
+                throw CredentialDiscoveryError.notFound($0)
+            },
+            launchCompanion: { _ in .success(.launched) },
+            onAccountAdded: { Issue.record("Unexpected account addition") }
+        )
+        #expect(coordinator.addAccount(provider: provider, label: "Work", key: nil) == .waitingForCompanion)
+        #expect(captures == 1)
+        let outcome = coordinator.applicationDidBecomeActive()
+        #expect(outcome == (provider == .claude ? .ignored : .credentialMissing))
+        #expect(captures == (provider == .claude ? 1 : 2))
+        // Explicit Check Again retains the existing Claude import policy.
+        #expect(coordinator.checkAgain() == .credentialMissing)
+        #expect(captures == (provider == .claude ? 2 : 3))
+        coordinator.cancel()
+        #expect(!coordinator.isWaitingForCompanion)
+    }
+
     @Test
     @MainActor
     func browserHelpOutcomeIsNeverAuthenticated() {
@@ -254,7 +360,8 @@ struct ProviderSetupTruthfulnessTests {
         )
 
         #expect(refreshCount == 1)
-        #expect(coordinator.state(for: .claude) == .authenticated)
+        // A still-valid old credential is not evidence that CLI login ended.
+        #expect(coordinator.state(for: .claude) == .waitingForCredential)
         #expect(coordinator.state(for: .codex) == .waitingForCredential)
         #expect(coordinator.state(for: .cursor) == .waitingForCredential)
         #expect(coordinator.state(for: .antigravity) == .failed)

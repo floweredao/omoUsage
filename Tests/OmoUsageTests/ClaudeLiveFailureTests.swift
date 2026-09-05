@@ -5,6 +5,40 @@ import Testing
 
 @Suite
 struct ClaudeLiveFailureTests {
+    @Test(arguments: [
+        ClaudeDesktopSessionError.keychainUnavailable,
+        ClaudeDesktopSessionError.cookiesUnavailable
+    ])
+    func missingClaudeLoginOffersConnectInsteadOfEndlessRetry(
+        desktopError: ClaudeDesktopSessionError
+    ) async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appending(path: "OmoUsageClaudeMissingLogin-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let missing = directory.appending(path: "missing.json")
+        let provider = ClaudeUsageProvider(
+            discovery: CredentialDiscovery(
+                paths: CredentialPaths(claude: missing, codex: missing),
+                environment: [:],
+                keychain: MissingClaudeLiveKeychain(),
+                homeDirectory: directory
+            ),
+            desktopUsageURL: missing,
+            desktopSessionDiscovery: ClaudeDesktopSessionDiscovery {
+                throw desktopError
+            }
+        )
+        await #expect(throws: ProviderTransportError.authenticationRequired(.claude)) {
+            _ = try await provider.fetch(
+                now: Date(timeIntervalSince1970: 1_785_675_000)
+            )
+        }
+    }
+
     @Test
     func liveSessionFailureNeverReturnsCachedHistory() async throws {
         let directory = FileManager.default.temporaryDirectory

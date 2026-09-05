@@ -5,38 +5,48 @@ struct FixtureUsageProvider: UsageProvider {
     let id: ProviderID
     let accountID: AccountID
     let accountLabel: String
+    private let claudeCredentialDiscovery: CredentialDiscovery?
 
     init(
         id: ProviderID,
         accountID: AccountID = .legacy,
-        accountLabel: String = AccountLabel.defaultValue
+        accountLabel: String = AccountLabel.defaultValue,
+        claudeCredentialDiscovery: CredentialDiscovery? = nil
     ) {
         self.id = id
         self.accountID = accountID
         self.accountLabel = accountLabel
+        self.claudeCredentialDiscovery = claudeCredentialDiscovery
     }
 
     func fetch(now: Date) async throws -> ProviderUsage {
         switch id {
         case .claude:
-            try ClaudeUsageParser.parse(
-                Data(Self.claudeJSON.utf8),
+            // The native Claude UI QA fixture supplies this real discovery
+            // path. Without the persisted, explicitly authorized mirror it
+            // throws notFound rather than making fixture usage look connected.
+            _ = try claudeCredentialDiscovery?.claude(now: now)
+            let json = claudeCredentialDiscovery == nil
+                ? Self.claudeJSON
+                : Self.claudeAuthenticationUIJSON
+            return try ClaudeUsageParser.parse(
+                Data(json.utf8),
                 planName: "Pro",
                 now: now.addingTimeInterval(-60)
             )
         case .codex:
-            try CodexUsageParser.parse(
+            return try CodexUsageParser.parse(
                 Data(Self.codexJSON.utf8),
                 now: now.addingTimeInterval(-15 * 60)
             )
         case .antigravity:
-            try AntigravityUsageParser.parse(
+            return try AntigravityUsageParser.parse(
                 Data(Self.antigravityJSON.utf8),
                 now: now
             )
         case .cursor, .copilot, .devin, .grok, .opencode,
              .openrouter, .zai:
-            Self.additionalFixture(provider: id, now: now)
+            return Self.additionalFixture(provider: id, now: now)
         }
     }
 
@@ -131,6 +141,15 @@ struct FixtureUsageProvider: UsageProvider {
       }
     }
     """
+
+    /// Isolated native-auth QA exercises the parser's fallback from a null
+    /// percent to utilization, plus a null scoped reset timestamp. Default
+    /// fixture mode intentionally retains the stable payload above.
+    private static let claudeAuthenticationUIJSON = claudeJSON
+        .replacingOccurrences(
+            of: "\"percent\": 44,\n      \"resets_at\": \"2099-01-07T00:00:00Z\"",
+            with: "\"percent\": null,\n      \"utilization\": 44,\n      \"resets_at\": null"
+        )
 
     private static let codexJSON = """
     {

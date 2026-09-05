@@ -1,5 +1,6 @@
 import OmoUsageCore
 import AppKit
+import Security
 import SwiftUI
 
 #if OMO_USAGE_FIXTURES
@@ -11,6 +12,7 @@ struct CompanionAccountFixture {
     static let rootPrefix = "/tmp/omousage-companion-qa-"
     static let headlessKey = "OMO_USAGE_COMPANION_ACCOUNT_QA"
     static let userInterfaceKey = "OMO_USAGE_COMPANION_ACCOUNT_UI_QA"
+    static let claudeAuthenticationUIKey = "OMO_USAGE_CLAUDE_AUTH_UI_QA"
     static let rootKey = "OMO_USAGE_COMPANION_ACCOUNT_QA_ROOT"
 
     let root: URL
@@ -57,6 +59,12 @@ struct CompanionAccountFixture {
     var launchLogURL: URL { root.appending(path: "launch-log.txt") }
     var accountRegistryRefreshCountURL: URL {
         root.appending(path: "account-registry-refresh-count")
+    }
+    var claudeAuthorizationCountURL: URL {
+        root.appending(path: "claude-authorization-count")
+    }
+    var claudeLoginCommandURL: URL {
+        root.appending(path: "claude-login.command")
     }
 
     func credentialURL(for provider: ProviderID) -> URL {
@@ -135,6 +143,146 @@ struct CompanionAccountFixture {
             try? Data(line.utf8).write(to: launchLogURL, options: .atomic)
         }
         return .success(.launched)
+    }
+
+    /// This narrower fixture is available only after the companion fixture
+    /// root has passed its isolation checks. It shares the fixture's file
+    /// Keychain but never opens the user's Keychain or a real login command.
+    func claudeAuthenticationUIFixture(
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> ClaudeAuthenticationUIFixture? {
+        guard environment[Self.claudeAuthenticationUIKey] == "1" else {
+            return nil
+        }
+        return ClaudeAuthenticationUIFixture(fixture: self)
+    }
+
+    final class ClaudeAuthenticationUIFixture: @unchecked Sendable {
+        private let fixture: CompanionAccountFixture
+        private let session: ClaudeKeychainAccessSession
+
+        init(fixture: CompanionAccountFixture) {
+            self.fixture = fixture
+            session = ClaudeKeychainAccessSession(
+                providerKeychain: fixture.keychain
+            )
+        }
+
+        func authorizeClaude() throws -> ClaudeKeychainAuthorizationOutcome {
+            try recordAuthorization()
+            return try session.authorizeClaude(
+                api: CompanionClaudeCredentialFileSecurityItemAPI(
+                    credentialURL: fixture.credentialURL(for: .claude)
+                )
+            )
+        }
+
+        func launchClaudeLogin(
+            receipt: OfficialLoginReceipt
+        ) -> Result<ProviderSetupOutcome, ProviderSetupError> {
+            do {
+                try ProviderFileDurability.atomicWrite(
+                    Data("#!/bin/zsh\n\(receipt.wrapping(":"))\n".utf8),
+                    to: fixture.claudeLoginCommandURL,
+                    permissions: 0o700
+                )
+                return .success(.launched)
+            } catch {
+                return .failure(.unableToLaunch("claude"))
+            }
+        }
+
+        func fixtureUsageProviders(
+            registry: ProviderAccountRegistry
+        ) -> [any UsageProvider] {
+            let references = Set(registry.providerReferences)
+            return ProviderID.allCases.flatMap { provider in
+                registry.accounts.compactMap { account in
+                    let identity = AccountProviderID(
+                        accountID: account.id,
+                        providerID: provider
+                    )
+                    guard references.contains(identity) else { return nil }
+                    return FixtureUsageProvider(
+                        id: provider,
+                        accountID: account.id,
+                        accountLabel: account.label,
+                        claudeCredentialDiscovery: provider == .claude
+                            ? credentialDiscovery()
+                            : nil
+                    )
+                }
+            }
+        }
+
+        private func credentialDiscovery() -> CredentialDiscovery {
+            CredentialDiscovery(
+                paths: CredentialPaths(
+                    claude: fixture.root.appending(
+                        components: "home", ".claude", ".credentials.json"
+                    ),
+                    codex: fixture.root.appending(
+                        components: "home", ".codex", "auth.json"
+                    )
+                ),
+                environment: [:],
+                keychain: SecurityKeychainReader(
+                    api: CompanionClaudeCredentialFileSecurityItemAPI(
+                        credentialURL: fixture.credentialURL(for: .claude)
+                    ),
+                    claudeSession: session
+                ),
+                providerKeychain: fixture.keychain,
+                homeDirectory: fixture.root.appending(
+                    path: "home",
+                    directoryHint: .isDirectory
+                ),
+                commandPaths: []
+            )
+        }
+
+        private func recordAuthorization() throws {
+            let current = Int(
+                (try? String(
+                    contentsOf: fixture.claudeAuthorizationCountURL,
+                    encoding: .utf8
+                ))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "0"
+            ) ?? 0
+            try ProviderFileDurability.atomicWrite(
+                Data("\(current + 1)\n".utf8),
+                to: fixture.claudeAuthorizationCountURL,
+                permissions: 0o600
+            )
+        }
+    }
+}
+
+/// The fixture credential file is the only authorization source for the
+/// narrow Claude UI QA path. Its SecurityItemAPI shape lets the real session
+/// copy that credential into its app-owned file Keychain mirror.
+private struct CompanionClaudeCredentialFileSecurityItemAPI: SecurityItemAPI {
+    let credentialURL: URL
+
+    func copyMatching(_ query: [String: Any]) -> SecurityItemCopyResult {
+        guard
+            let service = query[kSecAttrService as String] as? String,
+            CredentialDiscovery.claudeKeychainServices.contains(service),
+            let data = try? Data(contentsOf: credentialURL),
+            !data.isEmpty
+        else {
+            return SecurityItemCopyResult(
+                status: errSecItemNotFound,
+                value: nil
+            )
+        }
+        return SecurityItemCopyResult(status: errSecSuccess, value: data)
+    }
+
+    func update(
+        _ query: [String: Any],
+        attributes: [String: Any]
+    ) -> OSStatus {
+        errSecUnimplemented
     }
 }
 
@@ -299,6 +447,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     >
 #if OMO_USAGE_FIXTURES
     private let companionFixture: CompanionAccountFixture?
+    private let claudeAuthenticationFixture:
+        CompanionAccountFixture.ClaudeAuthenticationUIFixture?
 #endif
     private let opensSettingsOnLaunch: Bool
     private let snapshotSync: UbiquitousUsageSnapshotStore
@@ -346,9 +496,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     override init() {
 #if OMO_USAGE_FIXTURES
+        let fixtureEnvironment = ProcessInfo.processInfo.environment
         let companionFixture = CompanionAccountFixture.resolve(
-            requestKey: CompanionAccountFixture.userInterfaceKey
+            requestKey: CompanionAccountFixture.userInterfaceKey,
+            environment: fixtureEnvironment
         )
+        let claudeAuthenticationFixture = companionFixture?
+            .claudeAuthenticationUIFixture(environment: fixtureEnvironment)
         let defaults = companionFixture?.defaults ?? .standard
 #else
         let defaults = UserDefaults.standard
@@ -437,9 +591,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             ProviderSetupError
         > = { ProviderSetup.perform(for: $0) }
 #endif
+#if OMO_USAGE_FIXTURES
+        let accountComposition = AppAccountCompositionFactory.make(
+            registry: registryLoadResult.registry,
+            providerFactory: { registry in
+                claudeAuthenticationFixture?.fixtureUsageProviders(
+                    registry: registry
+                ) ?? ProviderFactory.current(registry: registry)
+            }
+        )
+#else
         let accountComposition = AppAccountCompositionFactory.make(
             registry: registryLoadResult.registry
         )
+#endif
         let webDashboardSnapshotStore = WebDashboardSnapshotStore(
             DashboardSnapshot(
                 providers: [],
@@ -563,6 +728,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         self.companionLaunch = companionLaunch
 #if OMO_USAGE_FIXTURES
         self.companionFixture = companionFixture
+        self.claudeAuthenticationFixture = claudeAuthenticationFixture
         self.opensSettingsOnLaunch = companionFixture != nil
 #else
         self.opensSettingsOnLaunch = false
@@ -788,6 +954,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             return
         }
 
+#if OMO_USAGE_FIXTURES
+        let fixture = claudeAuthenticationFixture
+        let authorizeClaude: () throws -> ClaudeKeychainAuthorizationOutcome = {
+            guard let fixture else {
+                return try ClaudeKeychainAccessSession.shared.authorizeClaude()
+            }
+            return try fixture.authorizeClaude()
+        }
+        let launchClaudeLogin: (OfficialLoginReceipt) -> Result<
+            ProviderSetupOutcome, ProviderSetupError
+        > = { receipt in
+            guard let fixture else {
+                return ProviderSetup.performClaudeLogin(receipt: receipt)
+            }
+            return fixture.launchClaudeLogin(receipt: receipt)
+        }
+#else
+        let authorizeClaude: () throws -> ClaudeKeychainAuthorizationOutcome = {
+            try ClaudeKeychainAccessSession.shared.authorizeClaude()
+        }
+        let launchClaudeLogin: (OfficialLoginReceipt) -> Result<
+            ProviderSetupOutcome, ProviderSetupError
+        > = { ProviderSetup.performClaudeLogin(receipt: $0) }
+#endif
         let controller = NSHostingController(
             rootView: SettingsView(
                 viewModel: viewModel,
@@ -797,6 +987,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 accountRegistryController: accountRegistryController,
                 captureCompanionCredential: companionCapture,
                 launchCompanion: companionLaunch,
+                authorizeClaude: authorizeClaude,
+                launchClaudeLogin: launchClaudeLogin,
                 onRegistryChange: { [weak self] in
                     self?.applyAccountRegistryChange()
                 },
@@ -892,9 +1084,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     private func applyAccountRegistryChange() {
+#if OMO_USAGE_FIXTURES
+        let composition = AppAccountCompositionFactory.make(
+            registry: accountRegistryController.registry,
+            providerFactory: { [claudeAuthenticationFixture] registry in
+                claudeAuthenticationFixture?.fixtureUsageProviders(
+                    registry: registry
+                ) ?? ProviderFactory.current(registry: registry)
+            }
+        )
+#else
         let composition = AppAccountCompositionFactory.make(
             registry: accountRegistryController.registry
         )
+#endif
         viewModel.updateProviders(
             composition.providers,
             accountProviderOrder: composition.accountProviderOrder,

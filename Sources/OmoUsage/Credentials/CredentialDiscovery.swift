@@ -1,4 +1,5 @@
 import OmoUsageCore
+import CryptoKit
 import Foundation
 import Darwin
 
@@ -12,6 +13,9 @@ enum CredentialSource: String, Equatable, Codable, Sendable {
 /// back where it came from instead of a different base store.
 enum CredentialStorage: Equatable, Sendable {
     case file(URL)
+    /// Logical Keychain origin. For protected Claude services the Security
+    /// reader/writer resolve this exact origin to the explicitly authorized
+    /// app-owned raw mirror; they never access the foreign item in background.
     case keychain(service: String, account: String)
     /// An OmoUsage-owned snapshot secret, addressed by the account that
     /// captured it. A rotation lands on exactly this account's Keychain
@@ -300,7 +304,23 @@ protocol KeychainWriting: Sendable {
 
 struct CredentialDiscovery: Sendable {
     static let claudeKeychainService = "Claude Code-credentials"
+    static func claudeLoginDirectory(
+        home: URL = FileManager.default.homeDirectoryForCurrentUser
+    ) -> URL {
+        home.appending(path: "Library/Application Support/OmoUsage/Claude")
+    }
+
+    // Claude Code's published CLI keys a configured directory by the first
+    // eight SHA-256 hex characters of its NFC path (cli.js 2.1.69).
+    static let claudeLoginKeychainService: String = {
+        let path = claudeLoginDirectory().path.precomposedStringWithCanonicalMapping
+        let digest = SHA256.hash(data: Data(path.utf8))
+            .map { String(format: "%02x", $0) }.joined()
+        return "\(claudeKeychainService)-\(digest.prefix(8))"
+    }()
+
     static let claudeKeychainServices = [
+        claudeLoginKeychainService,
         claudeKeychainService,
         "Claude Code-local-oauth-credentials",
         "Claude Code-staging-oauth-credentials",
@@ -394,7 +414,7 @@ struct CredentialDiscovery: Sendable {
         allowingExpired: Bool
     ) -> (
         candidates: [DiscoveredCredential],
-        failure: CredentialDiscoveryError?
+        failure: (any Error)?
     ) {
         var candidates: [DiscoveredCredential] = []
         var candidateError: CredentialDiscoveryError?
@@ -418,6 +438,10 @@ struct CredentialDiscovery: Sendable {
                         allowingExpired: allowingExpired
                     )
                 )
+            } catch let error as KeychainReadError {
+                // An inaccessible exact authorization must not select another
+                // service, a file, or an environment token instead.
+                return ([], error)
             } catch let error as CredentialDiscoveryError {
                 candidateError = betterClaudeFailure(
                     candidateError,
@@ -502,9 +526,9 @@ struct CredentialDiscovery: Sendable {
         }
     }
 
-    /// Rewrites the stored Claude credential in place, keeping every field
-    /// Claude Code owns (scopes, subscriptionType, rateLimitTier, …) so the
-    /// CLI keeps working after OmoUsage rotates the token.
+    /// Rewrites the stored Claude credential, keeping every field Claude Code
+    /// owns (scopes, subscriptionType, rateLimitTier, …). Protected Keychain
+    /// origins rotate only the authorized app-owned mirror, not the CLI item.
     func persistClaudeCredential(
         accessToken: String,
         refreshToken: String,

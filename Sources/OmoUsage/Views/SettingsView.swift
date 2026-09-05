@@ -85,6 +85,10 @@ struct SettingsView: View {
     let onShareWebDashboardURL: (URL, NSView) -> Bool
     let onRetryWebDashboard: () -> Void
     let onExportDiagnostics: () -> DiagnosticExportOutcome
+    private let authorizeClaude: () throws -> ClaudeKeychainAuthorizationOutcome
+    private let launchClaudeLogin: (OfficialLoginReceipt) -> Result<
+        ProviderSetupOutcome, ProviderSetupError
+    >
     @State private var keyDrafts: [ProviderID: String] = [:]
     @State private var newAccountLabels: [ProviderID: String] = [:]
     @State private var newAccountKeys: [ProviderID: String] = [:]
@@ -117,6 +121,12 @@ struct SettingsView: View {
             ProviderSetupOutcome,
             ProviderSetupError
         > = { ProviderSetup.perform(for: $0) },
+        authorizeClaude: @escaping () throws -> ClaudeKeychainAuthorizationOutcome = {
+            try ClaudeKeychainAccessSession.shared.authorizeClaude()
+        },
+        launchClaudeLogin: @escaping (OfficialLoginReceipt) -> Result<
+            ProviderSetupOutcome, ProviderSetupError
+        > = { ProviderSetup.performClaudeLogin(receipt: $0) },
         onRegistryChange: @escaping () -> Void,
         onLanguageChange: @escaping () -> Void,
         onPresentationStyleChange:
@@ -148,6 +158,8 @@ struct SettingsView: View {
         self.onShareWebDashboardURL = onShareWebDashboardURL
         self.onRetryWebDashboard = onRetryWebDashboard
         self.onExportDiagnostics = onExportDiagnostics
+        self.authorizeClaude = authorizeClaude
+        self.launchClaudeLogin = launchClaudeLogin
         _presentationStyle = State(initialValue: presentationStyle)
         _sideNotchHideDelay = State(initialValue: sideNotchHideDelay)
         _additionCoordinator = State(
@@ -547,6 +559,7 @@ struct SettingsView: View {
                 )
             )
         }
+        .onDisappear { connectionCoordinator.cancelClaudeLogin() }
         .onChange(of: codexPlanMultiplier) {
             _, multiplier in
             CodexPlanMultiplierStore(defaults: .standard)
@@ -556,44 +569,10 @@ struct SettingsView: View {
     }
 
     private func refreshPendingConnectionsAfterActivation() async {
-        let claudeIsPending = connectionCoordinator.state(for: .claude)
-            == .waitingForCredential
-        let claudeIsAuthorized: Bool
-        if claudeIsPending {
-            do {
-                if case .authorized = try ClaudeKeychainAccessSession.shared
-                    .authorizeClaude()
-                {
-                    claudeIsAuthorized = true
-                } else {
-                    claudeIsAuthorized = false
-                }
-            } catch {
-                claudeIsAuthorized = false
-            }
-        } else {
-            claudeIsAuthorized = true
-        }
-
         await connectionCoordinator.applicationDidBecomeActive(
-            refresh: {
-                if claudeIsPending && claudeIsAuthorized {
-                    await ClaudeKeychainAccessSession.shared
-                        .withInteractionAllowed {
-                            await viewModel.refresh()
-                        }
-                } else {
-                    await viewModel.refresh()
-                }
-            },
-            availability: { provider in
-                if provider == .claude,
-                   claudeIsPending,
-                   !claudeIsAuthorized
-                {
-                    return .authenticationRequired
-                }
-                return viewModel.connectionStates[provider]
+            refresh: { await viewModel.refresh() },
+            availability: { (provider: ProviderID) in
+                viewModel.connectionStates[provider]
             }
         )
         if !Task.isCancelled,
@@ -669,8 +648,22 @@ struct SettingsView: View {
     }
 
     private func startConnection(for provider: ProviderID) {
-        let result = ProviderSetup.perform(for: provider)
-        connectionCoordinator.record(result, for: provider)
+        let result: Result<ProviderSetupOutcome, ProviderSetupError>
+        if provider == .claude {
+            result = connectionCoordinator.startClaudeLogin(
+                launch: launchClaudeLogin,
+                authorize: authorizeClaude,
+                refresh: { await viewModel.retryProvider(.claude) },
+                availability: { viewModel.connectionStates[.claude] },
+                didComplete: {
+                    feedback = connectionCoordinator.state(for: .claude) == .authenticated
+                        ? nil : .key(.authenticationRequired)
+                }
+            )
+        } else {
+            result = ProviderSetup.perform(for: provider)
+            connectionCoordinator.record(result, for: provider)
+        }
         switch result {
         case .success(.launched):
             feedback = .key(.waitingForCompanionCredentials)
@@ -686,6 +679,7 @@ struct SettingsView: View {
 
     private func disconnectProvider(_ provider: ProviderID) {
         guard !connectionControlsDisabled(for: provider) else { return }
+        if provider == .claude { connectionCoordinator.cancelClaudeLogin() }
         viewModel.disconnectProvider(provider)
         feedback = .formatted(
             .disconnectedProvider,
@@ -696,41 +690,17 @@ struct SettingsView: View {
     private func retryProvider(_ provider: ProviderID) {
         ProviderConnectionControl.performRetry(
             provider: provider,
-            reauthorizeClaude: retryClaudeProvider,
             refresh: { provider in
-                Task { await viewModel.retryProvider(provider) }
-            }
-        )
-    }
-
-    private func retryClaudeProvider(_ provider: ProviderID) {
-        let outcome: ClaudeKeychainAuthorizationOutcome
-        do {
-            outcome = try ClaudeKeychainAccessSession.shared
-                .authorizeClaude()
-        } catch {
-            feedback = .key(.refreshFailed)
-            return
-        }
-        switch ClaudeConnectionAuthorizationPolicy.decision(for: outcome) {
-        case .refresh:
-            feedback = .key(.waitingForCompanionCredentials)
-            Task {
-                await ClaudeKeychainAccessSession.shared
-                    .withInteractionAllowed {
-                        await viewModel.retryProvider(provider)
+                Task {
+                    await viewModel.retryProvider(provider)
+                    if !Task.isCancelled,
+                       provider == .claude,
+                       viewModel.connectionStates[.claude] == .available {
+                        feedback = nil
                     }
-                if !Task.isCancelled,
-                   viewModel.connectionStates[.claude] == .available
-                {
-                    feedback = nil
                 }
             }
-        case .stop:
-            feedback = .key(.authenticationRequired)
-        case .launchCompanion:
-            startConnection(for: provider)
-        }
+        )
     }
 
     private func startGuardedCodexConnection(_ provider: ProviderID) {
@@ -1640,14 +1610,9 @@ enum ProviderConnectionControl: Equatable, Hashable {
     @MainActor
     static func performRetry(
         provider: ProviderID,
-        reauthorizeClaude: (ProviderID) -> Void,
         refresh: (ProviderID) -> Void
     ) {
-        if provider == .claude {
-            reauthorizeClaude(provider)
-        } else {
-            refresh(provider)
-        }
+        refresh(provider)
     }
 
     @MainActor

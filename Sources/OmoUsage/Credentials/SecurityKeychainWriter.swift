@@ -148,12 +148,13 @@ struct SecurityKeychainWriter: KeychainWriting {
         service: String,
         account: String
     ) throws {
-        let isProtected =
-            ClaudeKeychainAccessSession.isProtected(service: service)
-        if isProtected, !claudeSession.allowsInteraction {
-            throw KeychainReadError(
-                status: errSecInteractionNotAllowed
+        if ClaudeKeychainAccessSession.isProtected(service: service) {
+            // Even noninteractive Security queries can prompt on foreign ACL
+            // items. A rotated Claude grant belongs only to our authorized copy.
+            try claudeSession.updateAuthorizedValue(
+                value, service: service, account: account
             )
+            return
         }
         var query: [String: Any] = [
             securityKey(kSecClass): securityKey(kSecClassGenericPassword),
@@ -211,13 +212,6 @@ struct SecurityKeychainWriter: KeychainWriting {
         )
         guard updateStatus == errSecSuccess else {
             throw KeychainReadError(status: updateStatus)
-        }
-        if isProtected {
-            claudeSession.cache(
-                value,
-                service: service,
-                account: account
-            )
         }
     }
 }
