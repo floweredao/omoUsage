@@ -209,9 +209,8 @@ enum ClaudeUsageParser {
             guard
                 limit["kind"] as? String == "weekly_scoped",
                 let title = displayName ?? modelID,
-                let percent = UsageJSON.number(
-                    limit["percent"] ?? limit["utilization"]
-                ),
+                let percent = UsageJSON.number(limit["percent"])
+                    ?? UsageJSON.number(limit["utilization"]),
                 let remaining = ProviderPayload.remainingPercent(
                     usedPercent: percent
                 )
@@ -220,7 +219,9 @@ enum ClaudeUsageParser {
             }
             let resetValue = limit["resets_at"]
             let resetsAt = resetValue.flatMap(UsageJSON.date)
-            guard resetValue == nil || resetsAt != nil else { return nil }
+            guard resetValue == nil || resetValue is NSNull || resetsAt != nil else {
+                return nil
+            }
             let stableID = modelID
                 ?? title
                     .lowercased()

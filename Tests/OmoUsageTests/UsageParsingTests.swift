@@ -17,6 +17,85 @@ struct UsageJSONTests {
 @Suite
 struct ClaudeUsageParsingTests {
     @Test
+    func preservesFableWeeklyUsageWithoutAResetDate() throws {
+        let usage = try ClaudeUsageParser.parse(
+            Data(
+                """
+                {
+                  "five_hour": {"utilization": 4},
+                  "limits": [{
+                    "kind": "weekly_scoped",
+                    "percent": 44,
+                    "resets_at": null,
+                    "scope": {"model": {"id": null, "display_name": "Fable"}}
+                  }]
+                }
+                """.utf8
+            ),
+            planName: "Max",
+            now: fixedNow
+        )
+        let meter = try #require(
+            usage.groups.flatMap(\.meters)
+                .first { $0.id == "claude.week.model.fable" }
+        )
+        #expect(meter.percentRemaining == 56)
+        #expect(meter.resetsAt == nil)
+    }
+
+    @Test
+    func usesScopedUtilizationWhenPercentIsNull() throws {
+        let usage = try ClaudeUsageParser.parse(
+            Data(
+                """
+                {
+                  "five_hour": {"utilization": 4},
+                  "limits": [{
+                    "kind": "weekly_scoped",
+                    "percent": null,
+                    "utilization": 37,
+                    "scope": {"model": {"display_name": "Fable"}}
+                  }]
+                }
+                """.utf8
+            ),
+            planName: "Max",
+            now: fixedNow
+        )
+        let meter = try #require(
+            usage.groups.flatMap(\.meters)
+                .first { $0.id == "claude.week.model.fable" }
+        )
+        #expect(meter.percentRemaining == 63)
+    }
+
+    @Test
+    func doesNotInventScopedUsageFromMissingNumbersOrMalformedReset() throws {
+        for fields in [
+            "\"percent\": null, \"utilization\": null",
+            "\"percent\": 44, \"resets_at\": \"not-a-date\""
+        ] {
+            let usage = try ClaudeUsageParser.parse(
+                Data(
+                    """
+                    {
+                      "five_hour": {"utilization": 4},
+                      "limits": [{
+                        "kind": "weekly_scoped",
+                        \(fields),
+                        "scope": {"model": {"display_name": "Fable"}}
+                      }]
+                    }
+                    """.utf8
+                ),
+                planName: "Max",
+                now: fixedNow
+            )
+            #expect(usage.groups.flatMap(\.meters).map(\.id) == ["claude.session"])
+        }
+    }
+
+    @Test
     func parsesScreenshotVisibleMeters() throws {
         let usage = try ClaudeUsageParser.parse(
             Data(
