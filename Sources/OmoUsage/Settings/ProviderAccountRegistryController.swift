@@ -211,8 +211,8 @@ final class ProviderAccountRegistryController {
 
     /// Pins the Codex credential that currently belongs to the legacy
     /// account before the companion is allowed to replace its mutable
-    /// credential. An existing pin is authoritative and is never replaced
-    /// by a repeated Add Account flow.
+    /// credential. A newer official login for the same owner repairs a
+    /// stale pin; another account can never displace it.
     func preserveLegacyCodexCredentialIfAbsent(
         _ encodedSecret: String
     ) throws {
@@ -236,15 +236,16 @@ final class ProviderAccountRegistryController {
             providerID: .codex
         )
         do {
-            if try snapshotStore.snapshot(for: identity) != nil { return }
+            if let stored = try snapshotStore.snapshot(for: identity),
+               !snapshot.isNewerCodexCredential(than: stored) { return }
             try snapshotStore.save(snapshot, for: identity)
         } catch {
             throw ProviderAccountRegistryControllerError.credentialUnavailable
         }
     }
 
-    /// Reconnect is the only operation allowed to replace the legacy Codex
-    /// pin, and calls this only after observing a changed companion login.
+    /// Reconnect may change the legacy owner, but only after observing a
+    /// changed companion login. Automatic repair must keep the same owner.
     func replaceLegacyCodexCredential(_ encodedSecret: String) throws {
         _ = try requireRegistry()
         guard

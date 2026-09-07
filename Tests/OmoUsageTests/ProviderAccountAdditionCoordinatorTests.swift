@@ -131,6 +131,26 @@ struct ProviderAccountAdditionCoordinatorTests {
     }
 
     @Test
+    func codexRotationIsNotAnotherAccount() throws {
+        let fixture = try AdditionFixture()
+        defer { fixture.remove() }
+        let coordinator = fixture.makeCoordinator()
+        fixture.capture[.codex] = .success(fixture.codexSecretA)
+        #expect(coordinator.addAccount(provider: .codex, label: "Work", key: nil) == .waitingForCompanion)
+        let original = try CredentialSnapshot(encodedSecret: fixture.codexSecretA, provider: .codex)
+        fixture.capture[.codex] = .success(try original.rotated(
+            accessToken: "new-token-for-the-same-account",
+            refreshToken: "new-refresh-for-the-same-account",
+            expiresAt: original.expiresAt?.addingTimeInterval(3_600)
+        ).encodedSecret())
+
+        #expect(coordinator.checkAgain() == .credentialUnchanged)
+        #expect(fixture.controller.accounts.isEmpty)
+        #expect(fixture.refreshCount == 0)
+        #expect(coordinator.isWaitingForCompanion)
+    }
+
+    @Test
     func changedCredentialPersistsFreshAccountAndRequestsRefresh() throws {
         let fixture = try AdditionFixture()
         defer { fixture.remove() }
@@ -363,6 +383,179 @@ struct ProviderAccountAdditionCoordinatorTests {
 @Suite(.serialized)
 @MainActor
 struct CodexAccountAdditionRotationTests {
+    @Test(arguments: [false, true])
+    func lateRefreshCannotOverwriteRelogin(pinned: Bool) throws {
+        let fixture = try AdditionFixture()
+        defer { fixture.remove() }
+        let now = Date(timeIntervalSince1970: 1_785_675_000)
+        let legacy = AccountProviderID(accountID: .legacy, providerID: .codex)
+        let authURL = fixture.rootURL.appending(path: "auth.json")
+        let original = CodexPinRotationURLProtocol.credential(token: "old-access", account: "original")
+        try Data(original.utf8).write(to: authURL)
+        let discovery = CredentialDiscovery(
+            paths: CredentialPaths(claude: fixture.rootURL.appending(path: "missing.json"), codex: authURL),
+            environment: [:], keychain: fixture.keychain, providerKeychain: fixture.keychain,
+            homeDirectory: fixture.homeURL, commandPaths: []
+        )
+        if pinned {
+            try fixture.controller.preserveLegacyCodexCredentialIfAbsent(
+                discovery.captureCredential(for: .codex, now: now)
+            )
+        }
+        let inFlight = try discovery.codex(now: now)
+        let replacement = CodexPinRotationURLProtocol.credential(token: "fresh-login", account: "replacement")
+        try Data(replacement.utf8).write(to: authURL)
+        if pinned {
+            try fixture.controller.replaceLegacyCodexCredential(
+                discovery.captureCredential(for: .codex, now: now)
+            )
+        }
+
+        #expect(throws: CredentialDiscoveryError.malformed(.codex)) {
+            try discovery.persistCodexCredential(
+                accessToken: "late-access", refreshToken: "late-refresh",
+                idToken: nil, lastRefresh: now, replacing: inFlight
+            )
+        }
+        #expect(try String(contentsOf: authURL, encoding: .utf8) == replacement)
+        if pinned {
+            #expect(try discovery.snapshotStore.snapshot(for: legacy)?.accessToken == "fresh-login")
+            #expect(try discovery.snapshotStore.snapshot(for: legacy)?.accountReference == "replacement")
+        }
+    }
+
+    @Test(.timeLimit(.minutes(1)), arguments: [CredentialSource.file, .keychain])
+    func reloggedMainSurvivesAddingAnotherAccount(source: CredentialSource) async throws {
+        let fixture = try AdditionFixture()
+        defer { fixture.remove() }
+        let now = Date(timeIntervalSince1970: 1_785_675_000)
+        let legacy = AccountProviderID(accountID: .legacy, providerID: .codex)
+        let stale = CredentialSnapshot(
+            provider: .codex,
+            accessToken: CodexPinRotationURLProtocol.jwt(expiration: now.addingTimeInterval(1_800)),
+            refreshToken: "revoked-refresh",
+            accountReference: "original",
+            planName: nil,
+            expiresAt: now.addingTimeInterval(1_800),
+            source: source
+        )
+        try fixture.controller.preserveLegacyCodexCredentialIfAbsent(stale.encodedSecret())
+        let authURL = fixture.rootURL.appending(path: "auth.json")
+        func writeCompanion(token: String, account: String) throws {
+            let raw = CodexPinRotationURLProtocol.credential(token: token, account: account)
+            if source == .file {
+                try Data(raw.utf8).write(to: authURL)
+            } else {
+                try fixture.keychain.set(raw, service: "Codex Auth", account: "")
+            }
+        }
+        let freshAccess = CodexPinRotationURLProtocol.jwt(expiration: now.addingTimeInterval(3_600))
+        try writeCompanion(token: freshAccess, account: "original")
+        let discovery = CredentialDiscovery(
+            paths: CredentialPaths(claude: fixture.rootURL.appending(path: "missing.json"), codex: authURL),
+            environment: [:],
+            keychain: fixture.keychain,
+            providerKeychain: fixture.keychain,
+            keychainWriter: CodexPinRotationWriter(keychain: fixture.keychain),
+            homeDirectory: fixture.homeURL,
+            commandPaths: []
+        )
+        let coordinator = ProviderAccountAdditionCoordinator(
+            controller: fixture.controller,
+            captureCredential: { try discovery.captureCredential(for: $0, now: now) },
+            launchCompanion: { _ in .success(.launched) },
+            onAccountAdded: {}
+        )
+        #expect(coordinator.addAccount(provider: .codex, label: "Work", key: nil) == .waitingForCompanion)
+        #expect(try discovery.snapshotStore.snapshot(for: legacy)?.accessToken == freshAccess)
+        try writeCompanion(token: "replacement-access", account: "replacement")
+        #expect(coordinator.checkAgain() == .addedAccount("Work"))
+        let added = try #require(fixture.controller.accounts.first?.accountProviderID)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [CodexPinRotationURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        _ = CodexPinRotationURLProtocol.reset()
+        defer { CodexPinRotationURLProtocol.completeRefresh() }
+        let model = UsageDashboardViewModel(
+            providers: [legacy, added].map {
+                CodexUsageProvider(
+                    discovery: discovery,
+                    http: providerHTTPTestClient(session: session),
+                    accountID: $0.accountID
+                )
+            },
+            accountProviderOrder: [legacy, added],
+            now: { now }
+        )
+        await model.refresh()
+        #expect(Set(model.snapshot.providers.map(\.accountProviderID)) == [legacy, added])
+        #expect(model.accountConnectionStates[legacy] == .available)
+        #expect(model.snapshot.providers.first { $0.accountProviderID == legacy }?
+            .groups.flatMap(\.meters).first?.percentRemaining == 80)
+        #expect(model.snapshot.providers.first { $0.accountProviderID == added }?
+            .groups.flatMap(\.meters).first?.percentRemaining == 30)
+        #expect(CodexPinRotationURLProtocol.refreshCount == 0)
+        #expect(try discovery.codex(now: now).accessToken == freshAccess)
+        #expect(try discovery.codex(accountID: added.accountID, now: now).accessToken == "replacement-access")
+    }
+
+    @Test
+    func newerSameIdentityCompanionRepairsPinnedCredential() throws {
+        let fixture = try AdditionFixture()
+        defer { fixture.remove() }
+        let now = Date(timeIntervalSince1970: 1_785_675_000)
+        let legacy = AccountProviderID(accountID: .legacy, providerID: .codex)
+        let stale = CredentialSnapshot(
+            provider: .codex, accessToken: "stale-main", refreshToken: "revoked-refresh",
+            accountReference: "original", planName: nil,
+            expiresAt: now.addingTimeInterval(1_800), source: .file
+        )
+        try fixture.controller.preserveLegacyCodexCredentialIfAbsent(stale.encodedSecret())
+        let authURL = fixture.rootURL.appending(path: "auth.json")
+        let freshAccess = CodexPinRotationURLProtocol.jwt(expiration: now.addingTimeInterval(3_600))
+        try Data(CodexPinRotationURLProtocol.credential(token: freshAccess, account: "original").utf8).write(to: authURL)
+        let discovery = CredentialDiscovery(
+            paths: CredentialPaths(claude: fixture.rootURL.appending(path: "missing.json"), codex: authURL),
+            environment: [:], keychain: fixture.keychain, providerKeychain: fixture.keychain,
+            homeDirectory: fixture.homeURL, commandPaths: []
+        )
+        #expect(try discovery.codex(now: now).accessToken == freshAccess)
+        #expect(discovery.codexCandidates(now: now).first?.accessToken == freshAccess)
+        #expect(try discovery.snapshotStore.snapshot(for: legacy)?.accessToken == freshAccess)
+        try FileManager.default.removeItem(at: authURL)
+        #expect(try discovery.codex(now: now).accessToken == freshAccess)
+    }
+
+    @Test(arguments: ["older", "foreign", "missing-identity"])
+    func staleOrForeignCompanionCannotReplacePinnedCredential(kind: String) throws {
+        let fixture = try AdditionFixture()
+        defer { fixture.remove() }
+        let now = Date(timeIntervalSince1970: 1_785_675_000)
+        let stored = CredentialSnapshot(
+            provider: .codex, accessToken: "pinned-main", refreshToken: "pinned-refresh",
+            accountReference: "original", planName: nil,
+            expiresAt: now.addingTimeInterval(3_600), source: .file
+        )
+        try fixture.controller.preserveLegacyCodexCredentialIfAbsent(stored.encodedSecret())
+        let authURL = fixture.rootURL.appending(path: "auth.json")
+        let candidate = CodexPinRotationURLProtocol.jwt(
+            expiration: now.addingTimeInterval(kind == "older" ? 1_800 : 7_200)
+        )
+        let account = kind == "older" ? "original" : kind == "foreign" ? "replacement" : ""
+        try Data(CodexPinRotationURLProtocol.credential(token: candidate, account: account).utf8).write(to: authURL)
+        let discovery = CredentialDiscovery(
+            paths: CredentialPaths(claude: fixture.rootURL.appending(path: "missing.json"), codex: authURL),
+            environment: [:], keychain: fixture.keychain, providerKeychain: fixture.keychain,
+            homeDirectory: fixture.homeURL, commandPaths: []
+        )
+        try fixture.controller.preserveLegacyCodexCredentialIfAbsent(
+            discovery.captureCredential(for: .codex, now: now)
+        )
+        #expect(try discovery.codex(now: now).accessToken == "pinned-main")
+        #expect(discovery.codexCandidates(now: now).first?.accessToken == "pinned-main")
+    }
+
     @Test(.timeLimit(.minutes(1)), arguments: [CredentialSource.file, .keychain])
     func addingAccountDuringRefreshKeepsBothAccountsUsable(
         source: CredentialSource

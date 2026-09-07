@@ -422,6 +422,9 @@ if [ "$scenario" = "changed" ]; then
     note "- opened the dashboard from the status item"
     drive --action wait --identifier "$dashboard_account_identifier" \
         --timeout 40 --scroll --highest-layer
+    drive --action wait --identifier "dashboard-provider-codex-Default Account" \
+        --timeout 40 --scroll --highest-layer
+    note "dashboard-main-and-added-accounts-present=passed"
     drive --action scroll-to --identifier "$dashboard_account_identifier" \
         --timeout 40 --highest-layer
     note "- dashboard visibly targeted account $account_alias after one completed refresh"
