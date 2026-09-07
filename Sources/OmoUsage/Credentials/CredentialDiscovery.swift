@@ -216,6 +216,18 @@ struct CredentialSnapshot: Codable, Equatable, Sendable,
         )
     }
 
+    /// A companion relogin may repair this account, but must never switch
+    /// its owner or roll a newer app-owned token back to an older CLI copy.
+    func isNewerCodexCredential(than stored: CredentialSnapshot) -> Bool {
+        guard
+            provider == .codex, stored.provider == .codex,
+            let accountReference, !accountReference.isEmpty,
+            accountReference == stored.accountReference,
+            let expiresAt, let storedExpiration = stored.expiresAt
+        else { return false }
+        return expiresAt > storedExpiration
+    }
+
     var description: String {
         "\(provider.displayName) credential snapshot (<redacted>)"
     }
@@ -639,9 +651,7 @@ struct CredentialDiscovery: Sendable {
             providerID: .codex
         )
         if let snapshot = try snapshotStore.snapshot(for: legacyIdentity) {
-            return snapshot.credential(
-                storage: .accountSnapshot(legacyIdentity)
-            )
+            return try reconciledLegacyCodexCredential(snapshot, now: now)
         }
         return try mutableCodexCredential(now: now)
     }
@@ -677,14 +687,30 @@ struct CredentialDiscovery: Sendable {
         )
         do {
             if let snapshot = try snapshotStore.snapshot(for: identity) {
-                return [snapshot.credential(
-                    storage: .accountSnapshot(identity)
-                )]
+                return [try reconciledLegacyCodexCredential(snapshot, now: now)]
             }
         } catch {
             return []
         }
         return resolveCodexCandidates(now: now).candidates
+    }
+
+    private func reconciledLegacyCodexCredential(
+        _ stored: CredentialSnapshot,
+        now: Date
+    ) throws -> DiscoveredCredential {
+        var snapshot = stored
+        for candidate in resolveCodexCandidates(now: now).candidates {
+            let replacement = CredentialSnapshot(candidate)
+            if replacement.isNewerCodexCredential(than: snapshot) {
+                snapshot = replacement
+            }
+        }
+        let identity = AccountProviderID(accountID: .legacy, providerID: .codex)
+        if snapshot != stored {
+            try snapshotStore.save(snapshot, for: identity)
+        }
+        return snapshot.credential(storage: .accountSnapshot(identity))
     }
 
     /// The stored Codex credential carries its deadline inside the access
@@ -780,12 +806,20 @@ struct CredentialDiscovery: Sendable {
             break
         }
         if case let .accountSnapshot(identity) = storage {
-            try rotateSnapshot(
-                identity,
-                accessToken: accessToken,
-                refreshToken: refreshToken,
-                // Codex states the new deadline inside the token itself.
-                expiresAt: codexJWTExpiration(accessToken)
+            guard
+                let stored = try snapshotStore.snapshot(for: identity),
+                stored == CredentialSnapshot(credential)
+            else {
+                throw CredentialDiscoveryError.malformed(.codex)
+            }
+            try snapshotStore.save(
+                stored.rotated(
+                    accessToken: accessToken,
+                    refreshToken: refreshToken ?? stored.refreshToken,
+                    // Codex states the new deadline inside the token itself.
+                    expiresAt: codexJWTExpiration(accessToken)
+                ),
+                for: identity
             )
             return
         }
@@ -809,7 +843,10 @@ struct CredentialDiscovery: Sendable {
         }
         guard
             var root = try? UsageJSON.object(raw),
-            var tokens = UsageJSON.object(root["tokens"])
+            var tokens = UsageJSON.object(root["tokens"]),
+            tokens["access_token"] as? String == credential.accessToken,
+            (tokens["refresh_token"] as? String)?.nonEmpty == credential.refreshToken,
+            (tokens["account_id"] as? String)?.nonEmpty == credential.accountID
         else {
             throw CredentialDiscoveryError.malformed(.codex)
         }

@@ -358,8 +358,8 @@ final class ProviderAccountAdditionCoordinator {
     struct PendingCompanionAddition: Equatable, Sendable {
         let provider: ProviderID
         let label: String
-        /// Opaque digest of the credential the companion held when the
-        /// addition started, or `nil` when it held none. Never the secret.
+        /// Opaque digest of the companion identity (Codex) or credential
+        /// when addition started, or `nil` when it held none. Never a secret.
         let credentialFingerprint: String?
     }
 
@@ -432,7 +432,7 @@ final class ProviderAccountAdditionCoordinator {
                     encodedSecret
                 )
             }
-            baseline = Self.fingerprint(encodedSecret)
+            baseline = Self.additionFingerprint(encodedSecret, provider: provider)
         } catch CredentialDiscoveryError.notFound {
             // No credential to displace yet: the first one that appears
             // belongs to the account the user is about to authenticate.
@@ -465,7 +465,8 @@ final class ProviderAccountAdditionCoordinator {
         } catch {
             return .credentialMissing
         }
-        guard Self.fingerprint(secret) != pending.credentialFingerprint else {
+        guard Self.additionFingerprint(secret, provider: pending.provider)
+            != pending.credentialFingerprint else {
             return .credentialUnchanged
         }
         guard
@@ -522,6 +523,15 @@ final class ProviderAccountAdditionCoordinator {
         }
         onAccountAdded()
         return .addedAccount(label)
+    }
+
+    private static func additionFingerprint(_ secret: String, provider: ProviderID) -> String {
+        if provider == .codex,
+           let snapshot = try? CredentialSnapshot(encodedSecret: secret, provider: .codex),
+           let identity = snapshot.accountReference, !identity.isEmpty {
+            return fingerprint(identity)
+        }
+        return fingerprint(secret)
     }
 
     fileprivate static func fingerprint(_ secret: String) -> String {
