@@ -235,12 +235,31 @@ OMO_USAGE_COMPANION_ACCOUNT_UI_QA=1 \
 OMO_USAGE_COMPANION_ACCOUNT_QA_ROOT="$fixture_root" \
 OMO_USAGE_SINGLE_INSTANCE_LOCK_PATH="$fixture_root/instance.lock" \
 OMO_USAGE_SINGLE_INSTANCE_NOTIFICATION="com.omo.usage.qa.$(basename "$fixture_root")" \
-    "$executable" &
+    "$executable" \
+        -OmoUsage.appLanguage "${OMO_USAGE_QA_LANGUAGE:-english}" \
+        -OmoUsage.appLanguageExplicitlySelected YES &
 app_pid=$!
 note "- launched fixture app pid $app_pid"
 
-drive --action wait --identifier account-alias-codex --timeout 40
+drive --action wait --identifier begin-add-account-codex --timeout 40 --scroll
 note "- settings window is up"
+drive --action scroll-to --identifier begin-add-account-codex
+capture_window settings-collapsed.png normal
+if [ "$scenario" = "changed" ]; then
+    drive --action scroll-to --identifier begin-add-account-grok
+    drive --action press --identifier begin-add-account-openrouter --scroll
+    drive --action wait --identifier account-key-openrouter --timeout 20 --scroll
+    drive --action scroll-to --identifier close-add-account-openrouter
+    capture_window settings-api-key-form.png normal
+    drive --action press --identifier close-add-account-openrouter --scroll
+    drive --action wait-absent --identifier account-key-openrouter --timeout 5
+    note "api-key-form-open-close=passed"
+fi
+drive --action scroll-to --identifier begin-add-account-codex
+drive --action press --identifier begin-add-account-codex --scroll
+drive --action wait --identifier account-alias-codex --timeout 20 --scroll
+drive --action scroll-to --identifier close-add-account-codex
+capture_window settings-form.png normal
 
 # Guarded legacy Codex reconnect: the waiting state must stay on screen
 # with reachable Check Again and Cancel controls, and Cancel must return
@@ -277,7 +296,7 @@ if [ "$scenario" = "reconnect-waiting" ]; then
         exit 1
     }
     note "- stub companion launch recorded for the guarded reconnect"
-    drive --action scroll-to --identifier connection-waiting-codex
+    drive --action scroll-to --identifier cancel-connection-codex
     capture_window reconnect-waiting.png normal
 
     drive --action press --identifier check-again-connection-codex --scroll
@@ -376,7 +395,7 @@ legacy_snapshot_checksum=$(shasum -a 256 "$legacy_snapshot" | awk '{print $1}')
 note "legacy-credential-preserved=passed"
 
 if [ "$scenario" = "changed" ]; then
-    drive --action scroll-to --identifier account-waiting-codex
+    drive --action scroll-to --identifier check-again-codex
     capture_window settings-waiting.png normal
 
     printf 'qa-codex-token-b' > "$fixture_root/credential-codex.token"
@@ -396,7 +415,7 @@ if [ "$scenario" = "changed" ]; then
     }
     note "new-account-credential-isolated=passed"
     note "- account row for $account_alias appeared after the credential changed"
-    drive --action scroll-to --identifier "$account_identifier"
+    drive --action scroll-to --identifier begin-add-account-codex
     capture_window settings-added.png normal
 
     drive --action menubar-press --timeout 20
@@ -417,7 +436,7 @@ else
     assert_refresh_count 0
     feedback=$(drive --action value --identifier settings-feedback)
     note "- unchanged credential kept $account_alias pending: $feedback"
-    drive --action scroll-to --identifier account-waiting-codex
+    drive --action scroll-to --identifier check-again-codex
     capture_window unchanged-waiting.png normal
 
     drive --action press --identifier cancel-addition-codex --scroll
@@ -426,6 +445,7 @@ else
         --timeout 5
     drive --action wait-absent --identifier "$account_identifier" \
         --timeout 5
+    drive --action scroll-to --identifier add-account-codex
     capture_window cancelled-idle.png normal
     activation=$(drive --action reactivate --timeout 20)
     [ "$activation" = "target-left-active-and-reactivated" ] || {

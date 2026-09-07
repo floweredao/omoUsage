@@ -82,6 +82,11 @@ public enum AppStringKey: String, CaseIterable, Sendable {
     case legacyKeyCleanupFailed
     case accountAlias
     case addAccount
+    case accountAliasExample
+    case additionalAccountLogin
+    case additionalAccountInstructions
+    case additionalAPIKeyInstructions
+    case accountLoginPending
     case removeAccount
     case addedAccount
     case removedAccount
@@ -256,6 +261,13 @@ public struct AppStrings: Sendable {
         .legacyKeyCleanupFailed: "이전 키 파일을 정리하지 못했습니다.",
         .accountAlias: "계정 별칭",
         .addAccount: "계정 추가",
+        .accountAliasExample: "예: 개인용, 업무용",
+        .additionalAccountLogin: "다른 계정으로 로그인",
+        .additionalAccountInstructions:
+            "구분할 이름을 입력한 뒤 다른 계정으로 로그인하세요. 기존 계정과 별도로 추가됩니다.",
+        .additionalAPIKeyInstructions:
+            "구분할 이름과 새 계정의 API 키를 입력하세요.",
+        .accountLoginPending: "%@ 계정 로그인 대기 중",
         .removeAccount: "%@ 계정 삭제",
         .addedAccount: "%@ 계정을 추가했습니다.",
         .removedAccount: "%@ 계정을 삭제했습니다.",
@@ -421,6 +433,13 @@ public struct AppStrings: Sendable {
         .legacyKeyCleanupFailed: "Could not remove the legacy key file.",
         .accountAlias: "Account Alias",
         .addAccount: "Add Account",
+        .accountAliasExample: "e.g. Personal, Work",
+        .additionalAccountLogin: "Sign In to Another Account",
+        .additionalAccountInstructions:
+            "Give this account a name, then sign in to another account. It will be added separately from your existing account.",
+        .additionalAPIKeyInstructions:
+            "Enter a name and the new account's API key.",
+        .accountLoginPending: "Waiting for %@ to sign in",
         .removeAccount: "Remove %@ account",
         .addedAccount: "Added the %@ account.",
         .removedAccount: "Removed the %@ account.",
