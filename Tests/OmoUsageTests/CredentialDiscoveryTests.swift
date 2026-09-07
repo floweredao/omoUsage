@@ -123,7 +123,8 @@ struct CredentialDiscoveryTests {
             let defaultDiscovery = CredentialDiscovery.live(
                 home: home,
                 environment: [:],
-                keychain: StubKeychain(values: [:])
+                keychain: StubKeychain(values: [:]),
+                providerKeychain: StubKeychain(values: [:])
             )
             #expect(throws: CredentialDiscoveryError.notFound(.codex)) {
                 try defaultDiscovery.codex(now: now)
@@ -132,7 +133,8 @@ struct CredentialDiscoveryTests {
             let explicitDiscovery = CredentialDiscovery.live(
                 home: home,
                 environment: ["CODEX_HOME": unofficial.path],
-                keychain: StubKeychain(values: [:])
+                keychain: StubKeychain(values: [:]),
+                providerKeychain: StubKeychain(values: [:])
             )
             let credential = try explicitDiscovery.codex(now: now)
             #expect(
@@ -908,10 +910,18 @@ private final class RecordingKeychainWriter: KeychainWriting,
     }
 }
 
-private struct StubKeychain: KeychainReading {
+private struct StubKeychain: KeychainReading, ProviderKeychain {
     let values: [String: String]
 
     func value(service: String, account: String) throws -> String? {
         values["\(service)\u{0}\(account)"]
+    }
+
+    func set(_ value: String, service: String, account: String) throws {
+        throw CocoaError(.fileWriteNoPermission)
+    }
+
+    func remove(service: String, account: String) throws {
+        throw CocoaError(.fileWriteNoPermission)
     }
 }

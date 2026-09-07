@@ -360,6 +360,219 @@ struct ProviderAccountAdditionCoordinatorTests {
     }
 }
 
+@Suite(.serialized)
+@MainActor
+struct CodexAccountAdditionRotationTests {
+    @Test(.timeLimit(.minutes(1)), arguments: [CredentialSource.file, .keychain])
+    func addingAccountDuringRefreshKeepsBothAccountsUsable(
+        source: CredentialSource
+    ) async throws {
+        let fixture = try AdditionFixture()
+        defer { fixture.remove() }
+        let now = Date(timeIntervalSince1970: 1_785_675_000)
+        let authURL = fixture.rootURL.appending(path: "auth.json")
+        let original = CodexPinRotationURLProtocol.credential(
+            token: CodexPinRotationURLProtocol.jwt(expiration: now.addingTimeInterval(-60)),
+            account: "original"
+        )
+        let replacement = CodexPinRotationURLProtocol.credential(
+            token: "replacement-access",
+            account: "replacement"
+        )
+        func writeCompanion(_ secret: String) throws {
+            if source == .file {
+                try Data(secret.utf8).write(to: authURL)
+            } else {
+                try fixture.keychain.set(secret, service: "Codex Auth", account: "")
+            }
+        }
+        try writeCompanion(original)
+        let discovery = CredentialDiscovery(
+            paths: CredentialPaths(
+                claude: fixture.rootURL.appending(path: "missing.json"),
+                codex: authURL
+            ),
+            environment: [:],
+            keychain: fixture.keychain,
+            providerKeychain: fixture.keychain,
+            keychainWriter: CodexPinRotationWriter(keychain: fixture.keychain),
+            homeDirectory: fixture.homeURL,
+            commandPaths: []
+        )
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [CodexPinRotationURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        let http = providerHTTPTestClient(session: session)
+        let started = CodexPinRotationURLProtocol.reset()
+        let provider = CodexUsageProvider(discovery: discovery, http: http)
+        let refresh = Task { try await provider.fetch(now: now) }
+        defer {
+            CodexPinRotationURLProtocol.completeRefresh()
+            refresh.cancel()
+        }
+        var iterator = started.makeAsyncIterator()
+        _ = try #require(await iterator.next())
+
+        // The refresh grant has been consumed, but its response has not yet
+        // reached the provider. Official login replaces the companion store.
+        let coordinator = ProviderAccountAdditionCoordinator(
+            controller: fixture.controller,
+            captureCredential: { try discovery.captureCredential(for: $0, now: now) },
+            launchCompanion: { _ in .success(.launched) },
+            onAccountAdded: {}
+        )
+        #expect(coordinator.addAccount(provider: .codex, label: "Work", key: nil) == .waitingForCompanion)
+        try writeCompanion(replacement)
+        #expect(coordinator.checkAgain() == .addedAccount("Work"))
+        CodexPinRotationURLProtocol.completeRefresh()
+        _ = try await refresh.value
+
+        // Rebuild the real account-scoped providers just as registry changes
+        // do in the app, then let the dashboard apply its auth-failure hiding.
+        let composition = AppAccountCompositionFactory.make(
+            registry: fixture.controller.registry,
+            providerFactory: { registry in
+                registry.providerReferences.filter { $0.providerID == .codex }.map { identity in
+                    CodexUsageProvider(
+                        discovery: discovery,
+                        http: http,
+                        accountID: identity.accountID,
+                        accountLabel: registry.accounts.first { $0.id == identity.accountID }!.label
+                    )
+                }
+            }
+        )
+        let model = UsageDashboardViewModel(
+            providers: composition.providers,
+            accountProviderOrder: composition.accountProviderOrder,
+            disconnectedAccountProviders: composition.disconnected,
+            now: { now }
+        )
+        await model.refresh()
+
+        let legacy = AccountProviderID(accountID: .legacy, providerID: .codex)
+        let added = try #require(fixture.controller.accounts.first?.accountProviderID)
+        #expect(Set(model.snapshot.providers.map(\.accountProviderID)) == [legacy, added])
+        #expect(model.accountConnectionStates[legacy] == .available)
+        #expect(model.snapshot.providers.first { $0.accountProviderID == legacy }?
+            .groups.flatMap(\.meters).first?.percentRemaining == 80)
+        #expect(model.snapshot.providers.first { $0.accountProviderID == added }?
+            .groups.flatMap(\.meters).first?.percentRemaining == 30)
+        #expect(CodexPinRotationURLProtocol.refreshCount == 1)
+        #expect(try discovery.snapshotStore.snapshot(for: legacy)?.refreshToken == "rotated-refresh")
+        let currentCompanion = source == .file
+            ? try String(contentsOf: authURL, encoding: .utf8)
+            : try fixture.keychain.value(service: "Codex Auth", account: "")
+        #expect(currentCompanion == replacement)
+        #expect(try discovery.snapshotStore.snapshot(for: added)?.accessToken == "replacement-access")
+    }
+}
+
+private struct CodexPinRotationWriter: KeychainWriting {
+    let keychain: AdditionFakeKeychain
+
+    func setValue(_ value: String, service: String, account: String) throws {
+        try keychain.set(value, service: service, account: account)
+    }
+}
+
+private final class CodexPinRotationURLProtocol: URLProtocol {
+    private static let lock = NSLock()
+    private nonisolated(unsafe) static var pending: CodexPinRotationURLProtocol?
+    private nonisolated(unsafe) static var continuation: AsyncStream<Void>.Continuation?
+    private nonisolated(unsafe) static var requests = 0
+    private static let rotatedAccess = jwt(
+        expiration: Date(timeIntervalSince1970: 1_785_675_000 + 3_600)
+    )
+
+    static var refreshCount: Int { lock.withLock { requests } }
+
+    static func reset() -> AsyncStream<Void> {
+        let (stream, signal) = AsyncStream.makeStream(of: Void.self)
+        lock.withLock {
+            pending = nil
+            continuation = signal
+            requests = 0
+        }
+        return stream
+    }
+
+    static func completeRefresh() {
+        let protocolInstance = lock.withLock {
+            defer { pending = nil }
+            return pending
+        }
+        protocolInstance?.respond(200, """
+            {"access_token":"\(rotatedAccess)","refresh_token":"rotated-refresh","expires_in":3600}
+            """)
+    }
+
+    static func credential(token: String, account: String) -> String {
+        """
+        {"auth_mode":"chatgpt","tokens":{"access_token":"\(token)","refresh_token":"\(account)-refresh","account_id":"\(account)"}}
+        """
+    }
+
+    static func jwt(expiration: Date) -> String {
+        let encoded = Data("{\"exp\":\(Int(expiration.timeIntervalSince1970))}".utf8)
+            .base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+        return "header.\(encoded).fixture-signature"
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func stopLoading() {}
+
+    override func startLoading() {
+        if request.url?.absoluteString == "https://auth.openai.com/oauth/token" {
+            let body = requestBodyData(request).flatMap { String(data: $0, encoding: .utf8) } ?? ""
+            let first = Self.lock.withLock {
+                Self.requests += 1
+                guard Self.requests == 1, body.contains("refresh_token=original-refresh") else { return false }
+                Self.pending = self
+                Self.continuation?.yield()
+                Self.continuation?.finish()
+                return true
+            }
+            // OAuth rotation consumes the original grant exactly once.
+            if !first { respond(401, #"{"error":"refresh_token_reused"}"#) }
+            return
+        }
+        guard request.url?.absoluteString == "https://chatgpt.com/backend-api/wham/usage" else {
+            respond(404, "{}")
+            return
+        }
+        let bearer = request.value(forHTTPHeaderField: "Authorization")
+        let account = request.value(forHTTPHeaderField: "ChatGPT-Account-Id")
+        let used: Int
+        if bearer == "Bearer \(Self.rotatedAccess)", account == "original" {
+            used = 20
+        } else if bearer == "Bearer replacement-access", account == "replacement" {
+            used = 70
+        } else {
+            respond(401, #"{"error":"unauthorized"}"#)
+            return
+        }
+        respond(200, """
+            {"plan_type":"plus","rate_limit":{"primary_window":{"used_percent":\(used),"limit_window_seconds":18000,"reset_at":1785682200}}}
+            """)
+    }
+
+    private func respond(_ status: Int, _ body: String) {
+        let response = HTTPURLResponse(
+            url: request.url!, statusCode: status, httpVersion: nil,
+            headerFields: ["Content-Type": "application/json"]
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(body.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+}
+
 @MainActor
 private final class AdditionFixture {
     let suiteName = "ProviderAccountAdditionCoordinatorTests-\(UUID().uuidString)"
@@ -505,7 +718,7 @@ private final class AdditionFixture {
 
 private struct AdditionMutationFailure: Error {}
 
-private final class AdditionFakeKeychain: ProviderKeychain, @unchecked Sendable {
+private final class AdditionFakeKeychain: ProviderKeychain, KeychainReading, @unchecked Sendable {
     private let lock = NSLock()
     private var values: [String: String] = [:]
     var failWritesToAccount: String?

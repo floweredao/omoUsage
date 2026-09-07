@@ -182,7 +182,7 @@ struct CodexUsageProvider: UsageProvider {
             refreshToken: rotatedRefreshToken,
             idToken: rotatedIDToken,
             lastRefresh: now,
-            storage: credential.storage
+            replacing: credential
         )
         return DiscoveredCredential(
             provider: id,
