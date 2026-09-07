@@ -75,7 +75,9 @@ struct CompanionAccountFixture {
         ProviderAccountStore(
             registryURL: registryURL,
             defaults: defaults,
-            legacyAPIKeyPresence: { _ in false }
+            // Include an API-key row so native account-form QA covers
+            // both authentication styles without reading a real key.
+            legacyAPIKeyPresence: { $0 == .openrouter }
         )
     }
 

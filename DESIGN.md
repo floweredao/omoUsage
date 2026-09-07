@@ -282,7 +282,16 @@ other privileged controls remain native-only.
   `N of M` position text. Never renders credentials, account UUIDs, or
   credential-source paths.
 - `ProviderAccountsSection`: native multi-account management embedded once in
-  every provider row. The add action requires a sanitized alias and additionally
+  every provider row. At rest it shows saved account rows and a compact
+  plus-labelled Add Account button, not an always-visible input strip. The
+  button expands a vertically labelled form with an alias example, a separate
+  secure key field where required, and trailing Cancel and primary action.
+  Companion forms explain that another official login is required. Waiting
+  replaces editable fields with the pending alias, a textual login instruction,
+  and reachable Check Again and Cancel controls. Cancelling a pending login
+  returns to the draft; successful addition collapses the form. Fields and
+  actions reuse native rounded controls, 8/10/12 pt spacing, and semantic text
+  without new colors or decorative motion. The add action requires a sanitized alias and additionally
   requires a key only for API-key providers. Success clears that provider's
   drafts; failure preserves them and reports localized status without echoing
   any credential. Existing rows show the alias and one targeted Remove action.

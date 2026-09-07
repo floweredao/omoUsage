@@ -978,6 +978,8 @@ private struct ProviderAccountsSection: View {
     let additionState: ProviderAccountAdditionRowState
     let onCheckAgain: () -> Void
     let onCancelAddition: () -> Void
+    @State private var isAddingAccount = false
+    @FocusState private var isAliasFocused: Bool
     @Environment(\.appLocalization) private var localization
 
     var body: some View {
@@ -1011,72 +1013,128 @@ private struct ProviderAccountsSection: View {
                 }
             }
 
-            HStack(spacing: 8) {
-                TextField(
-                    localization.text(.accountAlias),
-                    text: $label
-                )
-                .textFieldStyle(.roundedBorder)
-                .accessibilityLabel(localization.text(.accountAlias))
-                .accessibilityIdentifier(
-                    "account-alias-\(provider.rawValue)"
-                )
-                .disabled(additionState == .waiting)
-
-                if acceptsAPIKey {
-                    SecureField(
-                        localization.text(.apiKey),
-                        text: $key
+            if additionState == .waiting {
+                VStack(alignment: .leading, spacing: 10) {
+                    Label(
+                        localization.format(.accountLoginPending, label),
+                        systemImage: "person.crop.circle.badge.clock"
                     )
-                    .textFieldStyle(.roundedBorder)
-                    .accessibilityLabel(localization.text(.apiKey))
+                    .font(.system(size: 12, weight: .semibold))
+                    .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier(
-                        "account-key-\(provider.rawValue)"
+                        "account-waiting-\(provider.rawValue)"
                     )
-                }
-
-                if additionState == .waiting {
-                    Button(
-                        localization.text(
-                            .checkAgainForCompanionCredentials
-                        ),
-                        action: onCheckAgain
-                    )
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                    .accessibilityIdentifier(
-                        "check-again-\(provider.rawValue)"
-                    )
-
-                    Button(
-                        localization.text(.cancel),
-                        action: onCancelAddition
-                    )
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .accessibilityIdentifier(
-                        "cancel-addition-\(provider.rawValue)"
-                    )
-                } else {
-                    Button(localization.text(.addAccount), action: onAdd)
+                    Text(localization.text(.companionCredentialMissing))
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: 8) {
+                        Spacer(minLength: 0)
+                        Button(
+                            localization.text(.cancel),
+                            action: onCancelAddition
+                        )
                         .buttonStyle(.bordered)
-                        .controlSize(.small)
+                        .accessibilityIdentifier(
+                            "cancel-addition-\(provider.rawValue)"
+                        )
+                        Button(
+                            localization.text(
+                                .checkAgainForCompanionCredentials
+                            ),
+                            action: onCheckAgain
+                        )
+                        .buttonStyle(.borderedProminent)
+                        .accessibilityIdentifier(
+                            "check-again-\(provider.rawValue)"
+                        )
+                    }
+                    .controlSize(.small)
+                }
+                .padding(.vertical, 4)
+            } else if isAddingAccount {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(localization.text(
+                        acceptsAPIKey
+                            ? .additionalAPIKeyInstructions
+                            : .additionalAccountInstructions
+                    ))
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(localization.text(.accountAlias))
+                            .font(.system(size: 11.5, weight: .medium))
+                        TextField(
+                            localization.text(.accountAliasExample),
+                            text: $label
+                        )
+                        .textFieldStyle(.roundedBorder)
+                        .focused($isAliasFocused)
+                        .accessibilityLabel(localization.text(.accountAlias))
+                        .accessibilityIdentifier(
+                            "account-alias-\(provider.rawValue)"
+                        )
+                    }
+                    if acceptsAPIKey {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(localization.text(.apiKey))
+                                .font(.system(size: 11.5, weight: .medium))
+                            SecureField(localization.text(.apiKey), text: $key)
+                                .textFieldStyle(.roundedBorder)
+                                .accessibilityLabel(localization.text(.apiKey))
+                                .accessibilityIdentifier(
+                                    "account-key-\(provider.rawValue)"
+                                )
+                        }
+                    }
+                    HStack(spacing: 8) {
+                        Spacer(minLength: 0)
+                        Button(localization.text(.cancel)) {
+                            isAddingAccount = false
+                            key = ""
+                        }
+                        .buttonStyle(.bordered)
+                        .accessibilityIdentifier(
+                            "close-add-account-\(provider.rawValue)"
+                        )
+                        Button(
+                            localization.text(
+                                acceptsAPIKey
+                                    ? .addAccount
+                                    : .additionalAccountLogin
+                            ),
+                            action: onAdd
+                        )
+                        .buttonStyle(.borderedProminent)
                         .disabled(!canAdd)
                         .accessibilityIdentifier(
                             "add-account-\(provider.rawValue)"
                         )
+                    }
+                    .controlSize(.small)
                 }
-            }
-
-            if additionState == .waiting {
-                Text(
-                    localization.text(.waitingForCompanionCredentials)
-                )
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
+                .padding(.vertical, 4)
+            } else {
+                Button {
+                    isAddingAccount = true
+                    isAliasFocused = true
+                } label: {
+                    Label(localization.text(.addAccount), systemImage: "plus")
+                }
+                .buttonStyle(.borderless)
+                .font(.system(size: 11.5, weight: .medium))
+                .padding(.vertical, 4)
+                .disabled(additionState != .idle)
                 .accessibilityIdentifier(
-                    "account-waiting-\(provider.rawValue)"
+                    "begin-add-account-\(provider.rawValue)"
                 )
+            }
+        }
+        .onChange(of: accounts.count) { oldCount, newCount in
+            if newCount > oldCount {
+                isAddingAccount = false
             }
         }
     }
