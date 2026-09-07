@@ -762,10 +762,22 @@ struct CredentialDiscovery: Sendable {
         refreshToken: String?,
         idToken: String?,
         lastRefresh: Date,
-        storage: CredentialStorage?
+        replacing credential: DiscoveredCredential
     ) throws {
-        guard let storage else {
+        guard var storage = credential.storage else {
             throw CredentialDiscoveryError.malformed(.codex)
+        }
+        switch storage {
+        case .file, .keychain:
+            // Add Account can pin this credential while its OAuth exchange
+            // is in flight. The consumed grant now belongs to that pin,
+            // not the companion store that login may already have replaced.
+            let legacy = AccountProviderID(accountID: .legacy, providerID: .codex)
+            if try snapshotStore.snapshot(for: legacy) == CredentialSnapshot(credential) {
+                storage = .accountSnapshot(legacy)
+            }
+        case .accountSnapshot:
+            break
         }
         if case let .accountSnapshot(identity) = storage {
             try rotateSnapshot(
@@ -1027,7 +1039,8 @@ struct CredentialDiscovery: Sendable {
             .homeDirectoryForCurrentUser,
         environment: [String: String] =
             ProcessInfo.processInfo.environment,
-        keychain: any KeychainReading = SecurityKeychainReader()
+        keychain: any KeychainReading = SecurityKeychainReader(),
+        providerKeychain: any ProviderKeychain = SecurityProviderKeychain()
     ) -> CredentialDiscovery {
         let codexHome: URL
         if let path = environment["CODEX_HOME"]?.nonEmpty {
@@ -1059,7 +1072,7 @@ struct CredentialDiscovery: Sendable {
             ),
             environment: environment,
             keychain: keychain,
-            providerKeychain: SecurityProviderKeychain(),
+            providerKeychain: providerKeychain,
             keychainWriter: SecurityKeychainWriter(),
             homeDirectory: home,
             commandPaths: [
