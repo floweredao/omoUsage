@@ -22,7 +22,10 @@ enum ProviderFactory {
 
     static func current(
         registry: ProviderAccountRegistry,
-        environment: [String: String] = ProcessInfo.processInfo.environment
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        defaults: UserDefaults = .standard,
+        discovery: CredentialDiscovery = .live(),
+        http: ProviderHTTP = ProviderHTTP()
     ) -> [any UsageProvider] {
         let references = Set(registry.providerReferences)
         let referencedAccounts = ProviderID.allCases.flatMap { provider in
@@ -32,7 +35,7 @@ enum ProviderFactory {
                     providerID: provider
                 )
                 return references.contains(identity)
-                    ? (provider, account)
+                    ? (provider, ProviderAccount(id: account.id, label: account.label(for: provider)))
                     : nil
             }
         }
@@ -42,13 +45,12 @@ enum ProviderFactory {
                 FixtureUsageProvider(
                     id: provider,
                     accountID: account.id,
-                    accountLabel: account.label
+                    accountLabel: account.label,
+                    defaults: defaults
                 )
             }
         }
 
-        let discovery = CredentialDiscovery.live()
-        let http = ProviderHTTP()
         return referencedAccounts.map { provider, account in
             switch provider {
             case .claude:
@@ -63,7 +65,8 @@ enum ProviderFactory {
                     discovery: discovery,
                     http: http,
                     accountID: account.id,
-                    accountLabel: account.label
+                    accountLabel: account.label,
+                    defaults: defaults
                 )
             case .cursor:
                 CursorUsageProvider(

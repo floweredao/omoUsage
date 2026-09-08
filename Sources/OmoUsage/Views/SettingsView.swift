@@ -101,9 +101,9 @@ struct SettingsView: View {
         ProviderAccountAdditionCoordinator
     @State private var codexReconnectCoordinator:
         CodexLegacyReconnectCoordinator
-    @State private var codexPlanMultiplier = CodexPlanMultiplierStore(
-        defaults: .standard
-    ).load()
+    private let codexPlanDefaults: UserDefaults
+    @State private var codexPlanMultipliers:
+        [AccountID: CodexPlanMultiplier] = [:]
     @State private var presentationStyle: DashboardPresentationStyle
     @State private var sideNotchHideDelay: SideNotchHideDelay
     @State private var dashboardLinkPresentation =
@@ -115,6 +115,7 @@ struct SettingsView: View {
         presentationStyle: DashboardPresentationStyle,
         sideNotchHideDelay: SideNotchHideDelay,
         accountRegistryController: ProviderAccountRegistryController,
+        codexPlanDefaults: UserDefaults = .standard,
         captureCompanionCredential: @escaping (ProviderID) throws -> String =
             SettingsView.captureCompanionCredential,
         launchCompanion: @escaping (ProviderID) -> Result<
@@ -145,6 +146,7 @@ struct SettingsView: View {
         self.viewModel = viewModel
         self.localization = localization
         self.accountRegistryController = accountRegistryController
+        self.codexPlanDefaults = codexPlanDefaults
         self.onRegistryChange = onRegistryChange
         self.onLanguageChange = onLanguageChange
         self.onPresentationStyleChange = onPresentationStyleChange
@@ -218,7 +220,7 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
-            ScrollView {
+            ScrollView(.vertical, showsIndicators: true) {
                 LazyVStack(spacing: 8) {
                     if accountRegistryController.recoveryState != .ready {
                         AccountRegistryRecoveryBanner(
@@ -451,8 +453,10 @@ struct SettingsView: View {
                                 onRetry: {
                                     retryProvider(provider)
                                 },
-                                accounts: accountRegistryController.accounts
-                                    .filter { $0.provider == provider },
+                                accounts: ProviderAccountRowPresentation.rows(
+                                    from: accountRegistryController
+                                        .settingsAccounts(for: provider)
+                                ),
                                 newAccountLabel: accountLabelBinding(
                                     for: provider
                                 ),
@@ -463,9 +467,14 @@ struct SettingsView: View {
                                     addAccount(for: provider)
                                 },
                                 onRemoveAccount: removeAccount,
-                                additionState: additionState(
-                                    for: provider
-                                ),
+                                onRenameAccount: renameAccount,
+                                onAliasOutcome: reportAliasOutcome,
+                                additionAvailability:
+                                    ProviderAccountAdditionAvailability.resolve(
+                                        provider: provider,
+                                        viewModel: viewModel,
+                                        additionState: additionState(for: provider)
+                                    ),
                                 onCheckAgain: checkForCompanionCredential,
                                 onCancelAddition: cancelAddition,
                                 isAwaitingConnectionCredential:
@@ -476,9 +485,9 @@ struct SettingsView: View {
                                     checkForCodexReconnectCredential,
                                 onCancelConnection: cancelCodexReconnect,
                                 codexPlanMultiplier:
-                                    provider == .codex
-                                        ? $codexPlanMultiplier
-                                        : nil
+                                    codexPlanMultiplierBinding(
+                                        for: provider
+                                    )
                             )
                         }
                     }
@@ -560,12 +569,6 @@ struct SettingsView: View {
             )
         }
         .onDisappear { connectionCoordinator.cancelClaudeLogin() }
-        .onChange(of: codexPlanMultiplier) {
-            _, multiplier in
-            CodexPlanMultiplierStore(defaults: .standard)
-                .save(multiplier)
-            Task { await viewModel.refresh() }
-        }
     }
 
     private func refreshPendingConnectionsAfterActivation() async {
@@ -872,6 +875,53 @@ struct SettingsView: View {
         }
     }
 
+    private func codexPlanMultiplierBinding(
+        for provider: ProviderID
+    ) -> ((AccountProviderID) -> Binding<CodexPlanMultiplier>)? {
+        guard provider == .codex else { return nil }
+        return { identity in codexTierBinding(for: identity) }
+    }
+
+    /// Each Codex account keeps its own usage tier. The store is read on
+    /// every fetch, so saving only needs a refresh, not a provider rebuild.
+    private func codexTierBinding(
+        for identity: AccountProviderID
+    ) -> Binding<CodexPlanMultiplier> {
+        let store = CodexPlanMultiplierStore(
+            defaults: codexPlanDefaults,
+            accountID: identity.accountID
+        )
+        return Binding(
+            get: {
+                codexPlanMultipliers[identity.accountID] ?? store.load()
+            },
+            set: { multiplier in
+                store.save(multiplier)
+                codexPlanMultipliers[identity.accountID] = multiplier
+                Task { await viewModel.refresh() }
+            }
+        )
+    }
+
+    private func renameAccount(
+        _ identity: AccountProviderID,
+        label: String
+    ) throws {
+        try accountRegistryController.renameAccount(identity, label: label)
+        onRegistryChange()
+    }
+
+    private func reportAliasOutcome(_ outcome: AccountAliasEdit.Outcome) {
+        switch outcome {
+        case .saved(let label):
+            feedback = .formatted(.savedAccountAlias, label)
+        case .rejected(.invalidLabel):
+            feedback = .key(.accountAliasInvalid)
+        case .rejected(.failed):
+            feedback = .key(.saveAccountAliasFailed)
+        }
+    }
+
     private func removeAccount(_ identity: AccountProviderID) {
         let label = accountRegistryController.accounts.first {
             $0.id == identity
@@ -968,52 +1018,219 @@ enum ProviderAccountAdditionRowState: Equatable, Sendable {
     }
 }
 
+/// Whether a provider row offers Add Account at all. Another account can
+/// only be added beside a connected primary account, so the affordance is
+/// absent, not merely disabled, until the primary is connected. A
+/// companion login that is already pending keeps its own Check Again and
+/// Cancel controls reachable no matter what happens to the primary account
+/// meanwhile.
+enum ProviderAccountAdditionAvailability: Equatable, Sendable {
+    case hidden
+    case offered
+    case blocked
+    case pending
+
+    @MainActor
+    static func resolve(
+        provider: ProviderID,
+        viewModel: UsageDashboardViewModel,
+        additionState: ProviderAccountAdditionRowState
+    ) -> ProviderAccountAdditionAvailability {
+        let primary = AccountProviderID(accountID: .legacy, providerID: provider)
+        return resolve(
+            additionState: additionState,
+            primaryAvailability: viewModel.accountConnectionStates[primary],
+            isPrimaryDisconnected: viewModel.isDisconnected(primary)
+        )
+    }
+
+    static func resolve(
+        additionState: ProviderAccountAdditionRowState,
+        primaryAvailability: ProviderAvailability?,
+        isPrimaryDisconnected: Bool
+    ) -> ProviderAccountAdditionAvailability {
+        if additionState == .waiting { return .pending }
+        guard primaryAvailability == .available, !isPrimaryDisconnected else {
+            return .hidden
+        }
+        return additionState == .idle ? .offered : .blocked
+    }
+}
+
+enum ProviderAccountRole: String, Equatable, Sendable {
+    case primary
+    case additional
+
+    var stringKey: AppStringKey {
+        switch self {
+        case .primary: .primaryAccount
+        case .additional: .additionalAccount
+        }
+    }
+}
+
+/// One settings row per account-provider identity. The primary account is
+/// always the first row, so a provider with a single account still names
+/// it as the primary one instead of showing an unlabelled header.
+struct ProviderAccountRowPresentation: Identifiable, Equatable, Sendable {
+    var id: AccountProviderID { identity }
+    let identity: AccountProviderID
+    let role: ProviderAccountRole
+    let label: String
+    let maskedIdentity: String?
+    let source: ProviderKeyStorageSource?
+
+    var canRemove: Bool { role == .additional }
+    var showsCodexTier: Bool { identity.providerID == .codex }
+
+    static func rows(
+        from accounts: [ProviderAccountSettingsMetadata]
+    ) -> [ProviderAccountRowPresentation] {
+        let rows = accounts.map { account in
+            ProviderAccountRowPresentation(
+                identity: account.accountProviderID,
+                role: account.isPrimary ? .primary : .additional,
+                label: account.label,
+                maskedIdentity: account.maskedIdentity,
+                source: account.source
+            )
+        }
+        return rows.filter { $0.role == .primary }
+            + rows.filter { $0.role == .additional }
+    }
+}
+
+enum AccountSettingsControl: Equatable, Sendable {
+    case row
+    case role(ProviderAccountRole)
+    case name
+    case identity
+    case editAlias
+    case aliasField
+    case saveAlias
+    case cancelAlias
+    case removeAccount
+    case codexTier
+}
+
+/// Accessibility identifiers are keyed by provider and account ID, never by
+/// the alias, so QA drivers and assistive technology keep one stable target
+/// across alias edits.
+enum AccountSettingsAccessibility {
+    static func identifier(
+        _ control: AccountSettingsControl,
+        for identity: AccountProviderID
+    ) -> String {
+        let account = identity.accountID.rawValue
+        let provider = identity.providerID.rawValue
+        return switch control {
+        case .row: "account-row-\(provider)-\(account)"
+        case .role(let role):
+            "account-role-\(role.rawValue)-\(provider)-\(account)"
+        case .name: "account-name-\(provider)-\(account)"
+        case .identity: "account-identity-\(provider)-\(account)"
+        case .editAlias: "edit-alias-\(provider)-\(account)"
+        case .aliasField: "alias-field-\(provider)-\(account)"
+        case .saveAlias: "save-alias-\(provider)-\(account)"
+        case .cancelAlias: "cancel-alias-\(provider)-\(account)"
+        case .removeAccount: "remove-account-\(provider)-\(account)"
+        case .codexTier: "codex-tier-\(account)"
+        }
+    }
+
+    /// The masked identity is the only identity text ever spoken. A missing
+    /// identity contributes nothing rather than a placeholder address.
+    static func accessibleName(
+        roleText: String,
+        label: String,
+        maskedIdentity: String?
+    ) -> String {
+        [roleText, label, maskedIdentity]
+            .compactMap { $0 }
+            .joined(separator: ", ")
+    }
+}
+
+/// Draft state for renaming one account. The alias already saved is never
+/// replaced until the registry accepts the new label, so a rejected edit
+/// keeps both the draft and the saved alias.
+struct AccountAliasEdit: Equatable, Sendable {
+    enum Rejection: Equatable, Sendable {
+        case invalidLabel
+        case failed
+    }
+
+    enum Outcome: Equatable, Sendable {
+        case saved(String)
+        case rejected(Rejection)
+    }
+
+    let identity: AccountProviderID
+    let savedLabel: String
+    var draft: String
+
+    init(identity: AccountProviderID, savedLabel: String) {
+        self.identity = identity
+        self.savedLabel = savedLabel
+        draft = savedLabel
+    }
+
+    var trimmedDraft: String {
+        draft.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var canSave: Bool {
+        !trimmedDraft.isEmpty && trimmedDraft != savedLabel
+    }
+
+    @MainActor
+    func commit(rename: (String) throws -> Void) -> Outcome {
+        guard canSave else { return .rejected(.invalidLabel) }
+        let label: String
+        do {
+            label = try ProviderAccountRegistryController
+                .validatedAccountLabel(trimmedDraft)
+        } catch {
+            return .rejected(.invalidLabel)
+        }
+        do {
+            try rename(label)
+        } catch ProviderAccountRegistryControllerError.invalidLabel {
+            return .rejected(.invalidLabel)
+        } catch {
+            return .rejected(.failed)
+        }
+        return .saved(label)
+    }
+}
+
 private struct ProviderAccountsSection: View {
     let provider: ProviderID
-    let accounts: [ProviderAccountMetadata]
+    let rows: [ProviderAccountRowPresentation]
+    let additionAvailability: ProviderAccountAdditionAvailability
     @Binding var label: String
     @Binding var key: String
     let onAdd: () -> Void
     let onRemove: (AccountProviderID) -> Void
-    let additionState: ProviderAccountAdditionRowState
+    let onRename: (AccountProviderID, String) throws -> Void
+    let onAliasOutcome: (AccountAliasEdit.Outcome) -> Void
+    let codexPlanMultiplier:
+        ((AccountProviderID) -> Binding<CodexPlanMultiplier>)?
     let onCheckAgain: () -> Void
     let onCancelAddition: () -> Void
     @State private var isAddingAccount = false
+    @State private var aliasEdit: AccountAliasEdit?
     @FocusState private var isAliasFocused: Bool
+    @FocusState private var focusedAliasEdit: AccountProviderID?
     @Environment(\.appLocalization) private var localization
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ForEach(accounts) { account in
-                HStack(spacing: 10) {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(account.label)
-                            .font(.system(size: 13.5, weight: .semibold))
-                            .accessibilityIdentifier(
-                                "account-\(provider.rawValue)-\(account.label)"
-                            )
-                        if let source = account.source {
-                            Text(localization.text(source.stringKey))
-                                .font(.system(size: 10.5))
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    Spacer(minLength: 8)
-                    Button {
-                        onRemove(account.id)
-                    } label: {
-                        Text(localization.text(.delete))
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .tint(.red)
-                    .accessibilityLabel(
-                        localization.format(.removeAccount, account.label)
-                    )
-                }
+            ForEach(rows) { row in
+                accountRow(row)
             }
 
-            if additionState == .waiting {
+            if additionAvailability == .pending {
                 VStack(alignment: .leading, spacing: 10) {
                     Label(
                         localization.format(.accountLoginPending, label),
@@ -1052,6 +1269,8 @@ private struct ProviderAccountsSection: View {
                     .controlSize(.small)
                 }
                 .padding(.vertical, 4)
+            } else if additionAvailability == .hidden {
+                EmptyView()
             } else if isAddingAccount {
                 VStack(alignment: .leading, spacing: 12) {
                     Text(localization.text(
@@ -1126,16 +1345,242 @@ private struct ProviderAccountsSection: View {
                 .buttonStyle(.borderless)
                 .font(.system(size: 11.5, weight: .medium))
                 .padding(.vertical, 4)
-                .disabled(additionState != .idle)
+                .disabled(additionAvailability != .offered)
                 .accessibilityIdentifier(
                     "begin-add-account-\(provider.rawValue)"
                 )
             }
         }
-        .onChange(of: accounts.count) { oldCount, newCount in
+        .onChange(of: rows.count) { oldCount, newCount in
             if newCount > oldCount {
                 isAddingAccount = false
             }
+        }
+        .onChange(of: rows.map(\.id)) { _, identities in
+            if let aliasEdit, !identities.contains(aliasEdit.identity) {
+                self.aliasEdit = nil
+            }
+        }
+        .onChange(of: additionAvailability) { _, availability in
+            if availability == .hidden {
+                isAddingAccount = false
+            }
+        }
+    }
+
+    /// One explicit row per account. The primary row never repeats the
+    /// header's connection controls: it names the account, shows the masked
+    /// identity when one is known, and hosts the account-scoped Codex tier.
+    @ViewBuilder
+    private func accountRow(
+        _ row: ProviderAccountRowPresentation
+    ) -> some View {
+        let roleText = localization.text(row.role.stringKey)
+        VStack(alignment: .leading, spacing: 6) {
+            if let edit = aliasEdit, edit.identity == row.identity {
+                HStack(spacing: 8) {
+                    roleBadge(row, roleText: roleText)
+                    TextField(
+                        localization.text(.accountAliasExample),
+                        text: Binding(
+                            get: { aliasEdit?.draft ?? "" },
+                            set: { aliasEdit?.draft = $0 }
+                        )
+                    )
+                    .textFieldStyle(.roundedBorder)
+                    .focused($focusedAliasEdit, equals: row.identity)
+                    .onSubmit(saveAlias)
+                    .accessibilityLabel(localization.text(.accountAlias))
+                    .accessibilityIdentifier(
+                        AccountSettingsAccessibility.identifier(
+                            .aliasField,
+                            for: row.identity
+                        )
+                    )
+                    Button(localization.text(.cancel)) {
+                        aliasEdit = nil
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier(
+                        AccountSettingsAccessibility.identifier(
+                            .cancelAlias,
+                            for: row.identity
+                        )
+                    )
+                    Button(localization.text(.save), action: saveAlias)
+                        .buttonStyle(.borderedProminent)
+                        .disabled(!edit.canSave)
+                        .accessibilityIdentifier(
+                            AccountSettingsAccessibility.identifier(
+                                .saveAlias,
+                                for: row.identity
+                            )
+                        )
+                }
+                .controlSize(.small)
+            } else {
+                HStack(spacing: 8) {
+                    roleBadge(row, roleText: roleText)
+                    Text(row.label)
+                        .font(.system(size: 13.5, weight: .semibold))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .accessibilityLabel(row.label)
+                        .accessibilityIdentifier(
+                            AccountSettingsAccessibility.identifier(
+                                .name,
+                                for: row.identity
+                            )
+                        )
+                    if let maskedIdentity = row.maskedIdentity {
+                        Text(maskedIdentity)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .accessibilityLabel(
+                                localization.format(
+                                    .accountIdentity,
+                                    maskedIdentity
+                                )
+                            )
+                            .accessibilityIdentifier(
+                                AccountSettingsAccessibility.identifier(
+                                    .identity,
+                                    for: row.identity
+                                )
+                            )
+                    }
+                    Spacer(minLength: 8)
+                    Button {
+                        aliasEdit = AccountAliasEdit(
+                            identity: row.identity,
+                            savedLabel: row.label
+                        )
+                        focusedAliasEdit = row.identity
+                    } label: {
+                        Image(systemName: "pencil")
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(aliasEdit != nil)
+                    .help(localization.format(.editAccountAlias, row.label))
+                    .accessibilityLabel(
+                        localization.format(.editAccountAlias, row.label)
+                    )
+                    .accessibilityIdentifier(
+                        AccountSettingsAccessibility.identifier(
+                            .editAlias,
+                            for: row.identity
+                        )
+                    )
+                    if row.canRemove {
+                        Button {
+                            onRemove(row.identity)
+                        } label: {
+                            Text(localization.text(.delete))
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .tint(.red)
+                        .accessibilityLabel(
+                            localization.format(.removeAccount, row.label)
+                        )
+                        .accessibilityIdentifier(
+                            AccountSettingsAccessibility.identifier(
+                                .removeAccount,
+                                for: row.identity
+                            )
+                        )
+                    }
+                }
+            }
+            if row.canRemove, let source = row.source {
+                Text(localization.text(source.stringKey))
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.secondary)
+            }
+            if row.showsCodexTier,
+               let tier = codexPlanMultiplier?(row.identity)
+            {
+                HStack {
+                    Text(localization.text(.codexUsageTier))
+                        .font(.system(size: 11.5, weight: .medium))
+                    Spacer()
+                    Picker(
+                        localization.format(.accountCodexUsageTier, row.label),
+                        selection: tier
+                    ) {
+                        ForEach(CodexPlanMultiplier.allCases) {
+                            Text(localization.providerText($0.title))
+                                .tag($0)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .frame(width: 108)
+                    .accessibilityLabel(
+                        localization.format(.accountCodexUsageTier, row.label)
+                    )
+                    .accessibilityIdentifier(
+                        AccountSettingsAccessibility.identifier(
+                            .codexTier,
+                            for: row.identity
+                        )
+                    )
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(
+            AccountSettingsAccessibility.accessibleName(
+                roleText: roleText,
+                label: row.label,
+                maskedIdentity: row.maskedIdentity
+            )
+        )
+        .accessibilityIdentifier(
+            AccountSettingsAccessibility.identifier(.row, for: row.identity)
+        )
+    }
+
+    private func roleBadge(
+        _ row: ProviderAccountRowPresentation,
+        roleText: String
+    ) -> some View {
+        Text(roleText)
+            .font(.system(size: 10.5, weight: .semibold))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(
+                Color(nsColor: .controlBackgroundColor),
+                in: Capsule()
+            )
+            .overlay {
+                Capsule()
+                    .stroke(
+                        Color(nsColor: .separatorColor),
+                        lineWidth: 0.5
+                    )
+            }
+            .fixedSize()
+            .accessibilityIdentifier(
+                AccountSettingsAccessibility.identifier(
+                    .role(row.role),
+                    for: row.identity
+                )
+            )
+    }
+
+    /// Explicit save: the draft is validated, then handed to the registry;
+    /// only an accepted label closes the editor.
+    private func saveAlias() {
+        guard let edit = aliasEdit, edit.canSave else { return }
+        let outcome = edit.commit { try onRename(edit.identity, $0) }
+        onAliasOutcome(outcome)
+        if case .saved = outcome {
+            aliasEdit = nil
         }
     }
 
@@ -1144,7 +1589,7 @@ private struct ProviderAccountsSection: View {
     }
 
     private var canAdd: Bool {
-        additionState == .idle
+        additionAvailability == .offered
             && !label.trimmingCharacters(
                 in: .whitespacesAndNewlines
             ).isEmpty
@@ -1742,18 +2187,21 @@ private struct ProviderSettingsRow: View {
     let onDisconnect: () -> Void
     let onReconnect: () -> Void
     let onRetry: () -> Void
-    let accounts: [ProviderAccountMetadata]
+    let accounts: [ProviderAccountRowPresentation]
     @Binding var newAccountLabel: String
     @Binding var newAccountKey: String
     let onAddAccount: () -> Void
     let onRemoveAccount: (AccountProviderID) -> Void
-    let additionState: ProviderAccountAdditionRowState
+    let onRenameAccount: (AccountProviderID, String) throws -> Void
+    let onAliasOutcome: (AccountAliasEdit.Outcome) -> Void
+    let additionAvailability: ProviderAccountAdditionAvailability
     let onCheckAgain: () -> Void
     let onCancelAddition: () -> Void
     let isAwaitingConnectionCredential: Bool
     let onCheckAgainConnection: () -> Void
     let onCancelConnection: () -> Void
-    let codexPlanMultiplier: Binding<CodexPlanMultiplier>?
+    let codexPlanMultiplier:
+        ((AccountProviderID) -> Binding<CodexPlanMultiplier>)?
 
     @State private var isHovered = false
     @State private var isHelpPresented = false
@@ -1892,28 +2340,6 @@ private struct ProviderSettingsRow: View {
                 )
             }
 
-            if let codexPlanMultiplier {
-                HStack {
-                    Text(localization.text(.codexUsageTier))
-                        .font(.system(size: 11.5, weight: .medium))
-                    Spacer()
-                    Picker(
-                        localization.text(.codexUsageTier),
-                        selection: codexPlanMultiplier
-                    ) {
-                        ForEach(CodexPlanMultiplier.allCases) {
-                            Text(
-                                localization.providerText($0.title)
-                            )
-                            .tag($0)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                    .frame(width: 108)
-                }
-            }
-
             if descriptor.acceptsAPIKey {
                 if let keySource {
                     HStack(spacing: 8) {
@@ -1954,12 +2380,15 @@ private struct ProviderSettingsRow: View {
 
             ProviderAccountsSection(
                 provider: provider,
-                accounts: accounts,
+                rows: accounts,
+                additionAvailability: additionAvailability,
                 label: $newAccountLabel,
                 key: $newAccountKey,
                 onAdd: onAddAccount,
                 onRemove: onRemoveAccount,
-                additionState: additionState,
+                onRename: onRenameAccount,
+                onAliasOutcome: onAliasOutcome,
+                codexPlanMultiplier: codexPlanMultiplier,
                 onCheckAgain: onCheckAgain,
                 onCancelAddition: onCancelAddition
             )

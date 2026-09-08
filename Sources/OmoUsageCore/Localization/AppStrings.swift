@@ -96,6 +96,14 @@ public enum AppStringKey: String, CaseIterable, Sendable {
     case companionCredentialUnchanged
     case companionCredentialUnavailable
     case accountAdditionFailed
+    case primaryAccount
+    case additionalAccount
+    case editAccountAlias
+    case accountIdentity
+    case accountCodexUsageTier
+    case savedAccountAlias
+    case accountAliasInvalid
+    case saveAccountAliasFailed
     case save
     case delete
     case openOfficialGuide
@@ -280,6 +288,15 @@ public struct AppStrings: Sendable {
         .companionCredentialUnavailable:
             "현재 컴패니언 인증값을 읽지 못해 계정 추가를 시작하지 않았습니다.",
         .accountAdditionFailed: "계정을 추가하지 못했습니다.",
+        .primaryAccount: "주 계정",
+        .additionalAccount: "추가 계정",
+        .editAccountAlias: "%@ 별칭 편집",
+        .accountIdentity: "식별자 %@",
+        .accountCodexUsageTier: "%@ Codex 사용량 등급",
+        .savedAccountAlias: "별칭을 저장했습니다: %@",
+        .accountAliasInvalid:
+            "사용할 수 없는 별칭입니다. @, /, \\ 없이 128자 이내의 고유한 이름을 입력하세요.",
+        .saveAccountAliasFailed: "계정 별칭을 저장하지 못했습니다.",
         .save: "저장",
         .delete: "삭제",
         .openOfficialGuide: "공식 안내 열기",
@@ -452,6 +469,15 @@ public struct AppStrings: Sendable {
         .companionCredentialUnavailable:
             "Could not read the current companion credential, so the account was not started.",
         .accountAdditionFailed: "Could not add the account.",
+        .primaryAccount: "Primary",
+        .additionalAccount: "Additional",
+        .editAccountAlias: "Edit %@ alias",
+        .accountIdentity: "Identifier %@",
+        .accountCodexUsageTier: "%@ Codex usage tier",
+        .savedAccountAlias: "Saved alias: %@",
+        .accountAliasInvalid:
+            "This alias can't be used. Enter a unique name up to 128 characters without @, /, or \\.",
+        .saveAccountAliasFailed: "Could not save the account alias.",
         .save: "Save",
         .delete: "Delete",
         .openOfficialGuide: "Open Official Guide",

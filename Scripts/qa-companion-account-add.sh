@@ -269,14 +269,16 @@ if [ "$scenario" = "reconnect-waiting" ]; then
     registry_labels_before=$(registry_labels)
     keychain_before=$(keychain_state)
 
+    # Arm the draft while connected: disconnect now correctly hides the
+    # non-pending Add Account form instead of exposing an unusable editor.
+    drive --action set-value --identifier account-alias-codex \
+        --value "$account_alias"
+    note "- typed alias $account_alias to arm the conflicting Add Account"
+
     drive --action press --identifier disconnect-codex --scroll
     note "- pressed Disconnect for Codex"
     drive --action wait --identifier reconnect-codex --timeout 20 --scroll
     note "- Codex is disconnected and offers Reconnect"
-
-    drive --action set-value --identifier account-alias-codex \
-        --value "$account_alias"
-    note "- typed alias $account_alias to arm the conflicting Add Account"
 
     drive --action press --identifier reconnect-codex --scroll
     note "- pressed Reconnect for Codex"
@@ -312,7 +314,7 @@ if [ "$scenario" = "reconnect-waiting" ]; then
         note "- Add Account press was rejected while the reconnect waits"
     fi
     drive --action wait-absent --identifier account-waiting-codex --timeout 5
-    drive --action wait-absent --identifier "account-codex-$account_alias" \
+    drive --action wait-absent --identifier "query:account-label:codex:$account_alias" \
         --timeout 5
     note "add-account-blocked-while-reconnect-waits=passed"
 
@@ -357,7 +359,8 @@ if [ "$scenario" = "reconnect-waiting" ]; then
     exit 0
 fi
 
-account_identifier="account-codex-$account_alias"
+# Driver-only label query resolves the new stable account-name-codex-UUID ID.
+account_identifier="query:account-label:codex:$account_alias"
 dashboard_account_identifier="dashboard-provider-codex-$account_alias"
 
 drive --action set-value --identifier account-alias-codex \

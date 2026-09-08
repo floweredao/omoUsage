@@ -13,6 +13,7 @@ struct CompanionAccountFixture {
     static let headlessKey = "OMO_USAGE_COMPANION_ACCOUNT_QA"
     static let userInterfaceKey = "OMO_USAGE_COMPANION_ACCOUNT_UI_QA"
     static let claudeAuthenticationUIKey = "OMO_USAGE_CLAUDE_AUTH_UI_QA"
+    static let accountSettingsUIKey = "OMO_USAGE_ACCOUNT_SETTINGS_UI_QA"
     static let rootKey = "OMO_USAGE_COMPANION_ACCOUNT_QA_ROOT"
 
     let root: URL
@@ -92,6 +93,31 @@ struct CompanionAccountFixture {
             environment: [:],
             keychain: keychain
         )
+    }
+
+    func maskedIdentity(for identity: AccountProviderID) -> String? {
+        guard let snapshot = try? ProviderCredentialSnapshotStore(keychain: keychain)
+            .snapshot(for: identity)
+        else { return nil }
+        return snapshot.maskedIdentity
+    }
+
+    func accountSettingsProviders(
+        registry: ProviderAccountRegistry,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> [any UsageProvider]? {
+        guard environment[Self.accountSettingsUIKey] == "1" else { return nil }
+        return registry.providerReferences.compactMap { identity in
+            guard let account = registry.accounts.first(where: { $0.id == identity.accountID })
+            else { return nil }
+            return FixtureUsageProvider(
+                id: identity.providerID,
+                accountID: identity.accountID,
+                accountLabel: account.label(for: identity.providerID),
+                defaults: defaults,
+                codexReportedPlan: "pro"
+            )
+        }
     }
 
     /// Mirrors the live capture contract: the token file stands in for
@@ -442,6 +468,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let viewModel: UsageDashboardViewModel
     private let localization: LocalizationController
     private let accountRegistryController: ProviderAccountRegistryController
+    private let accountDefaults: UserDefaults
     private let companionCapture: (ProviderID) throws -> String
     private let companionLaunch: (ProviderID) -> Result<
         ProviderSetupOutcome,
@@ -572,11 +599,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                     ProviderCredentialSnapshotStore(
                         keychain: fixture.keychain
                     )
-                }
+                },
+                maskedIdentity: fixture.maskedIdentity
             )
         } ?? ProviderAccountRegistryController(
             store: accountStore,
-            loadResult: registryLoadResult
+            loadResult: registryLoadResult,
+            maskedIdentity: { CredentialDiscovery.live().maskedIdentity(for: $0, now: Date()) }
         )
         let companionCapture = companionFixture?.captureCredential
             ?? SettingsView.captureCompanionCredential
@@ -585,7 +614,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 #else
         let accountRegistryController = ProviderAccountRegistryController(
             store: accountStore,
-            loadResult: registryLoadResult
+            loadResult: registryLoadResult,
+            maskedIdentity: { CredentialDiscovery.live().maskedIdentity(for: $0, now: Date()) }
         )
         let companionCapture = SettingsView.captureCompanionCredential
         let companionLaunch: (ProviderID) -> Result<
@@ -597,14 +627,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         let accountComposition = AppAccountCompositionFactory.make(
             registry: registryLoadResult.registry,
             providerFactory: { registry in
-                claudeAuthenticationFixture?.fixtureUsageProviders(
+                companionFixture?.accountSettingsProviders(registry: registry)
+                ?? claudeAuthenticationFixture?.fixtureUsageProviders(
                     registry: registry
-                ) ?? ProviderFactory.current(registry: registry)
+                ) ?? ProviderFactory.current(registry: registry, defaults: defaults)
             }
         )
 #else
         let accountComposition = AppAccountCompositionFactory.make(
-            registry: registryLoadResult.registry
+            registry: registryLoadResult.registry,
+            providerFactory: { ProviderFactory.current(registry: $0, defaults: defaults) }
         )
 #endif
         let webDashboardSnapshotStore = WebDashboardSnapshotStore(
@@ -686,6 +718,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             },
             publishSnapshot: { snapshot in
                 webDashboardSnapshotStore.update(snapshot)
+#if OMO_USAGE_FIXTURES
+                guard companionFixture == nil else { return }
+#endif
                 do {
                     try snapshotSync.publish(snapshot)
                 } catch {
@@ -726,6 +761,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         self.viewModel = viewModel
         self.localization = localization
         self.accountRegistryController = accountRegistryController
+        self.accountDefaults = defaults
         self.companionCapture = companionCapture
         self.companionLaunch = companionLaunch
 #if OMO_USAGE_FIXTURES
@@ -987,6 +1023,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 presentationStyle: presentationStyle,
                 sideNotchHideDelay: sideNotchHideDelay,
                 accountRegistryController: accountRegistryController,
+                codexPlanDefaults: accountDefaults,
                 captureCompanionCredential: companionCapture,
                 launchCompanion: companionLaunch,
                 authorizeClaude: authorizeClaude,
@@ -1066,6 +1103,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         settingsWindow = window
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+#if OMO_USAGE_FIXTURES
+        if let companionFixture,
+           ProcessInfo.processInfo.environment[CompanionAccountFixture.accountSettingsUIKey] == "1" {
+            do {
+                try ProviderFileDurability.atomicWrite(
+                    Data(#"{"version":1}"#.utf8),
+                    to: companionFixture.root.appending(path: "account-settings-ready.json"),
+                    permissions: 0o600
+                )
+            } catch {
+                DiagnosticStore.shared.record(error: error, category: .fixture)
+            }
+        }
+#endif
     }
 
     private func presentSharingPicker(
@@ -1089,15 +1140,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 #if OMO_USAGE_FIXTURES
         let composition = AppAccountCompositionFactory.make(
             registry: accountRegistryController.registry,
-            providerFactory: { [claudeAuthenticationFixture] registry in
-                claudeAuthenticationFixture?.fixtureUsageProviders(
+            providerFactory: { [companionFixture, claudeAuthenticationFixture, accountDefaults] registry in
+                companionFixture?.accountSettingsProviders(registry: registry)
+                ?? claudeAuthenticationFixture?.fixtureUsageProviders(
                     registry: registry
-                ) ?? ProviderFactory.current(registry: registry)
+                ) ?? ProviderFactory.current(registry: registry, defaults: accountDefaults)
             }
         )
 #else
         let composition = AppAccountCompositionFactory.make(
-            registry: accountRegistryController.registry
+            registry: accountRegistryController.registry,
+            providerFactory: { [accountDefaults] in
+                ProviderFactory.current(registry: $0, defaults: accountDefaults)
+            }
         )
 #endif
         viewModel.updateProviders(

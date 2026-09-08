@@ -36,6 +36,8 @@ struct DiscoveredCredential: Equatable, Sendable, CustomStringConvertible {
     let principalType: String?
     let principalID: String?
     let storage: CredentialStorage?
+    /// Local identity metadata only; never copied into usage or sync models.
+    let email: String?
 
     init(
         provider: ProviderID,
@@ -49,7 +51,8 @@ struct DiscoveredCredential: Equatable, Sendable, CustomStringConvertible {
         oidcClientID: String? = nil,
         principalType: String? = nil,
         principalID: String? = nil,
-        storage: CredentialStorage? = nil
+        storage: CredentialStorage? = nil,
+        email: String? = nil
     ) {
         self.storage = storage
         self.provider = provider
@@ -63,6 +66,7 @@ struct DiscoveredCredential: Equatable, Sendable, CustomStringConvertible {
         self.oidcClientID = oidcClientID
         self.principalType = principalType
         self.principalID = principalID
+        self.email = email
     }
 
     var description: String {
@@ -99,6 +103,7 @@ struct CredentialSnapshot: Codable, Equatable, Sendable,
     let oidcClientID: String?
     let principalType: String?
     let principalID: String?
+    let email: String?
 
     init(
         version: Int = CredentialSnapshot.currentVersion,
@@ -112,7 +117,8 @@ struct CredentialSnapshot: Codable, Equatable, Sendable,
         oidcIssuer: String? = nil,
         oidcClientID: String? = nil,
         principalType: String? = nil,
-        principalID: String? = nil
+        principalID: String? = nil,
+        email: String? = nil
     ) {
         self.version = version
         self.provider = provider
@@ -126,6 +132,7 @@ struct CredentialSnapshot: Codable, Equatable, Sendable,
         self.oidcClientID = oidcClientID
         self.principalType = principalType
         self.principalID = principalID
+        self.email = email
     }
 
     init(_ credential: DiscoveredCredential) {
@@ -140,7 +147,8 @@ struct CredentialSnapshot: Codable, Equatable, Sendable,
             oidcIssuer: credential.oidcIssuer,
             oidcClientID: credential.oidcClientID,
             principalType: credential.principalType,
-            principalID: credential.principalID
+            principalID: credential.principalID,
+            email: credential.email
         )
     }
 
@@ -190,7 +198,8 @@ struct CredentialSnapshot: Codable, Equatable, Sendable,
             oidcClientID: oidcClientID,
             principalType: principalType,
             principalID: principalID,
-            storage: storage
+            storage: storage,
+            email: email
         )
     }
 
@@ -212,8 +221,19 @@ struct CredentialSnapshot: Codable, Equatable, Sendable,
             oidcIssuer: oidcIssuer,
             oidcClientID: oidcClientID,
             principalType: principalType,
-            principalID: principalID
+            principalID: principalID,
+            email: identityEmail
         )
+    }
+
+    private var identityEmail: String? {
+        email ?? (provider == .codex
+            ? CredentialDiscovery.codexIdentityEmail(accessToken)
+            : nil)
+    }
+
+    var maskedIdentity: String? {
+        MaskedAccountIdentity.email(identityEmail)
     }
 
     /// A companion relogin may repair this account, but must never switch
@@ -975,6 +995,24 @@ struct CredentialDiscovery: Sendable {
         ProviderCredentialSnapshotStore(keychain: providerKeychain)
     }
 
+    /// A settings-only read. Exact snapshots win and lookup failures never
+    /// widen to another account. Do not reconcile or rotate credentials here.
+    func maskedIdentity(for identity: AccountProviderID, now: Date) -> String? {
+        do {
+            if let snapshot = try snapshotStore.snapshot(for: identity) {
+                return snapshot.maskedIdentity
+            }
+            guard identity.accountID == .legacy, identity.providerID == .codex else {
+                return nil
+            }
+            return MaskedAccountIdentity.email(
+                try mutableCodexCredential(now: now).email
+            )
+        } catch {
+            return nil
+        }
+    }
+
     /// Encodes whichever credential the companion tool holds right now, so
     /// the caller can store it as one account's own secret. Returning the
     /// encoded secret rather than writing it keeps the ownership of the
@@ -1216,11 +1254,27 @@ struct CredentialDiscovery: Sendable {
             planName: nil,
             expiresAt: codexJWTExpiration(accessToken),
             source: source,
-            storage: storage
+            storage: storage,
+            email: (tokens["id_token"] as? String).flatMap {
+                Self.codexIdentityEmail($0)
+            } ?? Self.codexIdentityEmail(accessToken)
         )
     }
 
     private func codexJWTExpiration(_ token: String) -> Date? {
+        guard let object = Self.codexJWTPayload(token),
+              let expiration = UsageJSON.number(object["exp"])
+        else { return nil }
+        return Date(timeIntervalSince1970: expiration)
+    }
+
+    fileprivate static func codexIdentityEmail(_ token: String) -> String? {
+        guard let payload = codexJWTPayload(token) else { return nil }
+        return payload["email"] as? String
+            ?? (payload["https://api.openai.com/profile"] as? [String: Any])?["email"] as? String
+    }
+
+    private static func codexJWTPayload(_ token: String) -> [String: Any]? {
         let parts = token.split(separator: ".", omittingEmptySubsequences: false)
         guard parts.count >= 2 else { return nil }
         var payload = String(parts[1])
@@ -1232,12 +1286,11 @@ struct CredentialDiscovery: Sendable {
         )
         guard
             let data = Data(base64Encoded: payload),
-            let object = try? UsageJSON.object(data),
-            let expiration = UsageJSON.number(object["exp"])
+            let object = try? UsageJSON.object(data)
         else {
             return nil
         }
-        return Date(timeIntervalSince1970: expiration)
+        return object
     }
 
     private func parseAntigravity(
@@ -1282,6 +1335,31 @@ struct CredentialDiscovery: Sendable {
             seconds /= 1_000
         }
         return UsageJSON.date(timeIntervalSince1970: seconds)
+    }
+}
+
+enum MaskedAccountIdentity {
+    static func email(_ value: String?) -> String? {
+        guard let value, value.count <= 254,
+              value.range(
+                of: #"^[A-Za-z0-9.!#$%&'*+=?^_`{|}~-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,24}$"#,
+                options: .regularExpression
+              ) != nil,
+              !value.contains(where: \.isWhitespace)
+        else { return nil }
+        let parts = value.split(separator: "@")
+        guard parts.count == 2, !parts[0].hasPrefix("."), !parts[0].hasSuffix("."),
+              !parts[0].contains("..")
+        else { return nil }
+        let domain = parts[1].split(separator: ".")
+        guard domain.allSatisfy({ !$0.hasPrefix("-") && !$0.hasSuffix("-") })
+        else { return nil }
+        func mask(_ text: Substring) -> String {
+            text.count > 2 ? "\(text.first!)***\(text.last!)" : "***"
+        }
+        return mask(parts[0]) + "@"
+            + domain.dropLast().map(mask).joined(separator: ".")
+            + "." + String(domain.last!)
     }
 }
 

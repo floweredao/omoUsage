@@ -6,17 +6,23 @@ struct FixtureUsageProvider: UsageProvider {
     let accountID: AccountID
     let accountLabel: String
     private let claudeCredentialDiscovery: CredentialDiscovery?
+    private let codexPlanMultiplierStore: CodexPlanMultiplierStore
+    private let codexReportedPlan: String
 
     init(
         id: ProviderID,
         accountID: AccountID = .legacy,
         accountLabel: String = AccountLabel.defaultValue,
-        claudeCredentialDiscovery: CredentialDiscovery? = nil
+        claudeCredentialDiscovery: CredentialDiscovery? = nil,
+        defaults: UserDefaults = .standard,
+        codexReportedPlan: String = "plus"
     ) {
         self.id = id
         self.accountID = accountID
         self.accountLabel = accountLabel
         self.claudeCredentialDiscovery = claudeCredentialDiscovery
+        self.codexPlanMultiplierStore = CodexPlanMultiplierStore(defaults: defaults, accountID: accountID)
+        self.codexReportedPlan = codexReportedPlan
     }
 
     func fetch(now: Date) async throws -> ProviderUsage {
@@ -36,8 +42,12 @@ struct FixtureUsageProvider: UsageProvider {
             )
         case .codex:
             return try CodexUsageParser.parse(
-                Data(Self.codexJSON.utf8),
-                now: now.addingTimeInterval(-15 * 60)
+                Data(Self.codexJSON.replacingOccurrences(
+                    of: "\"plan_type\": \"plus\"",
+                    with: "\"plan_type\": \"\(codexReportedPlan)\""
+                ).utf8),
+                now: now.addingTimeInterval(-15 * 60),
+                planMultiplier: codexPlanMultiplierStore.load()
             )
         case .antigravity:
             return try AntigravityUsageParser.parse(

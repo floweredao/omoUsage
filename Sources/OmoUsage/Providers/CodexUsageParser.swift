@@ -6,7 +6,8 @@ enum CodexUsageParser {
 
     static func parse(
         _ data: Data,
-        now: Date
+        now: Date,
+        planMultiplier: CodexPlanMultiplier = CodexPlanMultiplierStore(defaults: .standard).load()
     ) throws -> ProviderUsage {
         let object = try UsageJSON.object(data)
         guard let rateLimit = UsageJSON.object(object["rate_limit"]) else {
@@ -58,9 +59,7 @@ enum CodexUsageParser {
         let reportedPlan = planName(object["plan_type"])
         return ProviderUsage(
             provider: .codex,
-            planName: CodexPlanMultiplierStore(
-                defaults: .standard
-            ).planName(for: reportedPlan),
+            planName: planMultiplier.planName(for: reportedPlan),
             groups: [group],
             availability: .available,
             updatedAt: now

@@ -7,6 +7,7 @@ struct CodexUsageProvider: UsageProvider {
     let accountLabel: String
     let discovery: CredentialDiscovery
     let http: ProviderHTTP
+    private let planMultiplierStore: CodexPlanMultiplierStore
 
     private static let refreshLeadTime: TimeInterval = 300
     private static let tokenEndpoint = URL(
@@ -19,12 +20,14 @@ struct CodexUsageProvider: UsageProvider {
         discovery: CredentialDiscovery = .live(),
         http: ProviderHTTP = ProviderHTTP(),
         accountID: AccountID = .legacy,
-        accountLabel: String = AccountLabel.defaultValue
+        accountLabel: String = AccountLabel.defaultValue,
+        defaults: UserDefaults = .standard
     ) {
         self.accountID = accountID
         self.accountLabel = accountLabel
         self.discovery = discovery
         self.http = http
+        self.planMultiplierStore = CodexPlanMultiplierStore(defaults: defaults, accountID: accountID)
     }
 
     func fetch(now: Date) async throws -> ProviderUsage {
@@ -126,7 +129,7 @@ struct CodexUsageProvider: UsageProvider {
         }
         let data = try await http.data(for: request, endpoint: endpoint)
         return try endpoint.schemaChecked {
-            try CodexUsageParser.parse(data, now: now)
+            try CodexUsageParser.parse(data, now: now, planMultiplier: planMultiplierStore.load())
         }
     }
 
@@ -192,7 +195,8 @@ struct CodexUsageProvider: UsageProvider {
             planName: credential.planName,
             expiresAt: expiresAt,
             source: credential.source,
-            storage: credential.storage
+            storage: credential.storage,
+            email: credential.email
         )
     }
 

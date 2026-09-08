@@ -1,6 +1,7 @@
 import Foundation
+import OmoUsageCore
 
-enum CodexPlanMultiplier: String, CaseIterable, Identifiable {
+enum CodexPlanMultiplier: String, CaseIterable, Identifiable, Sendable {
     case automatic
     case fiveX = "5x"
     case twentyX = "20x"
@@ -23,15 +24,28 @@ enum CodexPlanMultiplier: String, CaseIterable, Identifiable {
     }
 }
 
-struct CodexPlanMultiplierStore {
+// UserDefaults documents concurrent access as thread-safe.
+struct CodexPlanMultiplierStore: @unchecked Sendable {
     static let defaultsKey = "codexPlanMultiplier"
 
     let defaults: UserDefaults
+    let accountID: AccountID
+
+    init(defaults: UserDefaults, accountID: AccountID = .legacy) {
+        self.defaults = defaults
+        self.accountID = accountID
+    }
+
+    var defaultsKey: String {
+        accountID == .legacy
+            ? Self.defaultsKey
+            : "\(Self.defaultsKey).\(accountID.rawValue)"
+    }
 
     func load() -> CodexPlanMultiplier {
         guard
             let rawValue = defaults.string(
-                forKey: Self.defaultsKey
+                forKey: defaultsKey
             ),
             let multiplier = CodexPlanMultiplier(
                 rawValue: rawValue
@@ -44,11 +58,11 @@ struct CodexPlanMultiplierStore {
 
     func save(_ multiplier: CodexPlanMultiplier) {
         if multiplier == .automatic {
-            defaults.removeObject(forKey: Self.defaultsKey)
+            defaults.removeObject(forKey: defaultsKey)
         } else {
             defaults.set(
                 multiplier.rawValue,
-                forKey: Self.defaultsKey
+                forKey: defaultsKey
             )
         }
     }
