@@ -4,15 +4,18 @@ import Foundation
 struct ProviderAccount: Identifiable, Equatable, Codable, Sendable {
     let id: AccountID
     let label: String
+    let providerLabels: [String: String]
 
-    init(id: AccountID, label: String) {
+    init(id: AccountID, label: String, providerLabels: [String: String] = [:]) {
         self.id = id
         self.label = AccountLabel.sanitized(label)
+        self.providerLabels = providerLabels.mapValues(AccountLabel.sanitized)
     }
 
     private enum CodingKeys: String, CodingKey {
         case id
         case label
+        case providerLabels
     }
 
     init(from decoder: any Decoder) throws {
@@ -21,6 +24,23 @@ struct ProviderAccount: Identifiable, Equatable, Codable, Sendable {
         label = AccountLabel.sanitized(
             try container.decode(String.self, forKey: .label)
         )
+        providerLabels = try container.decodeIfPresent(
+            [String: String].self, forKey: .providerLabels
+        )?.mapValues(AccountLabel.sanitized) ?? [:]
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(label, forKey: .label)
+        // Keep old registry/journal digests identical when no override exists.
+        if !providerLabels.isEmpty {
+            try container.encode(providerLabels, forKey: .providerLabels)
+        }
+    }
+
+    func label(for provider: ProviderID) -> String {
+        providerLabels[provider.rawValue] ?? label
     }
 }
 
@@ -510,7 +530,13 @@ struct ProviderAccountStore {
             registry.migrationVersion == Self.currentMigrationVersion,
             !registry.accounts.isEmpty,
             Set(registry.accounts.map(\.id)).count == registry.accounts.count,
-            registry.accounts.allSatisfy({ $0.label == AccountLabel.sanitized($0.label) })
+            registry.accounts.allSatisfy({
+                $0.label == AccountLabel.sanitized($0.label)
+                    && $0.providerLabels.allSatisfy {
+                        ProviderID(rawValue: $0.key) != nil
+                            && $0.value == AccountLabel.sanitized($0.value)
+                    }
+            })
         else {
             throw ProviderAccountStoreError.invalidRegistry
         }

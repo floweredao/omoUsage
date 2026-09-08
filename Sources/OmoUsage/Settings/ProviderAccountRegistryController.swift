@@ -28,6 +28,16 @@ struct ProviderAccountMetadata: Identifiable, Equatable, Sendable {
     let source: ProviderKeyStorageSource?
 }
 
+struct ProviderAccountSettingsMetadata: Identifiable, Equatable, Sendable {
+    var id: AccountProviderID { accountProviderID }
+    let accountProviderID: AccountProviderID
+    let provider: ProviderID
+    let label: String
+    let isPrimary: Bool
+    let maskedIdentity: String?
+    let source: ProviderKeyStorageSource?
+}
+
 struct AppAccountComposition {
     let providers: [any UsageProvider]
     let accountProviderOrder: [AccountProviderID]
@@ -72,6 +82,8 @@ final class ProviderAccountRegistryController {
     private let persistenceEnabled: Bool
     @ObservationIgnored
     private let mutationCoordinator: ProviderMutationCoordinator
+    @ObservationIgnored
+    private let maskedIdentity: (AccountProviderID) -> String?
 
     private(set) var registry: ProviderAccountRegistry?
     private(set) var recoveryState: ProviderAccountRecoveryState
@@ -87,7 +99,8 @@ final class ProviderAccountRegistryController {
         credentialSnapshotStore: @escaping () -> ProviderCredentialSnapshotStore? = {
             CredentialDiscovery.live().snapshotStore
         },
-        mutationAfterPhase: @escaping ProviderMutationCoordinator.PhaseHook = { _ in }
+        mutationAfterPhase: @escaping ProviderMutationCoordinator.PhaseHook = { _ in },
+        maskedIdentity: @escaping (AccountProviderID) -> String? = { _ in nil }
     ) {
         self.store = store
         self.registry = registry
@@ -96,6 +109,7 @@ final class ProviderAccountRegistryController {
         self.keyStore = keyStore
         self.makeAccountID = makeAccountID
         self.credentialSnapshotStore = credentialSnapshotStore
+        self.maskedIdentity = maskedIdentity
         self.mutationCoordinator = ProviderMutationCoordinator(
             store: store,
             keyStore: keyStore,
@@ -113,7 +127,8 @@ final class ProviderAccountRegistryController {
         credentialSnapshotStore: @escaping () -> ProviderCredentialSnapshotStore? = {
             CredentialDiscovery.live().snapshotStore
         },
-        mutationAfterPhase: @escaping ProviderMutationCoordinator.PhaseHook = { _ in }
+        mutationAfterPhase: @escaping ProviderMutationCoordinator.PhaseHook = { _ in },
+        maskedIdentity: @escaping (AccountProviderID) -> String? = { _ in nil }
     ) {
         self.store = store
         self.registry = loadResult.registry
@@ -122,6 +137,7 @@ final class ProviderAccountRegistryController {
         self.keyStore = keyStore
         self.makeAccountID = makeAccountID
         self.credentialSnapshotStore = credentialSnapshotStore
+        self.maskedIdentity = maskedIdentity
         self.mutationCoordinator = ProviderMutationCoordinator(
             store: store,
             keyStore: keyStore,
@@ -144,8 +160,63 @@ final class ProviderAccountRegistryController {
             return ProviderAccountMetadata(
                 accountProviderID: identity,
                 provider: identity.providerID,
-                label: AccountLabel.sanitized(account.label),
+                label: account.label(for: identity.providerID),
                 source: keyStorageSource(for: identity)
+            )
+        }
+    }
+
+    func settingsAccounts(for provider: ProviderID) -> [ProviderAccountSettingsMetadata] {
+        guard let registry else { return [] }
+        let identities = [AccountProviderID(accountID: .legacy, providerID: provider)]
+            + registry.providerReferences.filter {
+                $0.providerID == provider && $0.accountID != .legacy
+            }
+        return identities.compactMap { identity in
+            guard let account = registry.accounts.first(where: { $0.id == identity.accountID })
+            else { return nil }
+            return ProviderAccountSettingsMetadata(
+                accountProviderID: identity,
+                provider: provider,
+                label: account.label(for: provider),
+                isPrimary: identity.accountID == .legacy,
+                maskedIdentity: maskedIdentity(identity),
+                source: keyStorageSource(for: identity)
+            )
+        }
+    }
+
+    func renameAccount(_ identity: AccountProviderID, label rawLabel: String) throws {
+        let label = try Self.validatedAccountLabel(rawLabel)
+        _ = try requireRegistry()
+        try replaceRegistry { registry in
+            guard registry.accounts.contains(where: { $0.id == identity.accountID }),
+                  identity.accountID == .legacy || registry.providerReferences.contains(identity)
+            else {
+                throw ProviderAccountRegistryControllerError.accountNotFound
+            }
+            let peers = Set(registry.providerReferences + [
+                AccountProviderID(accountID: .legacy, providerID: identity.providerID)
+            ])
+            guard !peers.contains(where: { peer in
+                peer != identity && peer.providerID == identity.providerID
+                    && registry.accounts.first { $0.id == peer.accountID }?
+                        .label(for: peer.providerID).caseInsensitiveCompare(label) == .orderedSame
+            }) else {
+                throw ProviderAccountRegistryControllerError.invalidLabel
+            }
+            return ProviderAccountRegistry(
+                version: registry.version,
+                migrationVersion: registry.migrationVersion,
+                accounts: registry.accounts.map { account in
+                    guard account.id == identity.accountID else { return account }
+                    var labels = account.providerLabels
+                    labels[identity.providerID.rawValue] = label
+                    return ProviderAccount(id: account.id, label: account.label, providerLabels: labels)
+                },
+                displayOrder: registry.displayOrder,
+                disconnected: registry.disconnected,
+                providerReferences: registry.providerReferences
             )
         }
     }
@@ -444,11 +515,14 @@ final class ProviderAccountRegistryController {
             let accountsByID = Dictionary(
                 uniqueKeysWithValues: current.accounts.map { ($0.id, $0) }
             )
-            let duplicate = current.providerReferences.contains { reference in
+            let references = current.providerReferences + [
+                AccountProviderID(accountID: .legacy, providerID: provider)
+            ]
+            let duplicate = references.contains { reference in
                 guard reference.providerID == provider,
                       let account = accountsByID[reference.accountID]
                 else { return false }
-                return account.label.caseInsensitiveCompare(label) == .orderedSame
+                return account.label(for: provider).caseInsensitiveCompare(label) == .orderedSame
             }
             guard !duplicate else {
                 throw ProviderAccountRegistryControllerError.invalidLabel

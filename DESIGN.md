@@ -217,8 +217,16 @@ other privileged controls remain native-only.
   OpenCode Go uses an OmoUsage-owned API-key field and still discovers official
   `auth.json` and local usage as lower-priority fallbacks.
 - API-key fields appear only for OpenCode Go, OpenRouter, and Z.ai.
-- Every provider authentication row ends with its own account-alias field and
-  Add Account action. API-key providers also show a secure key field; companion
+- Every provider authentication row explicitly identifies its primary account,
+  even when disconnected or when no additional accounts exist. Additional
+  accounts use the same row hierarchy with a distinct role label. Both primary
+  and additional aliases remain editable with explicit save/cancel controls.
+  A reliable local account email, when available, appears beside the alias with
+  its middle characters masked; missing identity never becomes a guessed email.
+  Codex usage-tier overrides are independent for each account.
+- Add Account is offered only while that provider's primary account is
+  connected. An already-pending login retains its completion/cancel controls.
+  API-key providers also show a secure key field; companion
   providers capture the credential from their completed official login.
   Existing non-default accounts remain inside that provider row with their
   sanitized alias and one targeted destructive Remove action. Keys, tokens,
@@ -270,11 +278,13 @@ other privileged controls remain native-only.
   account manager. It owns authentication only and carries no ordering
   affordance.
 - `ProviderOrderingView`: the `Dashboard Order` surface. A native SwiftUI
-  `List` in `.plain` style with an explicit draggable SF Symbol handle and
-  account-qualified row drop destinations. A targeted row receives the native
-  accent tint, and one completed drop produces one semantic insertion. Its
+  fixed-height row stack with an explicit native AppKit drag handle and
+  account-qualified row drop destinations. The dragged row and its insertion
+  position remain visible while neighboring rows move in a local preview.
+  One completed drop commits one semantic insertion; cancellation discards the
+  preview without changing the stored order. Its
   height is computed from a 60 pt content-safe row height times the row count
-  and it sets `.scrollDisabled(true)`; the page `ScrollView` keeps scroll
+  without an inner scrolling container; the page `ScrollView` keeps scroll
   ownership. A `Reset to Default` control sits in the section header and is
   disabled while the order already equals the configured default.
 - `ProviderOrderRow`: one composite account-provider row. Drag handle glyph,
@@ -282,8 +292,10 @@ other privileged controls remain native-only.
   `N of M` position text. Never renders credentials, account UUIDs, or
   credential-source paths.
 - `ProviderAccountsSection`: native multi-account management embedded once in
-  every provider row. At rest it shows saved account rows and a compact
-  plus-labelled Add Account button, not an always-visible input strip. The
+  every provider row. At rest it shows a primary row followed by saved additional
+  rows, each with a role, editable alias, and masked identity when available.
+  A compact plus-labelled Add Account button appears only while the primary
+  account is connected, not as an always-visible input strip. The
   button expands a vertically labelled form with an alias example, a separate
   secure key field where required, and trailing Cancel and primary action.
   Companion forms explain that another official login is required. Waiting
@@ -406,12 +418,13 @@ other privileged controls remain native-only.
   Reduced Motion still makes hidden-edge geometry immediate while retaining
   opacity/color feedback.
 - Dashboard-order drag, keyboard move, and reset are one intent with one
-  effect. Every logical move writes the composite order exactly once, reorders
+  effect. Drag hover changes only a local preview, not persisted state.
+  Every completed logical move writes the composite order exactly once, reorders
   the snapshot once, and publishes control state once. A boundary move (up at
   the top, down at the bottom) is a no-op that writes nothing.
-- Reorder motion is the native `List` row animation. No custom transform or
-  spring is layered on top, so system Reduce Motion is honored by AppKit
-  without an app-specific branch.
+- Reorder motion animates the stack's local row positions, not a decorative
+  transform. Reduce Motion disables the position animation and native drag
+  snap-back animation while preserving target feedback.
 - Refresh uses a dedicated active subtree that rotates only while work is
   active. Returning to idle creates a fresh zero-rotation button, so no
   repeat-forever transaction survives refresh completion.

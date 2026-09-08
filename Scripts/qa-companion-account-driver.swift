@@ -143,9 +143,22 @@ func findElement(
     application: AXUIElement,
     identifier target: String
 ) -> AXUIElement? {
+    // Driver query syntax, NOT a production AX identifier. Added accounts get
+    // random UUIDs, so find the stable saved-name element by its fixture alias.
+    let labelQueryPrefix = "query:account-label:codex:"
+    let accountLabel = target.hasPrefix(labelQueryPrefix)
+        ? String(target.dropFirst(labelQueryPrefix.count)) : nil
     var found: AXUIElement?
     _ = walk(application) { element, _ in
-        guard identifier(of: element) == target else { return false }
+        let id = identifier(of: element) ?? ""
+        if let accountLabel {
+            guard id.hasPrefix("account-name-codex-"),
+                  [kAXValueAttribute, kAXTitleAttribute].contains(where: {
+                      attribute(element, $0) as? String == accountLabel
+                  }) else { return false }
+        } else {
+            guard id == target else { return false }
+        }
         found = element
         return true
     }
