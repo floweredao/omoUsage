@@ -1,6 +1,7 @@
 import OmoUsageCore
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 enum ProviderOrderingLayout {
     static let rowHeight: CGFloat = 60
@@ -71,11 +72,175 @@ enum ProviderOrderingDrag {
     }
 }
 
+/// Hover changes only this local session. Persistence belongs to an accepted drop.
+struct ProviderOrderingDragSession {
+    private(set) var dragged: AccountProviderID?
+    private(set) var previewOrder: [AccountProviderID]?
+    private var originalOrder: [AccountProviderID] = []
+
+    mutating func begin(dragged: AccountProviderID, in order: [AccountProviderID]) {
+        self.dragged = dragged
+        originalOrder = order
+        previewOrder = order
+    }
+
+    @discardableResult
+    mutating func hover(onto target: AccountProviderID) -> Bool {
+        guard let dragged, var order = previewOrder,
+              let plan = ProviderOrderingDrag.movePlan(
+                dragged: dragged, onto: target, in: order
+              ) else { return false }
+        order.move(fromOffsets: plan.fromOffsets, toOffset: plan.toOffset)
+        previewOrder = order
+        return true
+    }
+
+    mutating func finish(
+        accepted: Bool,
+        in order: [AccountProviderID]
+    ) -> ProviderOrderingMovePlan? {
+        defer {
+            dragged = nil
+            previewOrder = nil
+            originalOrder = []
+        }
+        guard accepted, order == originalOrder, let dragged,
+              let source = order.firstIndex(of: dragged),
+              let destination = previewOrder?.firstIndex(of: dragged),
+              source != destination else { return nil }
+        return ProviderOrderingMovePlan(
+            fromOffsets: IndexSet(integer: source),
+            toOffset: source < destination ? destination + 1 : destination
+        )
+    }
+}
+
+enum ProviderOrderingTransfer {
+    static let type = UTType.utf8PlainText
+}
+
+private struct ProviderOrderingDropDelegate: DropDelegate {
+    let isActive: Bool
+    let entered: () -> Void
+    let dropped: () -> Bool
+
+    func validateDrop(info: DropInfo) -> Bool {
+        isActive && info.hasItemsConforming(to: [ProviderOrderingTransfer.type])
+    }
+
+    func dropEntered(info: DropInfo) {
+        if validateDrop(info: info) { entered() }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: validateDrop(info: info) ? .move : .forbidden)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        validateDrop(info: info) && dropped()
+    }
+}
+
+/// SwiftUI's draggable modifier has no session-ended callback on macOS 15.
+/// AppKit owns the session so Escape and drops outside the list always roll back.
+private struct ProviderOrderingDragHandle: NSViewRepresentable {
+    let identity: AccountProviderID
+    let label: String
+    let animates: Bool
+    let began: () -> Void
+    let ended: () -> Void
+
+    func makeNSView(context: Context) -> HandleView {
+        HandleView()
+    }
+
+    func updateNSView(_ view: HandleView, context: Context) {
+        view.payload = ProviderOrderingDrag.payload(for: identity)
+        view.began = began
+        view.ended = ended
+        view.animatesDrag = animates
+        view.image = NSImage(
+            systemSymbolName: "line.3.horizontal", accessibilityDescription: label
+        )
+        view.contentTintColor = .secondaryLabelColor
+        view.imageScaling = .scaleNone
+        view.toolTip = label
+        view.setAccessibilityElement(true)
+        view.setAccessibilityRole(.handle)
+        view.setAccessibilityLabel(label)
+        view.setAccessibilityIdentifier("provider-ordering-handle.\(view.payload)")
+    }
+
+    final class HandleView: NSImageView, NSDraggingSource {
+        var payload = ""
+        var animatesDrag = true
+        var began: (() -> Void)?
+        var ended: (() -> Void)?
+        private var mouseDownEvent: NSEvent?
+        private var sessionEnded: (() -> Void)?
+        private var dragInProgress = false
+
+        override func isAccessibilitySelected() -> Bool { dragInProgress }
+
+        override func mouseDown(with event: NSEvent) {
+            mouseDownEvent = event
+        }
+
+        override func mouseUp(with event: NSEvent) {
+            mouseDownEvent = nil
+        }
+
+        override func mouseDragged(with event: NSEvent) {
+            guard let start = mouseDownEvent, let image,
+                  hypot(event.locationInWindow.x - start.locationInWindow.x,
+                        event.locationInWindow.y - start.locationInWindow.y) >= 3
+            else { return }
+            mouseDownEvent = nil
+            let writer = NSPasteboardItem()
+            writer.setString(
+                payload,
+                forType: NSPasteboard.PasteboardType(ProviderOrderingTransfer.type.identifier)
+            )
+            let item = NSDraggingItem(pasteboardWriter: writer)
+            item.setDraggingFrame(bounds, contents: image)
+            // Capture callbacks before preview reordering updates the source view.
+            sessionEnded = ended
+            let session = beginDraggingSession(with: [item], event: event, source: self)
+            session.animatesToStartingPositionsOnCancelOrFail = animatesDrag
+        }
+
+        func draggingSession(_ session: NSDraggingSession, willBeginAt screenPoint: NSPoint) {
+            dragInProgress = true
+            began?()
+            NSAccessibility.post(element: self, notification: .valueChanged)
+        }
+
+        func draggingSession(
+            _ session: NSDraggingSession,
+            sourceOperationMaskFor context: NSDraggingContext
+        ) -> NSDragOperation {
+            context == .withinApplication ? .move : []
+        }
+
+        func draggingSession(
+            _ session: NSDraggingSession,
+            endedAt screenPoint: NSPoint,
+            operation: NSDragOperation
+        ) {
+            dragInProgress = false
+            sessionEnded?()
+            sessionEnded = nil
+            NSAccessibility.post(element: self, notification: .valueChanged)
+        }
+    }
+}
+
 struct ProviderOrderingView: View {
     @Bindable var viewModel: UsageDashboardViewModel
     @Environment(\.appLocalization) private var localization
     @FocusState private var focused: AccountProviderID?
-    @State private var dropTarget: AccountProviderID?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var drag = ProviderOrderingDragSession()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -90,48 +255,34 @@ struct ProviderOrderingView: View {
                 .disabled(viewModel.isAccountProviderOrderDefault)
             }
 
-            List {
+            // A List's NSOutlineView consumes mouse-down before the AppKit
+            // handle receives it. The settings view already owns scrolling.
+            VStack(spacing: 0) {
                 ForEach(Array(items.enumerated()), id: \.element.id) {
                     index, item in
                     row(item, index: index)
-                        .listRowInsets(
-                            EdgeInsets(
-                                top: ProviderOrderingLayout.verticalRowInset,
-                                leading: 8,
-                                bottom:
-                                    ProviderOrderingLayout.verticalRowInset,
-                                trailing: 8
-                            )
-                        )
-                        .listRowSeparator(.hidden)
+                        .padding(.horizontal, 16)
                         .background(
                             Color.accentColor.opacity(
-                                dropTarget == item.id ? 0.10 : 0
+                                drag.dragged == item.id ? 0.10 : 0
                             ),
                             in: RoundedRectangle(
                                 cornerRadius: 8,
                                 style: .continuous
                             )
                         )
-                        .dropDestination(for: String.self) {
-                            payloads,
-                            _ in
-                            handleDrop(
-                                payloads: payloads,
-                                onto: item.id
+                        .onDrop(
+                            of: [ProviderOrderingTransfer.type],
+                            delegate: ProviderOrderingDropDelegate(
+                                isActive: drag.dragged != nil,
+                                entered: { preview(onto: item.id) },
+                                dropped: acceptDrop
                             )
-                        } isTargeted: { isTargeted in
-                            dropTarget = isTargeted ? item.id : nil
-                        }
+                        )
                 }
             }
-            .listStyle(.plain)
-            .scrollDisabled(true)
-            .environment(
-                \.defaultMinListRowHeight,
-                ProviderOrderingLayout.rowHeight
-            )
-            .contentMargins(.vertical, 0, for: .scrollContent)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("provider-ordering-list")
             .frame(
                 height: ProviderOrderingLayout.listHeight(
                     itemCount: items.count
@@ -143,10 +294,15 @@ struct ProviderOrderingView: View {
                     .stroke(SettingsRowVisualTokens.border, lineWidth: 0.5)
             }
         }
+        .onDisappear { cancelDrag() }
+        .onChange(of: viewModel.accountProviderOrder) { cancelDrag() }
     }
 
     private var items: [AccountProviderOrderingItem] {
-        viewModel.accountProviderOrderingItems
+        let persisted = viewModel.accountProviderOrderingItems
+        guard let preview = drag.previewOrder else { return persisted }
+        let byIdentity = Dictionary(uniqueKeysWithValues: persisted.map { ($0.id, $0) })
+        return preview.compactMap { byIdentity[$0] }
     }
 
     private func row(
@@ -156,12 +312,14 @@ struct ProviderOrderingView: View {
         let position = localization.format(.orderPosition, index + 1, items.count)
         let identityName = accessibilityLabel(item)
         return HStack(spacing: 8) {
-            Image(systemName: "line.3.horizontal")
-                .foregroundStyle(.secondary)
-                .help(localization.text(.dragToReorder))
-                .draggable(
-                    ProviderOrderingDrag.payload(for: item.id)
-                )
+            ProviderOrderingDragHandle(
+                identity: item.id,
+                label: localization.text(.dragToReorder),
+                animates: !reduceMotion,
+                began: { drag.begin(dragged: item.id, in: viewModel.accountProviderOrder) },
+                ended: cancelDrag
+            )
+            .frame(width: 24, height: 28)
             ProviderIcon(provider: item.provider)
                 .frame(width: 24, height: 24)
             VStack(alignment: .leading, spacing: 1) {
@@ -187,7 +345,8 @@ struct ProviderOrderingView: View {
         .contentShape(Rectangle())
         .focusable()
         .focused($focused, equals: item.id)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("provider-ordering-row.\(ProviderOrderingDrag.payload(for: item.id))")
         .accessibilityLabel(identityName)
         .accessibilityValue(position)
         .accessibilityAction(named: localization.format(
@@ -198,31 +357,28 @@ struct ProviderOrderingView: View {
         )) { move(item, by: 1) }
     }
 
-    private func handleDrop(
-        payloads: [String],
-        onto target: AccountProviderID
-    ) -> Bool {
-        defer { dropTarget = nil }
-        guard
-            let payload = payloads.first,
-            let dragged = ProviderOrderingDrag.identity(
-                for: payload,
-                in: viewModel.accountProviderOrder
-            ),
-            let plan = ProviderOrderingDrag.movePlan(
-                dragged: dragged,
-                onto: target,
-                in: viewModel.accountProviderOrder
-            )
-        else {
-            return false
+    private func preview(onto target: AccountProviderID) {
+        withAnimation(reduceMotion ? nil : .snappy(duration: 0.2)) {
+            _ = drag.hover(onto: target)
         }
-        viewModel.moveAccountProviders(
-            fromOffsets: plan.fromOffsets,
-            toOffset: plan.toOffset
-        )
+    }
+
+    private func acceptDrop() -> Bool {
+        guard let dragged = drag.dragged else { return false }
+        if let plan = drag.finish(accepted: true, in: viewModel.accountProviderOrder) {
+            viewModel.moveAccountProviders(
+                fromOffsets: plan.fromOffsets,
+                toOffset: plan.toOffset
+            )
+        }
         focused = dragged
         return true
+    }
+
+    private func cancelDrag() {
+        withAnimation(reduceMotion ? nil : .snappy(duration: 0.2)) {
+            _ = drag.finish(accepted: false, in: viewModel.accountProviderOrder)
+        }
     }
 
     @ViewBuilder

@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import UniformTypeIdentifiers
 @testable import OmoUsage
 @testable import OmoUsageCore
 
@@ -12,6 +13,13 @@ struct ProviderOrderingTests {
         rawValue: "00000000-0000-0000-0000-000000000003"
     )!
     private let now = Date(timeIntervalSince1970: 1_786_867_200)
+
+    @Test
+    func nativeDragUsesStandardTextPasteboardContract() {
+        #expect(ProviderOrderingTransfer.type == .utf8PlainText)
+        #expect(ProviderOrderingTransfer.type.conforms(to: .data))
+        #expect(ProviderOrderingTransfer.type.conforms(to: .item))
+    }
 
     @Test
     func nativeListHeightFitsEveryCompleteRow() {
@@ -86,6 +94,80 @@ struct ProviderOrderingTests {
                 in: order
             ) == nil
         )
+    }
+
+    @Test
+    func dragLifecyclePreviewsWithoutChangingOrderAndCancellationRollsBack() {
+        let order = configuredProviders().map(\.accountProviderID)
+        var drag = ProviderOrderingDragSession()
+        drag.begin(dragged: order[0], in: order)
+
+        let movedDown = drag.hover(onto: order[2])
+        #expect(movedDown)
+        #expect(drag.previewOrder == [order[1], order[2], order[0]])
+        let movedOntoSelf = drag.hover(onto: order[0])
+        #expect(!movedOntoSelf)
+        #expect(drag.finish(accepted: false, in: order) == nil)
+        #expect(drag.previewOrder == nil)
+        #expect(drag.dragged == nil)
+
+        drag.begin(dragged: order[2], in: order)
+        let movedUp = drag.hover(onto: order[0])
+        #expect(movedUp)
+        #expect(drag.previewOrder == [order[2], order[0], order[1]])
+        #expect(drag.finish(accepted: true, in: order) == ProviderOrderingMovePlan(
+            fromOffsets: IndexSet(integer: 2), toOffset: 0
+        ))
+        #expect(drag.previewOrder == nil)
+        #expect(drag.finish(accepted: true, in: order) == nil)
+    }
+
+    @Test @MainActor
+    func hoverDoesNotPublishAndDropPersistsPreviewExactlyOnce() {
+        var writes: [[AccountProviderID]] = []
+        let viewModel = UsageDashboardViewModel(
+            providers: configuredProviders(),
+            persistAccountProviderOrder: { writes.append($0) },
+            now: { now }
+        )
+        let original = viewModel.accountProviderOrder
+        var drag = ProviderOrderingDragSession()
+        drag.begin(dragged: original[0], in: original)
+        let firstHover = drag.hover(onto: original[1])
+        let secondHover = drag.hover(onto: original[2])
+        #expect(firstHover)
+        #expect(secondHover)
+        let preview = drag.previewOrder
+        #expect(viewModel.accountProviderOrder == original)
+        #expect(writes.isEmpty)
+
+        if let plan = drag.finish(accepted: true, in: viewModel.accountProviderOrder) {
+            viewModel.moveAccountProviders(
+                fromOffsets: plan.fromOffsets, toOffset: plan.toOffset
+            )
+        }
+        #expect(viewModel.accountProviderOrder == preview)
+        #expect(writes == [preview!])
+        #expect(drag.finish(accepted: true, in: viewModel.accountProviderOrder) == nil)
+    }
+
+    @Test
+    func unchangedOrStaleDragDoesNotCommit() {
+        let order = configuredProviders().map(\.accountProviderID)
+        var drag = ProviderOrderingDragSession()
+        drag.begin(dragged: order[0], in: order)
+        #expect(drag.finish(accepted: true, in: order) == nil)
+
+        drag.begin(dragged: order[0], in: order)
+        drag.hover(onto: order[2])
+        drag.hover(onto: order[1])
+        #expect(drag.previewOrder == order)
+        #expect(drag.finish(accepted: true, in: order) == nil)
+
+        drag.begin(dragged: order[0], in: order)
+        drag.hover(onto: order[2])
+        #expect(drag.finish(accepted: true, in: Array(order.reversed())) == nil)
+        #expect(drag.previewOrder == nil)
     }
 
     @Test @MainActor
