@@ -7,6 +7,76 @@ import Testing
 @Suite
 @MainActor
 struct SideNotchPanelLayoutTests {
+    @Test(arguments: [56.0, 344.0], [0, 2])
+    func footerMenuControlStaysInsideRail(
+        panelWidth: Double,
+        providerCount: Int
+    ) async throws {
+        let suite = "SideNotchFooterTests-\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let providers: [ProviderID] = [.codex, .claude]
+        let viewModel = UsageDashboardViewModel(
+            providers: providers.prefix(providerCount).map {
+                FixtureUsageProvider(id: $0, defaults: defaults)
+            },
+            now: { Date(timeIntervalSince1970: 1_785_675_000) }
+        )
+        await viewModel.refresh()
+        #expect(viewModel.snapshot.providers.count == providerCount)
+        let state = SideNotchPanelState()
+        state.toggleRevealed()
+        if panelWidth == 344, providerCount > 0 {
+            state.select(.codex)
+        }
+        let host = NSHostingView(
+            rootView: SideNotchPanelView(
+                viewModel: viewModel,
+                localization: LocalizationController(
+                    store: AppLanguageStore(defaults: defaults)
+                ),
+                state: state,
+                onSelectionIntent: { _, _ in },
+                onKeyboardFocusTarget: { _ in },
+                onProviderCountChange: { _ in },
+                onPointerEntered: { _ in },
+                onPointerExited: {},
+                onRefresh: {},
+                onSettings: {},
+                onQuit: {}
+            )
+            .frame(width: panelWidth, height: 428)
+        )
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: panelWidth, height: 428),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        defer { window.close() }
+        host.layoutSubtreeIfNeeded()
+        func descendants(_ view: NSView) -> [NSView] {
+            [view] + view.subviews.flatMap(descendants)
+        }
+        let menu = try #require(
+            descendants(host).compactMap { $0 as? NSPopUpButton }.first
+        )
+        let rect = host.convert(menu.bounds, from: menu)
+        let imageRect = try #require(menu.cell?.imageRect(forBounds: menu.bounds))
+        let railCenter = panelWidth - 28
+        #expect(abs(host.convert(imageRect, from: menu).midX - railCenter) <= 1)
+        #expect(rect.minX >= panelWidth - 56)
+        #expect(rect.maxX <= host.bounds.maxX)
+        // AppKit excludes the popup's asymmetric bezel inset from alignment.
+        let alignmentRect = host.convert(
+            menu.alignmentRect(forFrame: menu.frame),
+            from: menu.superview
+        )
+        #expect(abs(alignmentRect.midX - railCenter) <= 1)
+    }
+
     @Test
     func detailHeightMatchesRenderedProviderSection() {
         let claude = ProviderUsage(
