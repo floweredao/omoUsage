@@ -1240,7 +1240,8 @@ struct CredentialDiscovery: Sendable {
     ) throws -> DiscoveredCredential {
         guard
             let root = try? UsageJSON.object(data),
-            root["auth_mode"] as? String == "chatgpt",
+            root["auth_mode"] == nil
+                || root["auth_mode"] as? String == "chatgpt",
             let tokens = UsageJSON.object(root["tokens"]),
             let accessToken = (tokens["access_token"] as? String)?.nonEmpty
         else {
