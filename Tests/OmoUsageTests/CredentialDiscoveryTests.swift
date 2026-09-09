@@ -106,6 +106,45 @@ struct CredentialDiscoveryTests {
     }
 
     @Test
+    func discoversCurrentOfficialCodexAuthFileWithoutLegacyAuthMode() throws {
+        try withFixtureDirectory { directory in
+            let codexURL = directory.appending(path: "codex.json")
+            try Data(
+                """
+                {
+                  "last_refresh": "2026-09-06T04:20:44Z",
+                  "tokens": {
+                    "access_token": "fixture-current-codex-access",
+                    "refresh_token": "fixture-current-codex-refresh",
+                    "id_token": "fixture-current-codex-id",
+                    "account_id": "fixture-current-account"
+                  }
+                }
+                """.utf8
+            ).write(to: codexURL)
+            let discovery = makeDiscovery(
+                claude: directory.appending(path: "missing.json"),
+                codex: codexURL
+            )
+
+            let credential = try discovery.codex(now: now)
+            let captured = try discovery.captureCredential(
+                for: .codex,
+                now: now
+            )
+
+            #expect(credential.source == .file)
+            #expect(credential.accountID == "fixture-current-account")
+            #expect(
+                try CredentialSnapshot(
+                    encodedSecret: captured,
+                    provider: .codex
+                ).accountReference == "fixture-current-account"
+            )
+        }
+    }
+
+    @Test
     func unofficialCodexConfigRequiresExplicitCodexHome() throws {
         try withFixtureDirectory { home in
             let unofficial = home.appending(path: ".config/codex")
@@ -142,6 +181,73 @@ struct CredentialDiscoveryTests {
                     == "fixture-unofficial-codex-access"
             )
             #expect(credential.source == .file)
+        }
+    }
+
+    @Test
+    @MainActor
+    func settingsReconnectAcceptsCurrentOfficialCodexFile() throws {
+        try withFixtureDirectory { directory in
+            let codexURL = directory.appending(path: "codex.json")
+            func installCredential(_ suffix: String) throws {
+                try JSONSerialization.data(withJSONObject: [
+                    "tokens": [
+                        "access_token": "fixture-access-\(suffix)",
+                        "refresh_token": "fixture-refresh-\(suffix)",
+                        "account_id": "fixture-main-account"
+                    ]
+                ]).write(to: codexURL)
+            }
+            try installCredential("before")
+            let discovery = makeDiscovery(
+                claude: directory.appending(path: "missing.json"),
+                codex: codexURL
+            )
+            var persisted: String?
+            var reenabled = false
+            let coordinator = CodexLegacyReconnectCoordinator(
+                captureCredential: {
+                    try discovery.captureCredential(for: .codex, now: now)
+                },
+                persistLegacySnapshot: { persisted = $0 },
+                launchCompanion: { .success(.launched) },
+                reenable: { reenabled = true }
+            )
+
+            #expect(coordinator.start() == .waitingForCredential)
+            #expect(coordinator.checkAgain() == .credentialUnchanged)
+            #expect(persisted == nil)
+            try installCredential("after")
+            #expect(coordinator.checkAgain() == .reconnected)
+            let snapshot = try CredentialSnapshot(
+                encodedSecret: #require(persisted),
+                provider: .codex
+            )
+            #expect(snapshot.accessToken == "fixture-access-after")
+            #expect(snapshot.accountReference == "fixture-main-account")
+            #expect(reenabled)
+            #expect(!coordinator.isWaiting)
+        }
+    }
+
+    @Test(arguments: [
+        #"{}"#,
+        #"{"OPENAI_API_KEY":"fixture-api-key"}"#,
+        #"{"tokens":{"access_token":""}}"#,
+        #"{"auth_mode":"apikey","tokens":{"access_token":"fixture-access"}}"#,
+        #"{"auth_mode":false,"tokens":{"access_token":"fixture-access"}}"#
+    ])
+    func rejectsCodexFilesWithoutChatGPTTokens(payload: String) throws {
+        try withFixtureDirectory { directory in
+            let codexURL = directory.appending(path: "codex.json")
+            try Data(payload.utf8).write(to: codexURL)
+            let discovery = makeDiscovery(
+                claude: directory.appending(path: "missing.json"),
+                codex: codexURL
+            )
+            #expect(throws: CredentialDiscoveryError.malformed(.codex)) {
+                try discovery.codex(now: now)
+            }
         }
     }
 
