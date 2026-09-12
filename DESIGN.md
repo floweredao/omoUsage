@@ -87,6 +87,9 @@ other privileged controls remain native-only.
 - Provider colors identify brands without expanding the dashboard chrome.
 - Settings rows use semantic control backgrounds and separator colors; meter
   tracks use 16% semantic contrast in both appearances.
+- Provider authentication groups keep the same control background under the
+  pointer. The group itself is not an action; hover feedback belongs only to
+  its buttons, never a lighter selection fill behind its text.
 - Each settings account is a separate semantic control-background group with
   10 pt padding, an 8 pt corner radius, a 0.5 pt separator-color border, and
   8 pt spacing between groups. Its status and connection actions sit below
