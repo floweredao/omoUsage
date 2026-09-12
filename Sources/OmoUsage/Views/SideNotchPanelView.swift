@@ -356,6 +356,7 @@ private struct SideNotchRailView: View {
                 }
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
+                .fixedSize()
                 .frame(
                     width: SideNotchPanelLayout.collapsedWidth,
                     height: SideNotchPanelLayout.footerControlHeight,
