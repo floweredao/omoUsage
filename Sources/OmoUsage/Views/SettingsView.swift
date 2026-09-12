@@ -183,7 +183,9 @@ struct SettingsView: View {
                 },
                 launchCompanion: { launchCompanion(.codex) },
                 reenable: {
-                    viewModel.reconnectProvider(.codex)
+                    viewModel.reconnectAccountProvider(
+                        AccountProviderID(accountID: .legacy, providerID: .codex)
+                    )
                     onRegistryChange()
                 }
             )
@@ -421,9 +423,7 @@ struct SettingsView: View {
                             provider in
                             ProviderSettingsRow(
                                 provider: provider,
-                                availability: viewModel.connectionStates[
-                                    provider
-                                ],
+                                viewModel: viewModel,
                                 connectionPresentation:
                                     connectionCoordinator.state(for: provider),
                                 connectionControlsDisabled:
@@ -442,8 +442,6 @@ struct SettingsView: View {
                                 },
                                 onSave: { saveKey(for: provider) },
                                 onRemove: { removeKey(for: provider) },
-                                isDisconnected:
-                                    viewModel.isDisconnected(provider),
                                 onDisconnect: {
                                     disconnectProvider(provider)
                                 },
@@ -575,7 +573,9 @@ struct SettingsView: View {
         await connectionCoordinator.applicationDidBecomeActive(
             refresh: { await viewModel.refresh() },
             availability: { (provider: ProviderID) in
-                viewModel.connectionStates[provider]
+                viewModel.accountConnectionStates[
+                    AccountProviderID(accountID: .legacy, providerID: provider)
+                ]
             }
         )
         if !Task.isCancelled,
@@ -656,8 +656,16 @@ struct SettingsView: View {
             result = connectionCoordinator.startClaudeLogin(
                 launch: launchClaudeLogin,
                 authorize: authorizeClaude,
-                refresh: { await viewModel.retryProvider(.claude) },
-                availability: { viewModel.connectionStates[.claude] },
+                refresh: {
+                    await viewModel.retryAccountProvider(
+                        AccountProviderID(accountID: .legacy, providerID: .claude)
+                    )
+                },
+                availability: {
+                    viewModel.accountConnectionStates[
+                        AccountProviderID(accountID: .legacy, providerID: .claude)
+                    ]
+                },
                 didComplete: {
                     feedback = connectionCoordinator.state(for: .claude) == .authenticated
                         ? nil : .key(.authenticationRequired)
@@ -683,10 +691,12 @@ struct SettingsView: View {
     private func disconnectProvider(_ provider: ProviderID) {
         guard !connectionControlsDisabled(for: provider) else { return }
         if provider == .claude { connectionCoordinator.cancelClaudeLogin() }
-        viewModel.disconnectProvider(provider)
+        viewModel.disconnectAccountProvider(
+            AccountProviderID(accountID: .legacy, providerID: provider)
+        )
         feedback = .formatted(
             .disconnectedProvider,
-            provider.displayName
+            "\(provider.displayName), \(accountRegistryController.settingsAccounts(for: provider).first(where: \.isPrimary)?.label ?? AccountLabel.defaultValue)"
         )
     }
 
@@ -695,10 +705,13 @@ struct SettingsView: View {
             provider: provider,
             refresh: { provider in
                 Task {
-                    await viewModel.retryProvider(provider)
+                    let primary = AccountProviderID(
+                        accountID: .legacy, providerID: provider
+                    )
+                    await viewModel.retryAccountProvider(primary)
                     if !Task.isCancelled,
                        provider == .claude,
-                       viewModel.connectionStates[.claude] == .available {
+                       viewModel.accountConnectionStates[primary] == .available {
                         feedback = nil
                     }
                 }
@@ -729,7 +742,11 @@ struct SettingsView: View {
         }
         ProviderConnectionControl.performReconnect(
             provider: provider,
-            reenable: viewModel.reconnectProvider,
+            reenable: { provider in
+                viewModel.reconnectAccountProvider(
+                    AccountProviderID(accountID: .legacy, providerID: provider)
+                )
+            },
             startConnection: startConnection,
             launchOfficialLogin: startConnection
         )
@@ -1204,7 +1221,9 @@ struct AccountAliasEdit: Equatable, Sendable {
     }
 }
 
-private struct ProviderAccountsSection: View {
+private struct ProviderAccountsSection<
+    ConnectionControls: View, PrimaryCredentials: View
+>: View {
     let provider: ProviderID
     let rows: [ProviderAccountRowPresentation]
     let additionAvailability: ProviderAccountAdditionAvailability
@@ -1218,6 +1237,9 @@ private struct ProviderAccountsSection: View {
         ((AccountProviderID) -> Binding<CodexPlanMultiplier>)?
     let onCheckAgain: () -> Void
     let onCancelAddition: () -> Void
+    @ViewBuilder let connectionControls:
+        (ProviderAccountRowPresentation) -> ConnectionControls
+    @ViewBuilder let primaryCredentials: () -> PrimaryCredentials
     @State private var isAddingAccount = false
     @State private var aliasEdit: AccountAliasEdit?
     @FocusState private var isAliasFocused: Bool
@@ -1376,7 +1398,7 @@ private struct ProviderAccountsSection: View {
         _ row: ProviderAccountRowPresentation
     ) -> some View {
         let roleText = localization.text(row.role.stringKey)
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             if let edit = aliasEdit, edit.identity == row.identity {
                 HStack(spacing: 8) {
                     roleBadge(row, roleText: roleText)
@@ -1494,6 +1516,10 @@ private struct ProviderAccountsSection: View {
                     }
                 }
             }
+            connectionControls(row)
+            if row.role == .primary {
+                primaryCredentials()
+            }
             if row.canRemove, let source = row.source {
                 Text(localization.text(source.stringKey))
                     .font(.system(size: 10.5))
@@ -1530,7 +1556,16 @@ private struct ProviderAccountsSection: View {
                 }
             }
         }
+        .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            Color(nsColor: .controlBackgroundColor),
+            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(
             AccountSettingsAccessibility.accessibleName(
@@ -2173,7 +2208,7 @@ enum ProviderConnectionControl: Equatable, Hashable {
 
 private struct ProviderSettingsRow: View {
     let provider: ProviderID
-    let availability: ProviderAvailability?
+    let viewModel: UsageDashboardViewModel
     let connectionPresentation: ProviderConnectionPresentationState?
     let connectionControlsDisabled: Bool
     @Binding var keyDraft: String
@@ -2183,7 +2218,6 @@ private struct ProviderSettingsRow: View {
     let onSetup: () -> Void
     let onSave: () -> Void
     let onRemove: () -> Void
-    let isDisconnected: Bool
     let onDisconnect: () -> Void
     let onReconnect: () -> Void
     let onRetry: () -> Void
@@ -2216,10 +2250,6 @@ private struct ProviderSettingsRow: View {
                 Text(provider.displayName)
                     .font(.system(size: 13.5, weight: .semibold))
                 Spacer()
-                ConnectionBadge(
-                    availability: availability,
-                    presentation: connectionPresentation
-                )
                 Button {
                     isHelpPresented = true
                 } label: {
@@ -2238,145 +2268,14 @@ private struct ProviderSettingsRow: View {
                 }
             }
 
-            HStack(alignment: .center, spacing: 10) {
-                Text(
-                    localization.providerText(
-                        descriptor.instruction
-                    )
+            Text(
+                localization.providerText(
+                    descriptor.instruction
                 )
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 8)
-                if !descriptor.acceptsAPIKey {
-                    ForEach(
-                        ProviderConnectionControl.resolve(
-                            availability: availability,
-                            isDisconnected: isDisconnected,
-                            isAwaitingCredential:
-                                isAwaitingConnectionCredential
-                        ),
-                        id: \.self
-                    ) { control in
-                        switch control {
-                        case .connect:
-                            Button(
-                                localization.text(.startConnection),
-                                action: onSetup
-                            )
-                                .buttonStyle(.bordered)
-                                .controlSize(.small)
-                                .accessibilityIdentifier(
-                                    "connect-\(provider.rawValue)"
-                                )
-                        case .disconnect:
-                            Button(
-                                localization.text(.disconnect),
-                                action: onDisconnect
-                            )
-                                .buttonStyle(.bordered)
-                                .controlSize(.small)
-                                .tint(.red)
-                                .accessibilityIdentifier(
-                                    "disconnect-\(provider.rawValue)"
-                                )
-                        case .reconnect:
-                            Button(
-                                localization.text(.reconnectProvider),
-                                action: onReconnect
-                            )
-                                .buttonStyle(.borderedProminent)
-                                .controlSize(.small)
-                                .accessibilityIdentifier(
-                                    "reconnect-\(provider.rawValue)"
-                                )
-                        case .retry:
-                            Button(
-                                localization.text(.refresh),
-                                action: onRetry
-                            )
-                                .buttonStyle(.borderedProminent)
-                                .controlSize(.small)
-                                .accessibilityIdentifier(
-                                    "retry-connection-\(provider.rawValue)"
-                                )
-                        case .checkAgainConnection:
-                            Button(
-                                localization.text(
-                                    .checkAgainForCompanionCredentials
-                                ),
-                                action: onCheckAgainConnection
-                            )
-                                .buttonStyle(.borderedProminent)
-                                .controlSize(.small)
-                                .accessibilityIdentifier(
-                                    "check-again-connection-"
-                                        + provider.rawValue
-                                )
-                        case .cancelConnection:
-                            Button(
-                                localization.text(.cancel),
-                                action: onCancelConnection
-                            )
-                                .buttonStyle(.bordered)
-                                .controlSize(.small)
-                                .accessibilityIdentifier(
-                                    "cancel-connection-\(provider.rawValue)"
-                                )
-                        }
-                    }
-                    .disabled(connectionControlsDisabled)
-                }
-            }
-
-            if isAwaitingConnectionCredential {
-                Text(
-                    localization.text(.waitingForCompanionCredentials)
-                )
-                .font(.system(size: 11))
+            )
+                .font(.system(size: 11.5))
                 .foregroundStyle(.secondary)
-                .accessibilityIdentifier(
-                    "connection-waiting-\(provider.rawValue)"
-                )
-            }
-
-            if descriptor.acceptsAPIKey {
-                if let keySource {
-                    HStack(spacing: 8) {
-                        Text(localization.text(keySource.stringKey))
-                            .font(.system(size: 10.5))
-                            .foregroundStyle(.secondary)
-                        if needsLegacyCleanup {
-                            Button(
-                                localization.text(.retryLegacyKeyCleanup),
-                                action: onCleanupLegacy
-                            )
-                            .buttonStyle(.link)
-                            .controlSize(.small)
-                        }
-                    }
-                }
-                HStack(spacing: 8) {
-                    SecureField(
-                        localization.text(.apiKey),
-                        text: $keyDraft
-                    )
-                        .textFieldStyle(.roundedBorder)
-                    Button(localization.text(.save), action: onSave)
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
-                        .disabled(
-                            keyDraft.trimmingCharacters(
-                                in: .whitespacesAndNewlines
-                            ).isEmpty
-                        )
-                    Button(localization.text(.delete), action: onRemove)
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                }
-            }
-
-            Divider()
+                .fixedSize(horizontal: false, vertical: true)
 
             ProviderAccountsSection(
                 provider: provider,
@@ -2390,7 +2289,9 @@ private struct ProviderSettingsRow: View {
                 onAliasOutcome: onAliasOutcome,
                 codexPlanMultiplier: codexPlanMultiplier,
                 onCheckAgain: onCheckAgain,
-                onCancelAddition: onCancelAddition
+                onCancelAddition: onCancelAddition,
+                connectionControls: accountConnectionControls,
+                primaryCredentials: { primaryCredentialControls }
             )
         }
         .padding(10)
@@ -2406,6 +2307,127 @@ private struct ProviderSettingsRow: View {
             withAnimation(.easeOut(duration: 0.1)) {
                 isHovered = hovering
             }
+        }
+    }
+
+    @ViewBuilder
+    private func accountConnectionControls(
+        _ row: ProviderAccountRowPresentation
+    ) -> some View {
+        let primary = row.role == .primary
+        let availability = viewModel.accountConnectionStates[row.identity]
+        let disconnected = viewModel.isDisconnected(row.identity)
+        let waiting = primary && isAwaitingConnectionCredential
+        let suffix = "\(provider.rawValue)-\(row.identity.accountID.rawValue)"
+        HStack(spacing: 8) {
+            ConnectionBadge(
+                availability: disconnected ? .authenticationRequired : availability,
+                presentation: primary ? connectionPresentation : nil
+            )
+            .accessibilityIdentifier("account-connection-status-\(suffix)")
+            Spacer(minLength: 8)
+            ForEach(
+                ProviderConnectionControl.resolve(
+                    availability: availability,
+                    isDisconnected: disconnected,
+                    isAwaitingCredential: waiting
+                ),
+                id: \.self
+            ) { control in
+                switch control {
+                case .connect:
+                    if !primary {
+                        Button(localization.text(.refresh)) {
+                            Task { await viewModel.retryAccountProvider(row.identity) }
+                        }
+                        .buttonStyle(.bordered)
+                        .accessibilityIdentifier("account-retry-connection-\(suffix)")
+                    } else if !descriptor.acceptsAPIKey {
+                        Button(localization.text(.startConnection), action: onSetup)
+                            .buttonStyle(.bordered)
+                            .accessibilityIdentifier("account-connect-\(suffix)")
+                    }
+                case .disconnect:
+                    Button(localization.text(.disconnect)) {
+                        if primary { onDisconnect() }
+                        else { viewModel.disconnectAccountProvider(row.identity) }
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.red)
+                    .accessibilityIdentifier("account-disconnect-\(suffix)")
+                case .reconnect:
+                    Button(localization.text(.reconnectProvider)) {
+                        if primary && !descriptor.acceptsAPIKey { onReconnect() }
+                        else {
+                            viewModel.reconnectAccountProvider(row.identity)
+                            Task { await viewModel.retryAccountProvider(row.identity) }
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("account-reconnect-\(suffix)")
+                case .retry:
+                    Button(localization.text(.refresh)) {
+                        if primary { onRetry() }
+                        else {
+                            Task { await viewModel.retryAccountProvider(row.identity) }
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("account-retry-connection-\(suffix)")
+                case .checkAgainConnection:
+                    Button(
+                        localization.text(.checkAgainForCompanionCredentials),
+                        action: onCheckAgainConnection
+                    )
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("account-check-again-connection-\(suffix)")
+                case .cancelConnection:
+                    Button(localization.text(.cancel), action: onCancelConnection)
+                        .buttonStyle(.bordered)
+                        .accessibilityIdentifier("account-cancel-connection-\(suffix)")
+                }
+            }
+            .controlSize(.small)
+            .disabled(connectionControlsDisabled)
+        }
+        if waiting {
+            Text(localization.text(.waitingForCompanionCredentials))
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier("connection-waiting-\(provider.rawValue)")
+        }
+    }
+
+    @ViewBuilder
+    private var primaryCredentialControls: some View {
+        if descriptor.acceptsAPIKey {
+            if let keySource {
+                HStack(spacing: 8) {
+                    Text(localization.text(keySource.stringKey))
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(.secondary)
+                    if needsLegacyCleanup {
+                        Button(
+                            localization.text(.retryLegacyKeyCleanup),
+                            action: onCleanupLegacy
+                        )
+                        .buttonStyle(.link)
+                        .controlSize(.small)
+                    }
+                }
+            }
+            HStack(spacing: 8) {
+                SecureField(localization.text(.apiKey), text: $keyDraft)
+                    .textFieldStyle(.roundedBorder)
+                Button(localization.text(.save), action: onSave)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(
+                        keyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    )
+                Button(localization.text(.delete), action: onRemove)
+                    .buttonStyle(.bordered)
+            }
+            .controlSize(.small)
         }
     }
 
@@ -2492,6 +2514,9 @@ private struct ConnectionBadge: View {
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(.secondary)
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label)
+        .accessibilityValue(label)
     }
 
     private var label: String {

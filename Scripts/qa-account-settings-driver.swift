@@ -76,6 +76,7 @@ final class AXGate {
     let app: AXUIElement
     let timeout: TimeInterval
     private var observer: AXObserver!
+    private var activationObserver: NSObjectProtocol?
     private var subscriptions: [(AXUIElement, String)] = []
     private var keys = Set<String>()
     private var predicate: (() throws -> Bool)?
@@ -95,9 +96,19 @@ final class AXGate {
         }, &observer)
         try require(status == .success, "AXObserverCreate failed: \(status.rawValue)")
         CFRunLoopAddSource(CFRunLoopGetCurrent(), AXObserverGetRunLoopSource(observer), .commonModes)
+        activationObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+        ) { [weak self] notification in
+            guard let self,
+                  let target = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+                  target.processIdentifier == pid else { return }
+            self.notifications.insert("NSWorkspace.didActivateApplication")
+            self.evaluate()
+        }
     }
 
     deinit {
+        if let activationObserver { NSWorkspace.shared.notificationCenter.removeObserver(activationObserver) }
         for (element, notification) in subscriptions {
             AXObserverRemoveNotification(observer, element, notification as CFString)
         }
@@ -108,6 +119,10 @@ final class AXGate {
         for element in elements(app) {
             let role = string(element, kAXRoleAttribute)
             var names = [kAXValueChangedNotification, kAXUIElementDestroyedNotification, kAXMovedNotification]
+            if CFEqual(element, app) {
+                names += [kAXApplicationActivatedNotification, kAXFocusedWindowChangedNotification,
+                          kAXMainWindowChangedNotification]
+            }
             if CFEqual(element, app) || role == kAXWindowRole || role == kAXScrollAreaRole {
                 names += [kAXLayoutChangedNotification, kAXCreatedNotification,
                           kAXWindowCreatedNotification, kAXFocusedUIElementChangedNotification,
@@ -349,6 +364,8 @@ final class Driver {
     /// events cannot satisfy this wait. Topmost-window bounds distinguish the
     /// dashboard popover from the settings window still open underneath it.
     func reveal(_ id: String) throws {
+        try require(NSWorkspace.shared.frontmostApplication?.processIdentifier == args.pid,
+                    "fixture is not frontmost before revealing \(id)")
         for direction in [Int32(-1), Int32(1)] {
             for _ in 0..<30 {
                 if let target = find(id), try isVisible(target) { return }
@@ -366,11 +383,23 @@ final class Driver {
                 let before = bars.map { String(describing: attribute($0, kAXValueAttribute)) }
                 let layout = scrollLayout(scroll)
                 try gate.wait("scroll area changes while revealing \(id)", trigger: {
-                    CGWarpMouseCursorPosition(CGPoint(x: rect.midX, y: rect.midY))
-                    guard let event = CGEvent(scrollWheelEvent2Source: nil, units: .pixel,
+                    try require(NSWorkspace.shared.frontmostApplication?.processIdentifier == self.args.pid,
+                                "fixture lost foreground before scroll input")
+                    let point = CGPoint(x: rect.midX, y: rect.midY)
+                    var hit: AXUIElement?
+                    let hitStatus = AXUIElementCopyElementAtPosition(
+                        AXUIElementCreateSystemWide(), Float(point.x), Float(point.y), &hit
+                    )
+                    guard hitStatus == .success, let hit else { throw QAError("scroll hit-test failed") }
+                    try require(([hit] + self.ancestors(hit)).contains { CFEqual($0, scroll) },
+                                "scroll center is covered by another window or outside the target scroll area")
+                    try require(CGWarpMouseCursorPosition(point) == .success, "cannot position scroll cursor")
+                    guard let event = CGEvent(scrollWheelEvent2Source: self.mouseSource, units: .pixel,
                                               wheelCount: 1, wheel1: direction * 240, wheel2: 0, wheel3: 0) else {
                         throw QAError("cannot construct scroll event")
                     }
+                    event.location = point
+                    print("SCROLL fixturePID=\(self.args.pid) point=\(point) direction=\(direction) targetHit=verified")
                     event.post(tap: .cghidEventTap)
                 }, until: {
                     bars.map { String(describing: attribute($0, kAXValueAttribute)) } != before || self.scrollLayout(scroll) != layout
@@ -430,8 +459,9 @@ extension Driver {
     }
     func text(_ id: String) throws -> String {
         let element = try get(id)
-        let value = string(element, kAXValueAttribute)
-        return value.isEmpty ? string(element, kAXTitleAttribute) : value
+        return [kAXValueAttribute, kAXTitleAttribute, kAXDescriptionAttribute]
+            .map { string(element, $0) }
+            .first { !$0.isEmpty } ?? ""
     }
     func changed(_ description: String, pressing id: String,
                  until condition: @escaping () throws -> Bool) throws {
@@ -464,22 +494,45 @@ extension Driver {
         guard let label = row["label"] as? String else { throw QAError("missing registry label") }
         return label
     }
-    func isSavedDisconnected(_ provider: String) throws -> Bool {
+    func isSavedDisconnected(_ provider: String, _ account: String = primary) throws -> Bool {
         guard let identities = try registry()["disconnected"] as? [[String: String]] else { throw QAError("missing registry disconnected state") }
-        return identities.contains { $0["providerID"] == provider && $0["accountID"] == primary }
+        return identities.contains { $0["providerID"] == provider && $0["accountID"] == account }
     }
 
     func runScenario() throws {
         try require(["exercise", "verify"].contains(args.phase), "invalid phase")
         try require(try json(root.appendingPathComponent("account-settings-ready.json"))["version"] as? Int == 1,
                     "fixture is not ready")
-        try gate.wait("native settings window", trigger: {
-            guard let app = NSRunningApplication(processIdentifier: self.args.pid), app.activate(options: []) else {
-                throw QAError("cannot activate spawned fixture app")
-            }
-        }, until: {
+        try gate.wait("native settings window", until: {
             elements(self.gate.app).contains { string($0, kAXRoleAttribute) == kAXScrollAreaRole }
         })
+        if args.scenario == "connections" {
+            try dump("\(args.phase)-connection-contract-ax-tree.txt")
+            try require(find("disconnect-codex") == nil,
+                        "provider aggregate Disconnect remains: codex")
+            try require(find(accountID("account-connection-status")) != nil,
+                        "primary account has no connection status")
+        }
+        guard let settings = elements(gate.app).first(where: {
+            string($0, kAXRoleAttribute) == kAXWindowRole
+                && elements($0).contains { string($0, kAXRoleAttribute) == kAXScrollAreaRole }
+        }) else { throw QAError("missing native settings window") }
+        // Activation is asynchronous. An existing AX tree is not evidence that
+        // the window receives HID input. Subscribe before activation and raise.
+        try gate.wait("fixture foreground and focused settings window", trigger: {
+            let activation = AXUIElementSetAttributeValue(
+                self.gate.app, kAXFrontmostAttribute as CFString, kCFBooleanTrue
+            )
+            try require(activation == .success, "cannot activate fixture through AX: \(activation.rawValue)")
+            let status = AXUIElementPerformAction(settings, kAXRaiseAction as CFString)
+            try require(status == .success, "cannot raise settings window: \(status.rawValue)")
+        }, until: {
+            guard NSWorkspace.shared.frontmostApplication?.processIdentifier == self.args.pid,
+                  attribute(self.gate.app, kAXFrontmostAttribute) as? Bool == true,
+                  let focused = attribute(self.gate.app, kAXFocusedWindowAttribute) else { return false }
+            return CFEqual(focused, settings)
+        })
+        pass("fixture-foreground-and-settings-focused")
         switch args.scenario {
         case "ordering":
             mouseTrace = try MouseTrace()
@@ -489,6 +542,7 @@ extension Driver {
         case "accounts": try accounts()
         case "aliases": try aliases()
         case "identity": try identity()
+        case "connections": try connections()
         default: throw QAError("unknown scenario \(args.scenario)")
         }
         pass("scenario=\(args.scenario) phase=\(args.phase)")
@@ -596,6 +650,144 @@ extension Driver {
         pass("existing-keyboard-reorder-works")
     }
 
+    func assertConnection(_ account: String, connected: Bool) throws {
+        let status = accountID("account-connection-status", "codex", account)
+        let action = accountID(connected ? "account-disconnect" : "account-reconnect", "codex", account)
+        try reveal(status)
+        try require(try text(status) == (connected ? "Connected" : "Not Connected"),
+                    "incorrect account connection status: \(account)")
+        try require(try enabled(action), "account connection action disabled: \(account)")
+        for prefix in [connected ? "account-reconnect" : "account-disconnect", "account-connect", "account-retry-connection"] {
+            try require(find(accountID(prefix, "codex", account)) == nil,
+                        "conflicting account connection action: \(prefix)-\(account)")
+        }
+        let rowID = accountID("account-row", "codex", account)
+        guard let rowBounds = frame(try get(rowID)) else { throw QAError("account row bounds missing") }
+        for id in [status, action] {
+            let element = try get(id)
+            try require(ancestors(element).contains { string($0, kAXIdentifierAttribute) == rowID },
+                        "connection control not grouped in its account row: \(id)")
+            guard let bounds = frame(element) else { throw QAError("connection control bounds missing: \(id)") }
+            try require(rowBounds.insetBy(dx: -1, dy: -1).contains(bounds) && isVisible(element),
+                        "connection status/action clipped or outside its account row: \(id)")
+            print("BOUNDS \(id)=\(bounds) row=\(rowBounds) window=\(try windowBounds())")
+        }
+        pass("independent-connection-\(account)-\(connected ? "connected" : "disconnected")")
+    }
+
+    func assertConnectionRegistry(disconnected accounts: [String]) throws {
+        guard let identities = try registry()["disconnected"] as? [[String: String]] else {
+            throw QAError("missing disconnected registry state")
+        }
+        try require(identities.count == accounts.count && accounts.allSatisfy { account in
+            identities.contains { $0["providerID"] == "codex" && $0["accountID"] == account }
+        }, "connection action changed a sibling or another provider's persisted state")
+    }
+
+    func assertConnectionOrder(disconnected accounts: [String], screenshot name: String) throws {
+        try reveal("provider-ordering-list")
+        let expected = ["codex-\(primary)", "codex-\(secondary)", "openrouter-\(primary)", "claude-\(primary)"]
+        let visible = expected.filter { identity in
+            !accounts.contains { identity == "codex-\($0)" }
+        }
+        try require(try savedOrder() == expected && visibleOrder() == visible,
+                    "ordering must hide disconnected accounts without changing stored order")
+        for account in [primary, secondary] {
+            let id = orderingRow("codex", account)
+            if accounts.contains(account) {
+                try require(find(id) == nil, "disconnected account remains in Dashboard Order")
+                continue
+            }
+            try reveal(id)
+            let labels = elements(try get(id)).flatMap { element in
+                [kAXValueAttribute, kAXTitleAttribute, kAXDescriptionAttribute].map { string(element, $0) }
+            }
+            try require(labels.contains("Connected") && !labels.contains("Hidden from dashboard"),
+                        "ordering connection status incorrect for \(account): expected Connected")
+        }
+        try screenshot(name)
+        pass("account-scoped-order-visibility-\(name)")
+    }
+
+    func captureConnections(_ name: String, primaryConnected: Bool, secondaryConnected: Bool) throws {
+        try assertConnection(primary, connected: primaryConnected)
+        try assertConnection(secondary, connected: secondaryConnected)
+        for account in [primary, secondary] {
+            try require(try isVisible(get(accountID("account-connection-status", "codex", account))),
+                        "both account statuses must be visible in grouped-row evidence")
+        }
+        try screenshot(name)
+    }
+
+    func connections() throws {
+        // Existing identifiers work on the RED build. Capture its current rows
+        // BEFORE looking for any new status or account-level control contract.
+        try reveal(accountID("account-role-primary"))
+        try screenshot("connections-baseline-before-contract")
+        try dump("\(args.phase)-connections-baseline-ax-tree.txt")
+        for provider in ["codex", "openrouter", "claude"] {
+            try require(find("disconnect-\(provider)") == nil,
+                        "provider aggregate Disconnect remains: \(provider)")
+        }
+        if args.phase == "verify" {
+            try assertConnectionRegistry(disconnected: [primary])
+            try captureConnections("connections-persisted-grouped-rows", primaryConnected: false, secondaryConnected: true)
+            try require(find("begin-add-account-codex") == nil, "disconnected primary regained Add Account after relaunch")
+            try assertConnectionOrder(disconnected: [primary], screenshot: "connections-persisted-order")
+            pass("primary-disconnect-persists-with-connected-sibling")
+            guard let settings = elements(gate.app).first(where: {
+                string($0, kAXRoleAttribute) == kAXWindowRole
+            }) else { throw QAError("missing settings window for minimum-width check") }
+            var size = CGSize(width: 440, height: 652)
+            guard let value = AXValueCreate(.cgSize, &size) else {
+                throw QAError("cannot construct minimum window size")
+            }
+            try gate.wait("settings reaches minimum width", trigger: {
+                try require(
+                    AXUIElementSetAttributeValue(settings, kAXSizeAttribute as CFString, value) == .success,
+                    "cannot resize native settings"
+                )
+            }, until: { frame(settings)?.width == 440 })
+            try captureConnections("connections-minimum-width", primaryConnected: false, secondaryConnected: true)
+            pass("minimum-width-account-groups")
+            return
+        }
+        try assertConnectionRegistry(disconnected: [])
+        try captureConnections("connections-initial-grouped-rows", primaryConnected: true, secondaryConnected: true)
+        try require(try enabled("begin-add-account-codex"), "connected primary lacks enabled Add Account")
+        try assertConnectionOrder(disconnected: [], screenshot: "connections-initial-order")
+
+        try changed("disconnect only additional Codex", pressing: accountID("account-disconnect", "codex", secondary), until: {
+            try self.find(self.accountID("account-reconnect", "codex", secondary)) != nil
+                && self.text(self.accountID("account-connection-status", "codex", secondary)) == "Not Connected"
+                && self.isSavedDisconnected("codex", secondary)
+        })
+        try assertConnectionRegistry(disconnected: [secondary])
+        try captureConnections("connections-additional-disconnected", primaryConnected: true, secondaryConnected: false)
+        try require(try enabled("begin-add-account-codex"), "additional disconnect gated connected primary Add Account")
+        try assertConnectionOrder(disconnected: [secondary], screenshot: "connections-additional-hidden-order")
+
+        try changed("reconnect only additional Codex", pressing: accountID("account-reconnect", "codex", secondary), until: {
+            try self.find(self.accountID("account-disconnect", "codex", secondary)) != nil
+                && self.text(self.accountID("account-connection-status", "codex", secondary)) == "Connected"
+                && !self.isSavedDisconnected("codex", secondary)
+        })
+        try assertConnectionRegistry(disconnected: [])
+        try captureConnections("connections-additional-restored", primaryConnected: true, secondaryConnected: true)
+        try assertConnectionOrder(disconnected: [], screenshot: "connections-restored-order")
+
+        // Leave exactly this state on disk for the shell's real app relaunch.
+        try changed("disconnect only primary Codex", pressing: accountID("account-disconnect"), until: {
+            try self.find(self.accountID("account-reconnect")) != nil
+                && self.text(self.accountID("account-connection-status")) == "Not Connected"
+                && self.isSavedDisconnected("codex") && self.find("begin-add-account-codex") == nil
+        })
+        try assertConnectionRegistry(disconnected: [primary])
+        try captureConnections("connections-final-grouped-rows", primaryConnected: false, secondaryConnected: true)
+        try require(find("begin-add-account-codex") == nil, "connected sibling incorrectly exposes primary Add Account")
+        try assertConnectionOrder(disconnected: [primary], screenshot: "connections-final-order")
+    }
+
     func accounts() throws {
         try assertRole("codex", primary, primary: true)
         try assertRole("codex", secondary, primary: false)
@@ -606,8 +798,8 @@ extension Driver {
                     "single-account provider has an additional-account role")
         try screenshot("single-primary-role")
         if args.phase == "exercise" {
-            try changed("disconnect primary", pressing: "disconnect-codex", until: {
-                try self.find("reconnect-codex") != nil && self.isSavedDisconnected("codex")
+            try changed("disconnect primary", pressing: accountID("account-disconnect"), until: {
+                try self.find(self.accountID("account-reconnect")) != nil && self.isSavedDisconnected("codex")
             })
         } else { try require(try isSavedDisconnected("codex"), "disconnected primary did not persist") }
         try assertRole("codex", primary, primary: true)
@@ -761,6 +953,12 @@ extension Driver {
         let after = try registry()["accounts"] as? [[String: Any]]
         try require(NSDictionary(dictionary: ["accounts": before ?? []]).isEqual(to: ["accounts": after ?? []]), "cancel persisted an account")
         pass("pending-check-and-cancel-remain-reachable")
+        try changed("primary account disconnect gates Add Account", pressing: accountID("account-disconnect"), until: {
+            try self.find(self.accountID("account-reconnect")) != nil
+                && self.isSavedDisconnected("codex") && self.find("begin-add-account-codex") == nil
+        })
+        try assertConnectionRegistry(disconnected: [primary])
+        pass("primary-account-disconnect-gates-add-account")
     }
 
     func identity() throws {

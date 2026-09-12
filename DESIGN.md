@@ -87,6 +87,10 @@ other privileged controls remain native-only.
 - Provider colors identify brands without expanding the dashboard chrome.
 - Settings rows use semantic control backgrounds and separator colors; meter
   tracks use 16% semantic contrast in both appearances.
+- Each settings account is a separate semantic control-background group with
+  10 pt padding, an 8 pt corner radius, a 0.5 pt separator-color border, and
+  8 pt spacing between groups. Its status and connection actions sit below
+  its identity, inside the same border.
 - Dashboard-order rows reuse the settings surface, separator, 4/8/10 pt
   spacing, system type, and native focus/accent treatments. Their 24 pt
   provider icon and SF Symbol drag handle introduce no new color, material,
@@ -203,6 +207,9 @@ other privileged controls remain native-only.
   `ProviderIcon`, provider name, the sanitized account alias when the account
   is non-default or the provider has more than one account, and `N of M`
   position text.
+- Dashboard Order lists only accounts with verified available usage that are
+  not explicitly disconnected. Hidden accounts retain their stored positions;
+  reordering visible accounts never removes a configured identity.
 - Settings lists all ten providers with connection state and exact local
   credential guidance. When Side Notch is selected, Settings also exposes a
   localized native menu for 0.4, 0.8, 1.2, or 2.0 second hide delay; 0.8
@@ -272,9 +279,10 @@ other privileged controls remain native-only.
 ## 5. Components
 
 - `ProviderSectionView`: authenticated provider usage only.
-- `ProviderSettingsRow`: icon, name, connection status, native help, and
-  provider-appropriate connection controls; API-key providers expose editable
-  authentication controls instead. Every row embeds its provider-specific
+- `ProviderSettingsRow`: icon, name, native help, and credential guidance.
+  Connection status and controls belong to each account group, not the
+  provider header; the primary group also owns its editable API-key controls.
+  Every row embeds its provider-specific
   account manager. It owns authentication only and carries no ordering
   affordance.
 - `ProviderOrderingView`: the `Dashboard Order` surface. A native SwiftUI
@@ -294,6 +302,10 @@ other privileged controls remain native-only.
 - `ProviderAccountsSection`: native multi-account management embedded once in
   every provider row. At rest it shows a primary row followed by saved additional
   rows, each with a role, editable alias, and masked identity when available.
+  Each account group owns its connection badge and targeted connection action.
+  Disconnect and reconnect affect only that account, never its siblings.
+  Additional accounts reconnect using their saved credential; they never
+  launch a shared companion login that could replace another account.
   A compact plus-labelled Add Account button appears only while the primary
   account is connected, not as an always-visible input strip. The
   button expands a vertically labelled form with an alias example, a separate
@@ -485,9 +497,9 @@ other privileged controls remain native-only.
   accessibility value, and Move Up / Move Down as custom accessibility actions.
   After a move completes, an `NSAccessibility` polite announcement states the
   new position.
-- Ordering never changes connection state. Disconnected providers remain listed
-  and orderable with an explicit hidden-from-dashboard status text; disconnect
-  stays in the authentication section only.
+- Ordering never changes connection state. Disconnected or unverified accounts
+  are absent from Dashboard Order but remain in authentication settings with
+  their own status and connection controls.
 - Connection state is communicated by text plus color.
 - Staleness is communicated by symbol plus text, never by color alone, and the
   Side Notch rail speaks it as part of the provider's accessibility value.
@@ -559,7 +571,8 @@ other privileged controls remain native-only.
   Only refreshed `.available` state becomes authenticated; missing,
   malformed, unavailable, or authentication-required credentials remain
   pending, and refresh failure is reported as failed. Help/browser links never
-  complete authentication, and reconnect never starts its own refresh.
+  complete authentication. Reenabling an additional account checks its saved
+  credential through the existing dashboard refresh owner.
 - The menu-bar item uses the native
   `gauge.with.dots.needle.50percent` SF Symbol as a 14 pt, medium-weight
   monochrome template image.

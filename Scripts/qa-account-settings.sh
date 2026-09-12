@@ -6,7 +6,7 @@ set -eu
 umask 077
 
 usage() {
-    printf '%s\n' 'Usage: sh Scripts/qa-account-settings.sh --scenario ordering|tiers|gating|accounts|aliases|identity|all --evidence-dir PATH [--app-path PATH/OmoUsage.app]'
+    printf '%s\n' 'Usage: sh Scripts/qa-account-settings.sh --scenario ordering|tiers|gating|accounts|aliases|identity|connections|all --evidence-dir PATH [--app-path PATH/OmoUsage.app]'
 }
 scenario= evidence_dir= app=
 while [ "$#" -gt 0 ]; do
@@ -24,7 +24,7 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 case "$scenario" in
-    ordering|tiers|gating|accounts|aliases|identity|all) ;;
+    ordering|tiers|gating|accounts|aliases|identity|connections|all) ;;
     *) usage >&2; exit 64 ;;
 esac
 [ -n "$evidence_dir" ] || { usage >&2; exit 64; }
@@ -127,8 +127,8 @@ note "started=$(date -u +%Y-%m-%dT%H:%M:%SZ) scenario=$scenario"
 note "commit=$(git -C "$repo_root" rev-parse HEAD)"
 driver_root=$(mktemp -d /tmp/omousage-account-settings-driver-XXXXXX)
 driver="$driver_root/qa-driver"
-note 'compile: env -u DEVELOPER_DIR /usr/bin/swiftc -O -o <temporary-driver> Scripts/qa-account-settings-driver.swift'
-if ! env -u DEVELOPER_DIR /usr/bin/swiftc -O -o "$driver" "$repo_root/Scripts/qa-account-settings-driver.swift" > "$evidence_dir/driver-compile.log" 2>&1; then
+note 'compile: env -u SDKROOT -u DEVELOPER_DIR /usr/bin/swiftc -O -o <temporary-driver> Scripts/qa-account-settings-driver.swift'
+if ! env -u SDKROOT -u DEVELOPER_DIR /usr/bin/swiftc -O -o "$driver" "$repo_root/Scripts/qa-account-settings-driver.swift" > "$evidence_dir/driver-compile.log" 2>&1; then
     printf 'Driver compile failed; see %s\n' "$evidence_dir/driver-compile.log" >&2
     exit 1
 fi
@@ -136,8 +136,8 @@ fi
     printf 'Native permissions denied; see %s\n' "$evidence_dir/permissions.txt" >&2; exit 3;
 }
 if [ -z "$app" ]; then
-    note 'build: env -u DEVELOPER_DIR sh Scripts/package-app.sh --adhoc --qa-fixtures (once for this run)'
-    if ! env -u DEVELOPER_DIR sh "$repo_root/Scripts/package-app.sh" --adhoc --qa-fixtures > "$evidence_dir/package.log" 2>&1; then
+    note 'build: env -u SDKROOT -u DEVELOPER_DIR sh Scripts/package-app.sh --adhoc --qa-fixtures (once for this run)'
+    if ! env -u SDKROOT -u DEVELOPER_DIR sh "$repo_root/Scripts/package-app.sh" --adhoc --qa-fixtures > "$evidence_dir/package.log" 2>&1; then
         printf 'Packaging failed; see %s\n' "$evidence_dir/package.log" >&2; exit 1;
     fi
     app="$repo_root/dist/OmoUsage.app"
@@ -206,7 +206,7 @@ run_scenario() {
     [ "$cleanup_failed" -eq 0 ] || exit 1
 }
 if [ "$scenario" = all ]; then
-    for item in ordering tiers gating accounts aliases identity; do run_scenario "$item"; done
+    for item in ordering tiers gating accounts aliases identity connections; do run_scenario "$item"; done
 else
     run_scenario "$scenario"
 fi
