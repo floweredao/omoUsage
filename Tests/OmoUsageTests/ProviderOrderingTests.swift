@@ -233,13 +233,14 @@ struct ProviderOrderingTests {
     }
 
     @Test @MainActor
-    func keyboardMoveUsesInsertionAndBoundaryNoOpDoesNotWrite() {
+    func keyboardMoveUsesInsertionAndBoundaryNoOpDoesNotWrite() async {
         var writes = 0
         let viewModel = UsageDashboardViewModel(
             providers: configuredProviders(),
             persistAccountProviderOrder: { _ in writes += 1 },
             now: { now }
         )
+        await viewModel.refresh()
         let firstIdentity = viewModel.accountProviderOrder[0]
         #expect(!viewModel.moveAccountProvider(firstIdentity, by: -1))
         #expect(writes == 0)
@@ -364,6 +365,139 @@ struct ProviderOrderingTests {
         #expect(updated.providerReferences == original.providerReferences)
     }
 
+    @Test @MainActor
+    func orderingOmitsUnverifiedAndEmptyRosterWithoutChangingPersistedOrder() {
+        let viewModel = UsageDashboardViewModel(
+            providers: configuredProviders(), now: { now }
+        )
+        let original = viewModel.accountProviderOrder
+        #expect(viewModel.accountProviderOrderingItems.isEmpty)
+        #expect(viewModel.accountProviderOrder == original)
+        #expect(UsageDashboardViewModel(providers: []).accountProviderOrderingItems.isEmpty)
+    }
+
+    @Test @MainActor
+    func orderingIncludesOnlyAvailableAccountsAndPreservesAccountLabels() async {
+        let states: [ProviderAvailability] = [
+            .available, .authenticationRequired, .unavailable, .failed, .schemaChanged
+        ]
+        let providers = zip(ProviderID.allCases, states).map { id, availability in
+            OrderingProvider(
+                id: id, accountID: first, label: "Work", availability: availability
+            )
+        } + [OrderingProvider(id: .claude, accountID: second, label: "Personal")]
+        let order = providers.map(\.accountProviderID)
+        var writes = 0
+        let viewModel = UsageDashboardViewModel(
+            providers: providers,
+            accountProviderOrder: order,
+            persistAccountProviderOrder: { _ in writes += 1 },
+            now: { now }
+        )
+        await viewModel.refresh()
+
+        let items = viewModel.accountProviderOrderingItems
+        #expect(items.map(\.id) == [order[0], order[5]])
+        #expect(items.map(\.accountLabel) == ["Work", "Personal"])
+        #expect(items.allSatisfy { $0.showsAccountLabel && !$0.isDisconnected })
+        #expect(viewModel.accountProviderOrder == order)
+        #expect(writes == 0)
+    }
+
+    @Test @MainActor
+    func disconnectAndReconnectRequireVerifiedAvailabilityWithoutDroppingOrder() async {
+        let providers = configuredProviders()
+        let original = providers.map(\.accountProviderID)
+        let viewModel = UsageDashboardViewModel(
+            providers: providers, accountProviderOrder: original, now: { now }
+        )
+        await viewModel.refresh()
+        viewModel.disconnectAccountProvider(original[1])
+        #expect(viewModel.accountProviderOrderingItems.map(\.id) == [original[0], original[2]])
+        #expect(viewModel.accountProviderOrder == original)
+
+        viewModel.reconnectAccountProvider(original[1])
+        #expect(viewModel.accountProviderOrderingItems.map(\.id) == [original[0], original[2]])
+        await viewModel.refresh()
+        #expect(viewModel.accountProviderOrderingItems.map(\.id) == original)
+        #expect(viewModel.accountProviderOrder == original)
+    }
+
+    @Test @MainActor
+    func keyboardMovesAcrossHiddenIdentitiesAndHonorsVisibleBoundaries() async {
+        let providers = interleavedProviders()
+        let order = providers.map(\.accountProviderID)
+        var writes: [[AccountProviderID]] = []
+        let viewModel = UsageDashboardViewModel(
+            providers: providers,
+            accountProviderOrder: order,
+            persistAccountProviderOrder: { writes.append($0) },
+            now: { now }
+        )
+        await viewModel.refresh()
+
+        #expect(!viewModel.moveAccountProvider(order[1], by: -1))
+        #expect(!viewModel.moveAccountProvider(order[3], by: 1))
+        #expect(!viewModel.moveAccountProvider(order[2], by: 1))
+        #expect(writes.isEmpty)
+        #expect(viewModel.moveAccountProvider(order[1], by: 1))
+        let moved = [order[0], order[2], order[3], order[1], order[4]]
+        #expect(viewModel.accountProviderOrder == moved)
+        #expect(viewModel.accountProviderOrderingItems.map(\.id) == [order[3], order[1]])
+        #expect(writes == [moved])
+        #expect(viewModel.moveAccountProvider(order[1], by: -1))
+        #expect(viewModel.accountProviderOrderingItems.map(\.id) == [order[1], order[3]])
+        #expect(viewModel.accountProviderOrder.filter { ![order[1], order[3]].contains($0) }
+            == [order[0], order[2], order[4]])
+        #expect(writes.count == 2)
+    }
+
+    @Test @MainActor
+    func dragAcrossHiddenIdentitiesPersistsFullOrderAndReconnectRestoresPosition() async throws {
+        let providers = interleavedProviders()
+        let order = providers.map(\.accountProviderID)
+        var writes: [[AccountProviderID]] = []
+        let viewModel = UsageDashboardViewModel(
+            providers: providers,
+            accountProviderOrder: order,
+            persistAccountProviderOrder: { writes.append($0) },
+            now: { now }
+        )
+        await viewModel.refresh()
+        var drag = ProviderOrderingDragSession()
+        drag.begin(dragged: order[1], in: viewModel.accountProviderOrder)
+        let hovered = drag.hover(onto: order[3])
+        #expect(hovered)
+        #expect(writes.isEmpty)
+        let finished = drag.finish(accepted: true, in: viewModel.accountProviderOrder)
+        let plan = try #require(finished)
+        viewModel.moveAccountProviders(fromOffsets: plan.fromOffsets, toOffset: plan.toOffset)
+        let moved = [order[0], order[2], order[3], order[1], order[4]]
+        #expect(viewModel.accountProviderOrder == moved)
+        #expect(viewModel.accountProviderOrderingItems.map(\.id) == [order[3], order[1]])
+        #expect(viewModel.snapshot.providers.map(\.accountProviderID) == [order[3], order[1]])
+        #expect(writes == [moved])
+
+        let reconnected = providers.map { provider in
+            OrderingProvider(id: provider.id, accountID: provider.accountID, label: provider.label)
+        }
+        viewModel.updateProviders(reconnected, accountProviderOrder: moved, disconnected: [])
+        await viewModel.refresh()
+        #expect(viewModel.accountProviderOrderingItems.map(\.id) == moved)
+        #expect(viewModel.accountProviderOrder == moved)
+        #expect(writes == [moved])
+    }
+
+    private func interleavedProviders() -> [OrderingProvider] {
+        [
+            OrderingProvider(id: .codex, accountID: first, label: "Work", availability: .unavailable),
+            OrderingProvider(id: .claude, accountID: first, label: "Work"),
+            OrderingProvider(id: .cursor, accountID: first, label: "Work", availability: .authenticationRequired),
+            OrderingProvider(id: .claude, accountID: second, label: "Personal"),
+            OrderingProvider(id: .zai, accountID: first, label: "Work", availability: .failed)
+        ]
+    }
+
     private func configuredProviders() -> [any UsageProvider] {
         [
             OrderingProvider(id: .claude, accountID: first, label: "Work"),
@@ -377,6 +511,7 @@ private struct OrderingProvider: UsageProvider {
     let id: ProviderID
     let accountID: AccountID
     let label: String
+    var availability: ProviderAvailability = .available
     var accountLabel: String { label }
 
     func fetch(now: Date) async throws -> ProviderUsage {
@@ -386,7 +521,7 @@ private struct OrderingProvider: UsageProvider {
             accountLabel: label,
             planName: "Test",
             groups: [],
-            availability: .available,
+            availability: availability,
             updatedAt: now
         )
     }

@@ -296,6 +296,7 @@ struct ProviderOrderingView: View {
         }
         .onDisappear { cancelDrag() }
         .onChange(of: viewModel.accountProviderOrder) { cancelDrag() }
+        .onChange(of: viewModel.accountProviderOrderingItems.map(\.id)) { cancelDrag() }
     }
 
     private var items: [AccountProviderOrderingItem] {
@@ -418,12 +419,12 @@ struct ProviderOrderingView: View {
     ) {
         guard viewModel.moveAccountProvider(item.id, by: offset) else { return }
         focused = item.id
-        guard let index = viewModel.accountProviderOrder.firstIndex(of: item.id)
-        else { return }
+        let visibleOrder = viewModel.accountProviderOrderingItems.map(\.id)
+        guard let index = visibleOrder.firstIndex(of: item.id) else { return }
         let message = localization.format(
             .orderPosition,
             index + 1,
-            viewModel.accountProviderOrder.count
+            visibleOrder.count
         )
         NSAccessibility.post(
             element: NSApp as Any,

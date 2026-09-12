@@ -278,18 +278,11 @@ final class UsageDashboardViewModel {
             uniqueKeysWithValues: providers.map { ($0.accountProviderID, $0) }
         )
         return accountProviderOrder.compactMap { identity in
-            guard let provider = byIdentity[identity] else {
-                return providers.isEmpty
-                    ? AccountProviderOrderingItem(
-                        accountProviderID: identity,
-                        provider: identity.providerID,
-                        accountLabel: AccountLabel.defaultValue,
-                        showsAccountLabel: false,
-                        availability: accountConnectionStates[identity],
-                        isDisconnected: isDisconnected(identity)
-                    )
-                    : nil
-            }
+            guard
+                let provider = byIdentity[identity],
+                accountConnectionStates[identity] == .available,
+                !isDisconnected(identity)
+            else { return nil }
             let label = AccountLabel.sanitized(provider.accountLabel)
             return AccountProviderOrderingItem(
                 accountProviderID: identity,
@@ -349,13 +342,18 @@ final class UsageDashboardViewModel {
         _ identity: AccountProviderID,
         by offset: Int
     ) -> Bool {
-        guard let source = accountProviderOrder.firstIndex(of: identity) else {
+        let visibleOrder = accountProviderOrderingItems.map(\.id)
+        guard let visibleSource = visibleOrder.firstIndex(of: identity) else {
             return false
         }
-        let destination = source + offset
-        guard accountProviderOrder.indices.contains(destination) else {
-            return false
-        }
+        let visibleDestination = visibleSource + offset
+        guard
+            visibleOrder.indices.contains(visibleDestination),
+            let source = accountProviderOrder.firstIndex(of: identity),
+            let destination = accountProviderOrder.firstIndex(
+                of: visibleOrder[visibleDestination]
+            )
+        else { return false }
         var moved = accountProviderOrder
         let value = moved.remove(at: source)
         moved.insert(value, at: destination)
