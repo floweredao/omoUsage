@@ -55,11 +55,11 @@ public enum AppStringKey: String, CaseIterable, Sendable {
     case webDashboardQRCodeDescription
     case webDashboardQRCodeLabel
     case webDashboardLinkCreationFailed
-    case diagnostics
-    case diagnosticsDescription
-    case exportDiagnostics
-    case diagnosticsExportSucceeded
-    case diagnosticsExportFailed
+    case appUpdates
+    case appUpdatesDescription
+    case appUpdateVersion
+    case checkForAppUpdates
+    case appUpdatesUnavailable
     case connected
     case checkFailed
     case notConnected
@@ -241,12 +241,12 @@ public struct AppStrings: Sendable {
             "웹 대시보드 QR 코드",
         .webDashboardLinkCreationFailed:
             "웹 대시보드 링크를 만들지 못했습니다.",
-        .diagnostics: "진단 정보",
-        .diagnosticsDescription:
-            "민감한 내용을 제외한 기계 판독용 진단 정보를 내보냅니다.",
-        .exportDiagnostics: "진단 정보 내보내기",
-        .diagnosticsExportSucceeded: "진단 정보를 내보냈습니다.",
-        .diagnosticsExportFailed: "진단 정보를 내보내지 못했습니다.",
+        .appUpdates: "업데이트",
+        .appUpdatesDescription:
+            "새 버전을 확인하고 다운로드한 뒤 앱을 업데이트합니다.",
+        .appUpdateVersion: "현재 버전 %@",
+        .checkForAppUpdates: "업데이트 확인",
+        .appUpdatesUnavailable: "이 실행 환경에서는 업데이트를 사용할 수 없습니다.",
         .connected: "연결됨",
         .checkFailed: "확인 실패",
         .notConnected: "연결 안 됨",
@@ -422,12 +422,12 @@ public struct AppStrings: Sendable {
             "Web dashboard QR code",
         .webDashboardLinkCreationFailed:
             "Could not create a web dashboard link.",
-        .diagnostics: "Diagnostics",
-        .diagnosticsDescription:
-            "Export machine-readable diagnostics with sensitive data excluded.",
-        .exportDiagnostics: "Export Diagnostics",
-        .diagnosticsExportSucceeded: "Exported diagnostics.",
-        .diagnosticsExportFailed: "Could not export diagnostics.",
+        .appUpdates: "Updates",
+        .appUpdatesDescription:
+            "Check for a new version, then download and install the update.",
+        .appUpdateVersion: "Current version %@",
+        .checkForAppUpdates: "Check for Updates",
+        .appUpdatesUnavailable: "Updates are unavailable in this environment.",
         .connected: "Connected",
         .checkFailed: "Check Failed",
         .notConnected: "Not Connected",

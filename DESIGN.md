@@ -288,6 +288,12 @@ other privileged controls remain native-only.
   Every row embeds its provider-specific
   account manager. It owns authentication only and carries no ordering
   affordance.
+- `AppUpdateSettingsRow`: replaces the diagnostic export row with the installed
+  version, a short update description, and one native Check for Updates button.
+  It reuses settings spacing, typography, control background and separator.
+  No checkbox or automatic-check permission prompt is added. Sparkle owns
+  update discovery, progress, signed installation and relaunch after the user
+  requests a check and accepts an update. Internal redacted diagnostics remain.
 - `ProviderOrderingView`: the `Dashboard Order` surface. A native SwiftUI
   fixed-height row stack with an explicit native AppKit drag handle and
   account-qualified row drop destinations. The dragged row and its insertion

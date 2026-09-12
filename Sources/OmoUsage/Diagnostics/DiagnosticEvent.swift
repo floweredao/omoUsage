@@ -25,6 +25,7 @@ enum DiagnosticCategory: String, Codable, Sendable {
     case desktopSession = "desktop_session"
     case singleInstance = "single_instance"
     case activationPolicy = "activation_policy"
+    case appUpdate = "app_update"
     case fixture = "fixture"
 }
 
