@@ -345,6 +345,7 @@ struct ProviderOrderingView: View {
         .frame(height: ProviderOrderingLayout.rowHeight)
         .contentShape(Rectangle())
         .focusable()
+        .focusEffectDisabled()
         .focused($focused, equals: item.id)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("provider-ordering-row.\(ProviderOrderingDrag.payload(for: item.id))")
