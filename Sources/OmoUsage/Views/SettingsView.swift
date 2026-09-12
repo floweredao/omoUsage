@@ -2126,13 +2126,7 @@ private struct DiagnosticsSettingsRow: View {
 enum SettingsRowVisualTokens {
     static let usesSemanticSystemColors = true
 
-    static func background(isHovered: Bool) -> Color {
-        Color(
-            nsColor: isHovered
-                ? .unemphasizedSelectedContentBackgroundColor
-                : .controlBackgroundColor
-        )
-    }
+    static let background = Color(nsColor: .controlBackgroundColor)
 
     static let border = Color(nsColor: .separatorColor)
 }
@@ -2237,7 +2231,6 @@ private struct ProviderSettingsRow: View {
     let codexPlanMultiplier:
         ((AccountProviderID) -> Binding<CodexPlanMultiplier>)?
 
-    @State private var isHovered = false
     @State private var isHelpPresented = false
     @Environment(\.appLocalization)
     private var localization
@@ -2296,17 +2289,12 @@ private struct ProviderSettingsRow: View {
         }
         .padding(10)
         .background(
-            SettingsRowVisualTokens.background(isHovered: isHovered),
+            SettingsRowVisualTokens.background,
             in: RoundedRectangle(cornerRadius: 10, style: .continuous)
         )
         .overlay {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .stroke(SettingsRowVisualTokens.border, lineWidth: 0.5)
-        }
-        .onHover { hovering in
-            withAnimation(.easeOut(duration: 0.1)) {
-                isHovered = hovering
-            }
         }
     }
 
