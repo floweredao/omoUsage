@@ -19,6 +19,7 @@
 		1F3BE6FCFA852970241D6E25 /* UsageMeterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5B22CD5D991B72AA8A5C823 /* UsageMeterView.swift */; };
 		2131F4A60FBB1CF79C62D1F2 /* ProviderDisplayOrder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C996C87F736249ADD43E974 /* ProviderDisplayOrder.swift */; };
 		24785217C15545587AFE7E48 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1BCF394421F7C8988DC6567 /* DashboardView.swift */; };
+		26C43979F3B28F3B717324C5 /* AppUpdateController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25A9BD2A6FB5200F937748B8 /* AppUpdateController.swift */; };
 		26C516A883C98131D9EEF56A /* InteractiveIconButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DE3495FD4EF7CEF400CF611 /* InteractiveIconButton.swift */; };
 		2A5A76CECF983C678675A9D6 /* ClaudeSafeStorageKeychainReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E2DF97B8FE48D28C14CD0C0 /* ClaudeSafeStorageKeychainReader.swift */; };
 		2D2BB0F1375CA855D93301EE /* OmoUsageCore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 194AED28C9C20A8BDA503544 /* OmoUsageCore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
@@ -74,6 +75,7 @@
 		C397307DE370FD6C72255AA7 /* LocalizationMacExtensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B53BDC090D74645E8E79C45 /* LocalizationMacExtensions.swift */; };
 		C4CD7FCF26DEF2E0C8383AF8 /* DashboardSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1008C6991F867F79B709AED8 /* DashboardSnapshot.swift */; };
 		C4EA5C82813C76747D7861AB /* DevinUsageProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DABB14A0BEE73305B501919 /* DevinUsageProvider.swift */; };
+		C5EF94BD9C75D85DE6C6731D /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 73AD61AC65FDFD58179E6224 /* Sparkle */; };
 		C8791D837E30716C7F09C57C /* CodexUsageProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4ECD87E197A72829FA4FEF8F /* CodexUsageProvider.swift */; };
 		D0C4057361D5DE869F36320A /* CursorUsageProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25DDBD14AFA75AB0522C6FDD /* CursorUsageProvider.swift */; };
 		D1D669FE091363FA8F5C9F6D /* SingleInstanceController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3D3D4A69F4FA62AD31142D2 /* SingleInstanceController.swift */; };
@@ -153,6 +155,7 @@
 		190F3B1AE7E3ED6996235F35 /* ProviderID.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderID.swift; sourceTree = "<group>"; };
 		194AED28C9C20A8BDA503544 /* OmoUsageCore.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = OmoUsageCore.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		1EE0E4EACC8A1D3CF2749BBC /* ProviderOrderingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderOrderingView.swift; sourceTree = "<group>"; };
+		25A9BD2A6FB5200F937748B8 /* AppUpdateController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUpdateController.swift; sourceTree = "<group>"; };
 		25DDBD14AFA75AB0522C6FDD /* CursorUsageProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CursorUsageProvider.swift; sourceTree = "<group>"; };
 		2839AE5CADDD8BD525BF4E86 /* OmoUsageMobile.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = OmoUsageMobile.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		29E125B432F6AF3B9025F9C9 /* antigravity.svg */ = {isa = PBXFileReference; path = antigravity.svg; sourceTree = "<group>"; };
@@ -245,6 +248,7 @@
 			files = (
 				6D821BD2B0C3844758A1576E /* OmoUsageCore.framework in Frameworks */,
 				8CAA8252EBDB574B1578C31B /* libsqlite3.tbd in Frameworks */,
+				C5EF94BD9C75D85DE6C6731D /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -451,6 +455,7 @@
 		DB4E28AFA759D8D550FD03BC /* Settings */ = {
 			isa = PBXGroup;
 			children = (
+				25A9BD2A6FB5200F937748B8 /* AppUpdateController.swift */,
 				DA2DFDCC52C819D174BBECE1 /* CodexPlanMultiplierStore.swift */,
 				6EE503F1840C89846ED927FF /* DashboardPresentationStyleStore.swift */,
 				07A191A0AA2679DA39909983 /* ProviderAccountRegistryController.swift */,
@@ -519,6 +524,7 @@
 			);
 			name = OmoUsage;
 			packageProductDependencies = (
+				73AD61AC65FDFD58179E6224 /* Sparkle */,
 			);
 			productName = OmoUsage;
 			productReference = 49C4D32EDDD9D2B9A4B21481 /* OmoUsage.app */;
@@ -587,6 +593,9 @@
 			);
 			mainGroup = 2213CBBF51F805C8109974F9;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				CE57C2B74BE0B056E76713C5 /* XCRemoteSwiftPackageReference "Sparkle" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = E8082FF65EB299078EEEEFBA /* Products */;
 			projectDirPath = "";
@@ -624,6 +633,7 @@
 				3A0FB04FFE0809B98130C2DE /* AntigravityUsageProvider.swift in Sources */,
 				3E1A91CBF12D7769C67D2549 /* AppDelegate.swift in Sources */,
 				B49803124479D286A44097B4 /* AppIconFactory.swift in Sources */,
+				26C43979F3B28F3B717324C5 /* AppUpdateController.swift in Sources */,
 				A10F7E3BDA4E51B05C061B74 /* BoundedProcessRunner.swift in Sources */,
 				51638F234F2D5AE486A54EE1 /* ClaudeCookieDatabase.swift in Sources */,
 				D6D3219CE75A0F7941AB807C /* ClaudeDesktopSessionReader.swift in Sources */,
@@ -1032,6 +1042,25 @@
 			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		CE57C2B74BE0B056E76713C5 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = exactVersion;
+				version = 2.9.6;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		73AD61AC65FDFD58179E6224 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CE57C2B74BE0B056E76713C5 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = A172B776BD5A42E741EFC8F7 /* Project object */;
 }

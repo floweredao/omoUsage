@@ -116,6 +116,100 @@ struct ReleasePipelineTests {
     }
 
     @Test
+    func sparkleComponentsAreSignedInsideOutWithoutSharingAppEntitlements() throws {
+        let root = FileManager.default.temporaryDirectory.appending(
+            path: "OmoUsage Sparkle Signing-\(UUID().uuidString)"
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+        let bin = root.appending(path: "bin")
+        let app = root.appending(path: "Synthetic.app")
+        let framework = app.appending(path: "Contents/Frameworks/Sparkle.framework")
+        let nested = [
+            "Versions/B/XPCServices/Installer.xpc",
+            "Versions/B/XPCServices/Downloader.xpc",
+            "Versions/B/Autoupdate",
+            "Versions/B/Updater.app"
+        ].map { framework.appending(path: $0).path }
+        try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+        for path in nested {
+            try FileManager.default.createDirectory(
+                atPath: path, withIntermediateDirectories: true
+            )
+        }
+        let log = root.appending(path: "codesign.log")
+        try executable(
+            """
+            #!/bin/sh
+            printf '%s\\t' "$@" >> "$FAKE_CODESIGN_LOG"
+            printf '\\n' >> "$FAKE_CODESIGN_LOG"
+            for argument in "$@"; do target="$argument"; done
+            if [ "$target" = "${FAKE_CODESIGN_FAIL_TARGET:-}" ]; then exit 42; fi
+            """,
+            at: bin.appending(path: "codesign")
+        )
+        for mode in ["--adhoc", "--developer-id"] {
+            try Data().write(to: log)
+            var arguments = [scriptPath("sign-app.sh"), mode, app.path]
+            if mode == "--developer-id" {
+                arguments += ["Developer ID Application: Test (TESTTEAM)", "/tmp/app-entitlements.plist"]
+            }
+            let environment = [
+                "PATH": "\(bin.path):/usr/bin:/bin",
+                "FAKE_CODESIGN_LOG": log.path,
+                "OMO_USAGE_SIGNING_KEYCHAIN": "/tmp/test-signing.keychain-db"
+            ]
+            let result = try process(executable: "/bin/sh", arguments: arguments, environment: environment)
+            #expect(result.status == 0)
+            let calls = try contentsOfURL(log).split(separator: "\n").map {
+                $0.split(separator: "\t").map(String.init)
+            }
+            #expect(calls.compactMap(\.last) == nested + [framework.path, app.path])
+            for call in calls {
+                #expect(!call.contains("--deep"))
+                #expect(call.contains("--timestamp") == (mode == "--developer-id"))
+                #expect(call.contains("--keychain") == (mode == "--developer-id"))
+                #expect(call.contains("--entitlements") == (mode == "--developer-id" && call.last == app.path))
+            }
+            for call in calls.dropLast() {
+                #expect(call.contains("--preserve-metadata=entitlements"))
+            }
+            try Data().write(to: log)
+            var failingEnvironment = environment
+            failingEnvironment["FAKE_CODESIGN_FAIL_TARGET"] = nested[2]
+            let failure = try process(executable: "/bin/sh", arguments: arguments, environment: failingEnvironment)
+            #expect(failure.status == 42)
+            let failedTargets = try contentsOfURL(log).split(separator: "\n").compactMap {
+                $0.split(separator: "\t").last.map(String.init)
+            }
+            #expect(failedTargets == Array(nested.prefix(3)))
+        }
+    }
+
+    @Test
+    func updatePreparationRejectsUnpinnedToolsBeforeCreatingArtifacts() throws {
+        let root = FileManager.default.temporaryDirectory.appending(
+            path: "OmoUsageUpdatePreparation-\(UUID().uuidString)"
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let archive = root.appending(path: "Sparkle-2.9.6.tar.xz")
+        try Data("not the official archive".utf8).write(to: archive)
+        let output = root.appending(path: "update")
+        let result = try process(
+            executable: "/bin/sh",
+            arguments: [
+                scriptPath("prepare-update.sh"), "--app", root.appending(path: "Synthetic.app").path,
+                "--sparkle-archive", archive.path, "--key-account", "test-only-nonexistent-account",
+                "--download-url-prefix", "https://example.invalid/releases/v1/",
+                "--output-dir", output.path
+            ],
+            environment: [:]
+        )
+        #expect(result.status == 65)
+        #expect(!FileManager.default.fileExists(atPath: output.path))
+    }
+
+    @Test
     func ephemeralKeychainCleanupNeverMutatesUserSearchList() throws {
         let root = FileManager.default.temporaryDirectory.appending(
             path: "OmoUsageKeychainWrapper-\(UUID().uuidString)"

@@ -9,6 +9,8 @@ REQUESTED_IDENTITY="${OMO_USAGE_CODESIGN_IDENTITY:--}"
 TEAM_IDENTIFIER="${OMO_USAGE_TEAM_IDENTIFIER:-}"
 ENTITLEMENTS_TEMPLATE="$ROOT/Config/OmoUsage.entitlements"
 VERSION_CONFIGURATION="$ROOT/Config/Version.xcconfig"
+SPARKLE_VERSION=2.9.6
+SPARKLE_FRAMEWORK="$ROOT/.build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
 TEMP_ENTITLEMENTS=""
 EXTRACTED_ENTITLEMENTS=""
 PLAN=no
@@ -121,8 +123,18 @@ else
     swift build -c release
 fi
 
+# Use the checksum-verified SwiftPM artifact, not a globally installed framework.
+ACTUAL_SPARKLE_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
+    "$SPARKLE_FRAMEWORK/Resources/Info.plist")"
+if [ "$ACTUAL_SPARKLE_VERSION" != "$SPARKLE_VERSION" ]; then
+    printf 'error: expected Sparkle %s, found %s\n' "$SPARKLE_VERSION" "$ACTUAL_SPARKLE_VERSION" >&2
+    exit 1
+fi
+
 rm -rf "$APP"
-mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources/ProviderIcons"
+mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources/ProviderIcons" "$CONTENTS/Frameworks"
+# ditto preserves the versioned framework's symlinks and executable permissions.
+ditto "$SPARKLE_FRAMEWORK" "$CONTENTS/Frameworks/Sparkle.framework"
 cp ".build/release/OmoUsage" "$CONTENTS/MacOS/OmoUsage"
 cp "Config/Info.plist" "$CONTENTS/Info.plist"
 # SwiftPM does not expand Xcode build settings in the copied plist.

@@ -84,7 +84,7 @@ struct SettingsView: View {
     let onCreateWebDashboardURL: () -> URL?
     let onShareWebDashboardURL: (URL, NSView) -> Bool
     let onRetryWebDashboard: () -> Void
-    let onExportDiagnostics: () -> DiagnosticExportOutcome
+    let appUpdateController: AppUpdateController
     private let authorizeClaude: () throws -> ClaudeKeychainAuthorizationOutcome
     private let launchClaudeLogin: (OfficialLoginReceipt) -> Result<
         ProviderSetupOutcome, ProviderSetupError
@@ -141,7 +141,7 @@ struct SettingsView: View {
         onCreateWebDashboardURL: @escaping () -> URL?,
         onShareWebDashboardURL: @escaping (URL, NSView) -> Bool,
         onRetryWebDashboard: @escaping () -> Void,
-        onExportDiagnostics: @escaping () -> DiagnosticExportOutcome
+        appUpdateController: AppUpdateController
     ) {
         self.viewModel = viewModel
         self.localization = localization
@@ -159,7 +159,7 @@ struct SettingsView: View {
         self.onCreateWebDashboardURL = onCreateWebDashboardURL
         self.onShareWebDashboardURL = onShareWebDashboardURL
         self.onRetryWebDashboard = onRetryWebDashboard
-        self.onExportDiagnostics = onExportDiagnostics
+        self.appUpdateController = appUpdateController
         self.authorizeClaude = authorizeClaude
         self.launchClaudeLogin = launchClaudeLogin
         _presentationStyle = State(initialValue: presentationStyle)
@@ -396,16 +396,7 @@ struct SettingsView: View {
                         onRetry: onRetryWebDashboard
                     )
 
-                    DiagnosticsSettingsRow {
-                        switch onExportDiagnostics() {
-                        case .exported:
-                            feedback = .key(.diagnosticsExportSucceeded)
-                        case .cancelled:
-                            break
-                        case .failed:
-                            feedback = .key(.diagnosticsExportFailed)
-                        }
-                    }
+                    AppUpdateSettingsRow(controller: appUpdateController)
 
                     if accountRegistryController.registry != nil {
                         ProviderOrderingView(viewModel: viewModel)
@@ -2073,27 +2064,30 @@ private struct WebDashboardSettingsRow: View {
     }
 }
 
-enum DiagnosticExportOutcome {
-    case exported
-    case cancelled
-    case failed
-}
-
-private struct DiagnosticsSettingsRow: View {
-    let onExport: () -> Void
+private struct AppUpdateSettingsRow: View {
+    let controller: AppUpdateController
     @Environment(\.appLocalization) private var localization
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: "stethoscope")
+            Image(systemName: "arrow.down.circle")
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .frame(width: 24, height: 24)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(localization.text(.diagnostics))
+                Text(localization.text(.appUpdates))
                     .font(.system(size: 13.5, weight: .semibold))
-                Text(localization.text(.diagnosticsDescription))
+                if let version = controller.installedVersion {
+                    Text(localization.format(.appUpdateVersion, version))
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.secondary)
+                }
+                Text(localization.text(
+                    controller.isAvailable
+                        ? .appUpdatesDescription
+                        : .appUpdatesUnavailable
+                ))
                     .font(.system(size: 11.5))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -2102,11 +2096,13 @@ private struct DiagnosticsSettingsRow: View {
             Spacer(minLength: 8)
 
             Button(
-                localization.text(.exportDiagnostics),
-                action: onExport
+                localization.text(.checkForAppUpdates),
+                action: controller.checkForUpdates
             )
                 .buttonStyle(.bordered)
                 .controlSize(.small)
+                .disabled(!controller.canCheckForUpdates)
+                .accessibilityIdentifier("check-for-app-updates")
         }
         .padding(10)
         .background(
@@ -2120,6 +2116,8 @@ private struct DiagnosticsSettingsRow: View {
                     lineWidth: 0.5
                 )
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("app-update-settings")
     }
 }
 

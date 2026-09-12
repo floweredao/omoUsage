@@ -24,5 +24,21 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>OmoUsageSourceCommit</key>
 	<string>$(SOURCE_COMMIT)</string>
+	<key>SUFeedURL</key>
+	<string>https://github.com/floweredao/omoUsage/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>8z9ItI/rDJ0KpfL0XG/N8P05spSYk4QhGnVA2RpQk7g=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<false/>
+	<key>SUAutomaticallyUpdate</key>
+	<false/>
+	<key>SUAllowsAutomaticUpdates</key>
+	<false/>
+	<key>SUEnableSystemProfiling</key>
+	<false/>
+	<key>SUVerifyUpdateBeforeExtraction</key>
+	<true/>
+	<key>LSMinimumSystemVersion</key>
+	<string>15.0</string>
 </dict>
 </plist>

@@ -480,6 +480,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         CompanionAccountFixture.ClaudeAuthenticationUIFixture?
 #endif
     private let opensSettingsOnLaunch: Bool
+    private let appUpdateController: AppUpdateController
     private let snapshotSync: UbiquitousUsageSnapshotStore
     private let webDashboardSnapshotStore: WebDashboardSnapshotStore
     private let webDashboardSettingsStore: WebDashboardSettingsStore
@@ -768,8 +769,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         self.companionFixture = companionFixture
         self.claudeAuthenticationFixture = claudeAuthenticationFixture
         self.opensSettingsOnLaunch = companionFixture != nil
+        self.appUpdateController = AppUpdateController(
+            enabled: companionFixture == nil || (
+                fixtureEnvironment["OMO_USAGE_APP_UPDATE_QA"] == "1"
+                    && Bundle.main.bundleIdentifier?.hasPrefix(
+                        "com.omo.usage.qa."
+                    ) == true
+            )
+        )
 #else
         self.opensSettingsOnLaunch = false
+        self.appUpdateController = AppUpdateController()
 #endif
         self.snapshotSync = snapshotSync
         self.webDashboardSnapshotStore = webDashboardSnapshotStore
@@ -1072,25 +1082,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                         )
                     }
                 },
-                onExportDiagnostics: {
-                    let action = DiagnosticExportAction(
-                        store: .shared,
-                        chooseDestination: {
-                            let panel = NSSavePanel()
-                            panel.nameFieldStringValue = "OmoUsage-diagnostics.json"
-                            panel.canCreateDirectories = true
-                            return panel.runModal() == .OK ? panel.url : nil
-                        }
-                    )
-                    switch action.perform() {
-                    case .success(.some):
-                        return .exported
-                    case .success(.none):
-                        return .cancelled
-                    case .failure:
-                        return .failed
-                    }
-                }
+                appUpdateController: appUpdateController
             )
         )
         let window = NSWindow(contentViewController: controller)

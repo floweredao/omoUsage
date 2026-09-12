@@ -35,6 +35,12 @@ let package = Package(
         .library(name: "OmoUsageCore", targets: ["OmoUsageCore"]),
         .executable(name: "OmoUsage", targets: ["OmoUsage"])
     ],
+    dependencies: [
+        .package(
+            url: "https://github.com/sparkle-project/Sparkle",
+            exact: "2.9.6"
+        )
+    ],
     targets: [
         .target(
             name: "OmoUsageCore",
@@ -53,7 +59,10 @@ let package = Package(
         ),
         .executableTarget(
             name: "OmoUsage",
-            dependencies: ["OmoUsageCore"],
+            dependencies: [
+                "OmoUsageCore",
+                .product(name: "Sparkle", package: "Sparkle")
+            ],
             path: "Sources/OmoUsage",
             exclude: [
                 "Mobile",
@@ -76,7 +85,8 @@ let package = Package(
                 )
             ],
             linkerSettings: [
-                .linkedLibrary("sqlite3")
+                .linkedLibrary("sqlite3"),
+                .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])
             ]
         ),
         .testTarget(
