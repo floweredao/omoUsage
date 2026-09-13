@@ -96,7 +96,9 @@ enum CodexUsageParser {
             }
             let resetValue = window["reset_at"]
             let resetsAt = resetValue.flatMap(UsageJSON.date)
-            guard resetValue == nil || resetsAt != nil else { return nil }
+            guard resetValue == nil || resetValue is NSNull || resetsAt != nil else {
+                return nil
+            }
             let isWeekly = seconds >= Double(weeklySeconds)
             let period: UsagePeriod = isWeekly ? .week : .session
             let sessionHours = ProviderPayload.nonnegativeInteger(
