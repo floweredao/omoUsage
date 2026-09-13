@@ -160,7 +160,9 @@ enum ClaudeUsageParser {
         }
         let resetValue = object["resets_at"]
         let resetsAt = resetValue.flatMap(UsageJSON.date)
-        guard resetValue == nil || resetsAt != nil else { return nil }
+        guard resetValue == nil || resetValue is NSNull || resetsAt != nil else {
+            return nil
+        }
         return UsageMeter(
             id: id,
             title: title,

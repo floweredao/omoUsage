@@ -16,6 +16,55 @@ struct UsageJSONTests {
 
 @Suite
 struct ClaudeUsageParsingTests {
+    @Test(arguments: [0.0, 0.1, 100.0], [
+        "",
+        ", \"resets_at\": null",
+        ", \"resets_at\": \"2026-08-02T15:29:00Z\""
+    ])
+    func preservesFiveHourSessionRegardlessOfResetAvailability(
+        used: Double,
+        resetField: String
+    ) throws {
+        let usage = try ClaudeUsageParser.parse(
+            Data(
+                """
+                {
+                  "five_hour": {"utilization": \(used)\(resetField)},
+                  "seven_day": {"utilization": 25}
+                }
+                """.utf8
+            ),
+            planName: "Max",
+            now: fixedNow
+        )
+        let meters = usage.groups.flatMap(\.meters)
+        let session = try #require(meters.first { $0.id == "claude.session" })
+        #expect(session.period == .session)
+        #expect(session.percentRemaining == Int((100 - used).rounded()))
+        #expect(session.showsMenuBarBadge)
+        #expect(session.resetText == nil)
+        #expect(session.resetsAt == (resetField.contains("2026")
+            ? Date(timeIntervalSince1970: 1_785_684_540) : nil))
+        #expect(SideNotchSummaryMeterPolicy.select(from: meters)?.id == session.id)
+    }
+
+    @Test
+    func stillRejectsMalformedFiveHourResetDate() throws {
+        let usage = try ClaudeUsageParser.parse(
+            Data(
+                """
+                {
+                  "five_hour": {"utilization": 0, "resets_at": "not-a-date"},
+                  "seven_day": {"utilization": 25}
+                }
+                """.utf8
+            ),
+            planName: "Max",
+            now: fixedNow
+        )
+        #expect(usage.groups.flatMap(\.meters).map(\.id) == ["claude.week"])
+    }
+
     @Test
     func preservesFableWeeklyUsageWithoutAResetDate() throws {
         let usage = try ClaudeUsageParser.parse(
@@ -228,6 +277,70 @@ private struct MissingClaudeKeychain: KeychainReading {
 
 @Suite(.serialized)
 struct CodexUsageParsingTests {
+    @Test(arguments: [0.0, 0.1, 100.0], [
+        "",
+        ", \"reset_at\": null",
+        ", \"reset_at\": 1785684540"
+    ])
+    func preservesFiveHourSessionRegardlessOfResetAvailability(
+        used: Double,
+        resetField: String
+    ) throws {
+        let usage = try CodexUsageParser.parse(
+            Data(
+                """
+                {
+                  "rate_limit": {
+                    "primary_window": {
+                      "used_percent": \(used),
+                      "limit_window_seconds": 18000\(resetField)
+                    },
+                    "secondary_window": {
+                      "used_percent": 25,
+                      "limit_window_seconds": 604800
+                    }
+                  }
+                }
+                """.utf8
+            ),
+            now: fixedNow
+        )
+        let meters = usage.groups.flatMap(\.meters)
+        let session = try #require(meters.first { $0.id == "codex.session" })
+        #expect(session.period == .session)
+        #expect(session.percentRemaining == Int((100 - used).rounded()))
+        #expect(session.showsMenuBarBadge)
+        #expect(session.resetText == nil)
+        #expect(session.resetsAt == (resetField.contains("1785684540")
+            ? Date(timeIntervalSince1970: 1_785_684_540) : nil))
+        #expect(SideNotchSummaryMeterPolicy.select(from: meters)?.id == session.id)
+    }
+
+    @Test
+    func stillRejectsMalformedFiveHourResetDate() throws {
+        let usage = try CodexUsageParser.parse(
+            Data(
+                """
+                {
+                  "rate_limit": {
+                    "primary_window": {
+                      "used_percent": 0,
+                      "limit_window_seconds": 18000,
+                      "reset_at": "not-a-date"
+                    },
+                    "secondary_window": {
+                      "used_percent": 25,
+                      "limit_window_seconds": 604800
+                    }
+                  }
+                }
+                """.utf8
+            ),
+            now: fixedNow
+        )
+        #expect(usage.groups.flatMap(\.meters).map(\.id) == ["codex.week"])
+    }
+
     @Test
     func classifiesWeeklyWindowAndCredits() throws {
         let usage = try CodexUsageParser.parse(
