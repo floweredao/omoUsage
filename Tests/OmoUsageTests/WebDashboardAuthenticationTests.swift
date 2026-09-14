@@ -326,6 +326,7 @@ struct WebDashboardAuthenticationTests {
                 standardOutput: Data(
                     """
                     {
+                      "TCP": { "8443": { "HTTPS": true } },
                       "Web": {
                         "fixture-device.fixture-tailnet.ts.net:8443": {
                           "Handlers": {
@@ -351,6 +352,73 @@ struct WebDashboardAuthenticationTests {
                 == .ready(
                     host: "fixture-device.fixture-tailnet.ts.net"
                 )
+        )
+    }
+
+    @Test(arguments: [
+        // The expected port and target must belong to the same handler.
+        """
+        {"TCP":{"8443":{"HTTPS":true}},"Web":{
+          "fixture-device.fixture-tailnet.ts.net:8443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8787"}}},
+          "fixture-device.fixture-tailnet.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:7827"}}}
+        }}
+        """,
+        """
+        {"TCP":{"8443":{"HTTPS":true}},"Web":{
+          "other-device.fixture-tailnet.ts.net:8443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:7827"}}}
+        }}
+        """,
+        """
+        {"TCP":{"8443":{"HTTPS":true}},"Web":{
+          "fixture-device.fixture-tailnet.ts.net:8443":{"Handlers":{"/other":{"Proxy":"http://127.0.0.1:7827"}}}
+        }}
+        """,
+        """
+        {"TCP":{"8443":{"HTTPS":false}},"Web":{
+          "fixture-device.fixture-tailnet.ts.net:8443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:7827"}}}
+        }}
+        """,
+        """
+        {"Web":{
+          "fixture-device.fixture-tailnet.ts.net:8443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:7827"}}}
+        }}
+        """,
+        """
+        {"TCP":{"8443":{"HTTPS":true}},"Web":{
+          "fixture-device.fixture-tailnet.ts.net:8443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:7827"}}}
+        },"AllowFunnel":{"fixture-device.fixture-tailnet.ts.net:8443":true}}
+        """
+    ])
+    func tailscaleCLIRejectsUnrelatedOrNonPrivateServeMappings(
+        configuration: String
+    ) throws {
+        let recorder = TailscaleCommandRecorder(responses: [
+            TailscaleCommandResult(
+                status: 0,
+                standardOutput: Data(
+                    """
+                    {"BackendState":"Running","Self":{
+                      "DNSName":"fixture-device.fixture-tailnet.ts.net.",
+                      "Online":true
+                    }}
+                    """.utf8
+                ),
+                standardError: Data()
+            ),
+            TailscaleCommandResult(
+                status: 0,
+                standardOutput: Data(configuration.utf8),
+                standardError: Data()
+            )
+        ])
+        let client = TailscaleCLIService(
+            executable: URL(filePath: "/fixture/tailscale"),
+            execute: recorder.run
+        )
+
+        #expect(
+            try client.inspect(dashboardPort: 7_827)
+                == .available(host: "fixture-device.fixture-tailnet.ts.net")
         )
     }
 
