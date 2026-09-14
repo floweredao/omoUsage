@@ -325,6 +325,7 @@ struct TailscaleCLIService: TailscaleDashboardServing, Sendable {
         }
         return try Self.servesDashboard(
             serve.standardOutput,
+            host: host,
             dashboardPort: dashboardPort
         )
             ? .ready(host: host)
@@ -440,41 +441,42 @@ struct TailscaleCLIService: TailscaleDashboardServing, Sendable {
 
     private static func servesDashboard(
         _ data: Data,
+        host: String,
         dashboardPort: UInt16
     ) throws -> Bool {
-        let object: Any
+        let configuration: ServeConfiguration
         do {
-            object = try JSONSerialization.jsonObject(with: data)
+            configuration = try JSONDecoder().decode(
+                ServeConfiguration.self,
+                from: data
+            )
         } catch {
             throw TailscaleDashboardFailure.invalidStatus
         }
-        let values = flattenedStrings(object)
         let port = String(Self.httpsPort)
-        return values.contains {
-            $0 == port || $0.hasSuffix(":\(port)")
-        }
-            && values.contains(
-                "http://127.0.0.1:\(dashboardPort)"
-            )
+        let authority = "\(host):\(port)"
+        return configuration.TCP?[port]?.HTTPS == true
+            && configuration.Web?[authority]?.Handlers?["/"]?.Proxy
+                == "http://127.0.0.1:\(dashboardPort)"
+            && configuration.AllowFunnel?[authority] != true
     }
 
-    private static func flattenedStrings(_ value: Any) -> Set<String> {
-        if let text = value as? String {
-            return [text]
+    private struct ServeConfiguration: Decodable {
+        struct TCPHandler: Decodable {
+            let HTTPS: Bool?
         }
-        if let dictionary = value as? [String: Any] {
-            return dictionary.reduce(into: Set(dictionary.keys)) {
-                result,
-                element in
-                result.formUnion(flattenedStrings(element.value))
+
+        struct WebHandler: Decodable {
+            struct Handler: Decodable {
+                let Proxy: String?
             }
+
+            let Handlers: [String: Handler]?
         }
-        if let array = value as? [Any] {
-            return array.reduce(into: []) {
-                $0.formUnion(flattenedStrings($1))
-            }
-        }
-        return []
+
+        let TCP: [String: TCPHandler]?
+        let Web: [String: WebHandler]?
+        let AllowFunnel: [String: Bool]?
     }
 }
 
