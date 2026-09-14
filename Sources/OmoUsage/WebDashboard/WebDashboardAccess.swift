@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Observation
 
@@ -225,6 +226,8 @@ enum TailscaleDashboardFailure: Error, Equatable, Sendable {
     case commandFailed
     case invalidStatus
     case verificationFailed
+    case timedOut
+    case offline
 }
 
 enum TailscaleDashboardInspection: Equatable, Sendable {
@@ -301,25 +304,36 @@ struct TailscaleCLIService: TailscaleDashboardServing, Sendable {
     func inspect(
         dashboardPort: UInt16
     ) throws -> TailscaleDashboardInspection {
+        try Task.checkCancellation()
         guard let executable else { return .unavailable }
         let status = try execute(
             executable,
             ["status", "--json", "--peers=false"]
         )
-        guard status.status == 0 else { return .signedOut }
+        try Task.checkCancellation()
+        guard status.status == 0 else {
+            throw TailscaleDashboardFailure.commandFailed
+        }
         let node = try Self.nodeStatus(status.standardOutput)
-        guard
-            node.backendState == "Running",
-            node.isOnline,
-            let host = Self.normalizedHost(node.dnsName)
-        else {
+        if ["NeedsLogin", "NeedsMachineAuth"].contains(node.backendState) {
             return .signedOut
         }
+        guard
+            node.backendState == "Running",
+            node.isOnline
+        else {
+            throw TailscaleDashboardFailure.offline
+        }
+        guard let host = Self.normalizedHost(node.dnsName) else {
+            throw TailscaleDashboardFailure.invalidStatus
+        }
 
+        try Task.checkCancellation()
         let serve = try execute(
             executable,
             ["serve", "status", "--json"]
         )
+        try Task.checkCancellation()
         guard serve.status == 0 else {
             throw TailscaleDashboardFailure.commandFailed
         }
@@ -333,6 +347,7 @@ struct TailscaleCLIService: TailscaleDashboardServing, Sendable {
     }
 
     func enable(dashboardPort: UInt16) throws {
+        try Task.checkCancellation()
         guard let executable else {
             throw TailscaleDashboardFailure.commandFailed
         }
@@ -352,6 +367,7 @@ struct TailscaleCLIService: TailscaleDashboardServing, Sendable {
     }
 
     func disable() throws {
+        try Task.checkCancellation()
         guard let executable else {
             throw TailscaleDashboardFailure.commandFailed
         }
@@ -500,104 +516,257 @@ final class TailscaleDashboardController {
     private let dashboardPort: UInt16
     private let accessStore: WebDashboardAccessStore
     private let statusStore: WebDashboardStatusStore
+    private let diagnostics: DiagnosticStore
+    private let retryWait: @Sendable (Duration) async throws -> Void
+    private var monitoringTask: Task<Void, Never>?
+    private var monitoringID: UUID?
+    private var monitoringEnabled = false
+    private var stopped = false
+    private var wakeObserver: (NotificationCenter, NSObjectProtocol)?
+    private var revision = 0
+    private var lastDiagnosticState: TailscaleDashboardState?
+
+    private enum Action {
+        case inspect
+        case enable
+        case disable
+    }
+
+    private struct Operation {
+        let id: UUID
+        let action: Action
+        let revision: Int
+        let task: Task<
+            Result<TailscaleDashboardInspection, TailscaleDashboardFailure>,
+            Never
+        >
+    }
+
+    private var operation: Operation?
 
     init(
         service: any TailscaleDashboardServing,
         dashboardPort: UInt16,
         accessStore: WebDashboardAccessStore,
-        statusStore: WebDashboardStatusStore
+        statusStore: WebDashboardStatusStore,
+        diagnostics: DiagnosticStore = .shared,
+        retryWait: @escaping @Sendable (Duration) async throws -> Void = {
+            try await Task.sleep(for: $0)
+        }
     ) {
         self.service = service
         self.dashboardPort = dashboardPort
         self.accessStore = accessStore
         self.statusStore = statusStore
+        self.diagnostics = diagnostics
+        self.retryWait = retryWait
+    }
+
+    @discardableResult
+    func startMonitoring(
+        wakeNotifications: NotificationCenter = NSWorkspace.shared.notificationCenter,
+        onInitialInspection: @escaping @MainActor () -> Void = {}
+    ) -> Task<Void, Never> {
+        if monitoringEnabled {
+            return monitoringTask ?? Task {}
+        }
+        stopped = false
+        monitoringEnabled = true
+        let observer = wakeNotifications.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.systemDidWake() }
+        }
+        wakeObserver = (wakeNotifications, observer)
+        return startRecovery(onInitialInspection: onInitialInspection)
+    }
+
+    func stopMonitoring() {
+        stopped = true
+        monitoringEnabled = false
+        revision += 1
+        monitoringID = nil
+        monitoringTask?.cancel()
+        monitoringTask = nil
+        operation?.task.cancel()
+        if let (center, observer) = wakeObserver {
+            center.removeObserver(observer)
+        }
+        wakeObserver = nil
+    }
+
+    func systemDidWake() {
+        guard monitoringEnabled, !stopped else { return }
+        // A manual operation already ends with a fresh inspection.
+        if let operation, operation.action != .inspect { return }
+        monitoringTask?.cancel()
+        startRecovery()
     }
 
     func refresh() async {
-        state = .checking
-        switch await inspect() {
-        case .success(let inspection):
-            apply(inspection)
-        case .failure(let failure):
-            state = .failed(failure)
-        }
+        guard await perform(.inspect), monitoringEnabled,
+            monitoringID == nil else { return }
+        if case .ready = state { return }
+        startRecovery(afterInspection: true)
     }
 
     func enable() async {
+        guard !stopped, !Task.isCancelled else { return }
         guard case .available(let host) = state else { return }
         state = .enabling(host: host)
-        let service = self.service
-        let dashboardPort = self.dashboardPort
-        let result = await Task.detached(priority: .utility) {
-            do {
-                try service.enable(dashboardPort: dashboardPort)
-                return Result<TailscaleDashboardInspection,
-                    TailscaleDashboardFailure>.success(
-                        try service.inspect(
-                            dashboardPort: dashboardPort
-                        )
-                    )
-            } catch let failure as TailscaleDashboardFailure {
-                return .failure(failure)
-            } catch {
-                return .failure(.commandFailed)
-            }
-        }.value
-        switch result {
-        case .success(.ready(let readyHost)):
-            apply(.ready(host: readyHost))
-        case .success:
-            state = .failed(.verificationFailed)
-        case .failure(let failure):
-            state = .failed(failure)
-        }
+        _ = await perform(.enable)
     }
 
     func disable() async {
+        guard !stopped, !Task.isCancelled else { return }
         guard case .ready(let host) = state else { return }
         state = .disabling(host: host)
-        let service = self.service
-        let dashboardPort = self.dashboardPort
-        let result = await Task.detached(priority: .utility) {
-            do {
-                try service.disable()
-                return Result<TailscaleDashboardInspection,
-                    TailscaleDashboardFailure>.success(
-                        try service.inspect(
-                            dashboardPort: dashboardPort
-                        )
-                    )
-            } catch let failure as TailscaleDashboardFailure {
-                return .failure(failure)
-            } catch {
-                return .failure(.commandFailed)
-            }
-        }.value
-        switch result {
-        case .success(let inspection):
-            apply(inspection)
-        case .failure(let failure):
-            state = .failed(failure)
-        }
+        _ = await perform(.disable)
     }
 
-    private func inspect() async -> Result<
-        TailscaleDashboardInspection,
-        TailscaleDashboardFailure
-    > {
-        let service = self.service
-        let dashboardPort = self.dashboardPort
-        return await Task.detached(priority: .utility) {
-            do {
-                return .success(
-                    try service.inspect(dashboardPort: dashboardPort)
-                )
-            } catch let failure as TailscaleDashboardFailure {
-                return .failure(failure)
-            } catch {
-                return .failure(.commandFailed)
+    @discardableResult
+    private func startRecovery(
+        afterInspection: Bool = false,
+        onInitialInspection: (@MainActor () -> Void)? = nil
+    ) -> Task<Void, Never> {
+        let id = UUID()
+        monitoringID = id
+        let task = Task { [weak self] in
+            defer {
+                if self?.monitoringID == id { self?.monitoringID = nil }
             }
-        }.value
+            let delays: [Duration] = [1, 2, 4, 8, 16, 30, 60].map {
+                .seconds($0)
+            }
+            var attempt = 0
+            var needsInspection = !afterInspection
+            var initialInspection = onInitialInspection
+            while let self, self.monitoringID == id, !Task.isCancelled {
+                var inspected = true
+                if needsInspection {
+                    inspected = await self.perform(.inspect)
+                    guard !Task.isCancelled,
+                        self.monitoringID == id else { return }
+                }
+                // A cancelled coalesced caller can cancel the shared worker,
+                // but must not end this still-active recovery lifetime.
+                if inspected {
+                    initialInspection?()
+                    initialInspection = nil
+                }
+                if inspected, case .ready = self.state { return }
+                do {
+                    try await self.retryWait(delays[min(attempt, delays.count - 1)])
+                } catch {
+                    return
+                }
+                attempt = min(attempt + 1, delays.count - 1)
+                needsInspection = true
+            }
+        }
+        monitoringTask = task
+        return task
+    }
+
+    private func perform(_ action: Action) async -> Bool {
+        guard !stopped, !Task.isCancelled else { return false }
+        if action != .inspect {
+            revision += 1
+            monitoringID = nil
+            monitoringTask?.cancel()
+            monitoringTask = nil
+            operation?.task.cancel()
+        }
+
+        let current: Operation
+        if action == .inspect, let operation, !operation.task.isCancelled {
+            current = operation
+        } else {
+            let previous = operation?.task
+            let service = self.service
+            let dashboardPort = self.dashboardPort
+            let worker = Task.detached(priority: .utility) {
+                // Cancellation cannot interrupt a synchronous bounded process.
+                // Keep its slot until it exits, even when its result is obsolete.
+                _ = await previous?.value
+                do {
+                    try Task.checkCancellation()
+                    switch action {
+                    case .inspect: break
+                    case .enable: try service.enable(dashboardPort: dashboardPort)
+                    case .disable: try service.disable()
+                    }
+                    try Task.checkCancellation()
+                    let inspection = try service.inspect(dashboardPort: dashboardPort)
+                    try Task.checkCancellation()
+                    if action == .enable, case .ready = inspection {
+                        return Result<TailscaleDashboardInspection,
+                            TailscaleDashboardFailure>.success(inspection)
+                    } else if action == .enable {
+                        return .failure(.verificationFailed)
+                    }
+                    return .success(inspection)
+                } catch let failure as TailscaleDashboardFailure {
+                    return .failure(failure)
+                } catch BoundedProcessError.timedOut {
+                    return .failure(.timedOut)
+                } catch {
+                    return .failure(.commandFailed)
+                }
+            }
+            current = Operation(
+                id: UUID(), action: action, revision: revision, task: worker
+            )
+            operation = current
+        }
+        let result = await withTaskCancellationHandler {
+            await current.task.value
+        } onCancel: {
+            current.task.cancel()
+        }
+        let canPublish = !stopped && !Task.isCancelled
+            && !current.task.isCancelled && revision == current.revision
+        if operation?.id == current.id {
+            operation = nil
+            if canPublish {
+                switch result {
+                case .success(let inspection): apply(inspection)
+                case .failure(let failure):
+                    // An uncertain CLI failure is not evidence to revoke a
+                    // previously accepted host. A confirmed offline node is.
+                    if failure == .offline { publishLocalMode() }
+                    state = .failed(failure)
+                }
+                recordDiagnosticTransition()
+            }
+        }
+        if action != .inspect, canPublish, monitoringEnabled {
+            if case .ready = state { return canPublish }
+            startRecovery(afterInspection: true)
+        }
+        return canPublish
+    }
+
+    private func recordDiagnosticTransition() {
+        guard state != lastDiagnosticState else { return }
+        lastDiagnosticState = state
+        let status: DiagnosticStatus
+        switch state {
+        case .ready: status = .recovered
+        case .signedOut: status = .authenticationRequired
+        case .unavailable, .available: status = .blocked
+        case .failed(.timedOut): status = .timedOut
+        case .failed(.invalidStatus): status = .invalidResponse
+        case .failed(.offline): status = .transient
+        case .failed(.commandFailed), .failed(.verificationFailed): status = .failed
+        case .checking, .enabling, .disabling: return
+        }
+        diagnostics.record(DiagnosticEvent(
+            status: status,
+            category: .tailscaleDashboard
+        ))
     }
 
     private func apply(_ inspection: TailscaleDashboardInspection) {

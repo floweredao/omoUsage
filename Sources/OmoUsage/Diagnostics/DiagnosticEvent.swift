@@ -20,6 +20,7 @@ enum DiagnosticCategory: String, Codable, Sendable {
     case snapshotPublish = "snapshot_publish"
     case webServer = "web_server"
     case webListener = "web_listener"
+    case tailscaleDashboard = "tailscale_dashboard"
     case providerRefresh = "provider_refresh"
     case credentialPersistence = "credential_persistence"
     case desktopSession = "desktop_session"
