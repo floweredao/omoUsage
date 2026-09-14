@@ -821,19 +821,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 category: .webServer
             )
         }
-        Task {
-            await tailscaleDashboardController.refresh()
-            do {
-                try FixtureWebDashboardURLExporter.exportIfRequested(
-                    accessStore: webDashboardAccessStore
-                )
-            } catch {
-                DiagnosticStore.shared.record(
-                    error: error,
-                    category: .webServer
-                )
+        tailscaleDashboardController.startMonitoring(
+            wakeNotifications: NSWorkspace.shared.notificationCenter,
+            onInitialInspection: { [webDashboardAccessStore] in
+                do {
+                    try FixtureWebDashboardURLExporter.exportIfRequested(
+                        accessStore: webDashboardAccessStore
+                    )
+                } catch {
+                    DiagnosticStore.shared.record(
+                        error: error,
+                        category: .webServer
+                    )
+                }
             }
-        }
+        )
 
         hasFinishedLaunching = true
         if opensSettingsOnLaunch {
@@ -863,6 +865,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        tailscaleDashboardController.stopMonitoring()
         webDashboardServer.stop()
         dismissalController.stop()
         refreshScheduler.stop()
