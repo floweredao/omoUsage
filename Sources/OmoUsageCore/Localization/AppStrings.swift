@@ -66,6 +66,8 @@ public enum AppStringKey: String, CaseIterable, Sendable {
     case checking
     case companionRequired
     case waitingForCompanionCredentials
+    case waitingForBrowserLogin
+    case browserLoginFailed
     case moveUp
     case moveDown
     case setupHelp
@@ -253,6 +255,8 @@ public struct AppStrings: Sendable {
         .checking: "확인 중",
         .companionRequired: "컴패니언 필요",
         .waitingForCompanionCredentials: "컴패니언 인증 대기 중",
+        .waitingForBrowserLogin: "브라우저 로그인을 완료하면 사용량을 자동으로 확인합니다.",
+        .browserLoginFailed: "로그인, 사용량 확인 또는 인증 저장에 실패했습니다. 다시 연결해 주세요.",
         .moveUp: "%@ 위로 이동",
         .moveDown: "%@ 아래로 이동",
         .setupHelp: "설정 도움말",
@@ -434,6 +438,8 @@ public struct AppStrings: Sendable {
         .checking: "Checking",
         .companionRequired: "Companion required",
         .waitingForCompanionCredentials: "Waiting for companion credentials",
+        .waitingForBrowserLogin: "Complete browser sign-in to verify usage automatically.",
+        .browserLoginFailed: "Sign-in, usage verification, or credential storage failed. Please reconnect.",
         .moveUp: "Move %@ up",
         .moveDown: "Move %@ down",
         .setupHelp: "Setup Help",

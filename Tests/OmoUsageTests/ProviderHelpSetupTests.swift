@@ -95,13 +95,7 @@ struct ProviderHelpSetupTests {
         )
         #expect(
             try descriptor(.devin).action
-                == .terminal(
-                    TerminalLaunchSpecification(
-                        executable: "devin",
-                        arguments: ["auth", "login"]
-                    ),
-                    fallbackURL: nil
-                )
+                == .browserOAuth
         )
         #expect(
             try descriptor(.grok).action

@@ -89,6 +89,9 @@ struct SettingsView: View {
     private let launchClaudeLogin: (OfficialLoginReceipt) -> Result<
         ProviderSetupOutcome, ProviderSetupError
     >
+    private let authenticateDevin: @MainActor () async throws -> CredentialSnapshot
+    @State private var devinConnection = DevinBrowserConnectionCoordinator()
+    @State private var devinLoginTask: Task<Void, Never>?
     @State private var keyDrafts: [ProviderID: String] = [:]
     @State private var newAccountLabels: [ProviderID: String] = [:]
     @State private var newAccountKeys: [ProviderID: String] = [:]
@@ -128,6 +131,11 @@ struct SettingsView: View {
         launchClaudeLogin: @escaping (OfficialLoginReceipt) -> Result<
             ProviderSetupOutcome, ProviderSetupError
         > = { ProviderSetup.performClaudeLogin(receipt: $0) },
+        authenticateDevin: @escaping @MainActor () async throws -> CredentialSnapshot = {
+            try await DevinBrowserAuthenticationClient().authenticate {
+                NSWorkspace.shared.open($0)
+            }
+        },
         onRegistryChange: @escaping () -> Void,
         onLanguageChange: @escaping () -> Void,
         onPresentationStyleChange:
@@ -162,6 +170,7 @@ struct SettingsView: View {
         self.appUpdateController = appUpdateController
         self.authorizeClaude = authorizeClaude
         self.launchClaudeLogin = launchClaudeLogin
+        self.authenticateDevin = authenticateDevin
         _presentationStyle = State(initialValue: presentationStyle)
         _sideNotchHideDelay = State(initialValue: sideNotchHideDelay)
         _additionCoordinator = State(
@@ -472,7 +481,12 @@ struct SettingsView: View {
                                             .isWaiting,
                                 onCheckAgainConnection:
                                     checkForCodexReconnectCredential,
-                                onCancelConnection: cancelCodexReconnect,
+                                onCancelConnection: {
+                                    if provider == .devin { cancelDevinConnection() }
+                                    else { cancelCodexReconnect() }
+                                },
+                                browserConnectionTarget: devinConnection.pending,
+                                onBrowserConnect: { startDevinConnection(.existing($0)) },
                                 codexPlanMultiplier:
                                     codexPlanMultiplierBinding(
                                         for: provider
@@ -557,7 +571,10 @@ struct SettingsView: View {
                 )
             )
         }
-        .onDisappear { connectionCoordinator.cancelClaudeLogin() }
+        .onDisappear {
+            connectionCoordinator.cancelClaudeLogin()
+            cancelDevinConnection()
+        }
     }
 
     private func refreshPendingConnectionsAfterActivation() async {
@@ -626,7 +643,8 @@ struct SettingsView: View {
     private func connectionControlsDisabled(
         for provider: ProviderID
     ) -> Bool {
-        !ProviderConnectionMutationPolicy.allows(
+        if provider == .devin, devinLoginTask != nil { return true }
+        return !ProviderConnectionMutationPolicy.allows(
             provider: provider,
             pendingAddition: additionCoordinator.pending?.provider
         )
@@ -642,6 +660,12 @@ struct SettingsView: View {
     }
 
     private func startConnection(for provider: ProviderID) {
+        if provider == .devin {
+            startDevinConnection(.existing(
+                AccountProviderID(accountID: .legacy, providerID: .devin)
+            ))
+            return
+        }
         let result: Result<ProviderSetupOutcome, ProviderSetupError>
         if provider == .claude {
             result = connectionCoordinator.startClaudeLogin(
@@ -727,7 +751,7 @@ struct SettingsView: View {
 
     private func reconnectProvider(_ provider: ProviderID) {
         guard !connectionControlsDisabled(for: provider) else { return }
-        if provider == .codex {
+        if provider == .codex || provider == .devin {
             connectProvider(provider)
             return
         }
@@ -786,6 +810,10 @@ struct SettingsView: View {
     }
 
     private func addAccount(for provider: ProviderID) {
+        if provider == .devin {
+            startDevinConnection(.newAccount(newAccountLabels[provider, default: ""]))
+            return
+        }
         apply(
             additionCoordinator.addAccount(
                 provider: provider,
@@ -804,6 +832,7 @@ struct SettingsView: View {
     /// Cancelling drops the pending addition but keeps the alias the user
     /// typed, so retrying does not start from an empty field.
     private func cancelAddition() {
+        if case .newAccount = devinConnection.pending { cancelDevinConnection() }
         additionCoordinator.cancel()
         feedback = nil
     }
@@ -811,13 +840,72 @@ struct SettingsView: View {
     private func additionState(
         for provider: ProviderID
     ) -> ProviderAccountAdditionRowState {
-        ProviderAccountAdditionRowState.resolve(
+        let browserAddition: ProviderID?
+        if case .newAccount = devinConnection.pending { browserAddition = .devin }
+        else { browserAddition = nil }
+        return ProviderAccountAdditionRowState.resolve(
             provider: provider,
-            pendingAddition: additionCoordinator.pending?.provider,
-            guardedReconnectProvider: codexReconnectCoordinator.isWaiting
+            pendingAddition: browserAddition ?? additionCoordinator.pending?.provider,
+            guardedReconnectProvider: devinLoginTask != nil && browserAddition == nil
+                ? .devin : codexReconnectCoordinator.isWaiting
                 ? .codex
                 : nil
         )
+    }
+
+    private func startDevinConnection(_ target: DevinBrowserConnectionTarget) {
+        guard devinLoginTask == nil, additionCoordinator.pending == nil else { return }
+        if case .newAccount(let label) = target,
+           (try? ProviderAccountRegistryController.validatedAccountLabel(label)) == nil {
+            feedback = .key(.accountAdditionFailed)
+            return
+        }
+        feedback = .key(.waitingForBrowserLogin)
+        devinLoginTask = Task { @MainActor in
+            defer { devinLoginTask = nil }
+            do {
+                let identity = try await devinConnection.connect(
+                    target: target,
+                    authenticate: authenticateDevin,
+                    validate: { snapshot in
+                        let identity: AccountProviderID
+                        if case .existing(let existing) = target { identity = existing }
+                        else { identity = AccountProviderID(accountID: .legacy, providerID: .devin) }
+                        return try await DevinUsageProvider(discovery: .live()).fetch(
+                            credential: snapshot.credential(storage: .accountSnapshot(identity)),
+                            now: Date()
+                        )
+                    },
+                    persist: { target, snapshot in
+                        let secret = try snapshot.encodedSecret()
+                        switch target {
+                        case .existing(let identity):
+                            try accountRegistryController.replaceDevinCredential(
+                                for: identity, encodedSecret: secret
+                            )
+                            return identity
+                        case .newAccount(let label):
+                            return try accountRegistryController.addCapturedCompanionAccount(
+                                provider: .devin, label: label, encodedSecret: secret
+                            )
+                        }
+                    }
+                )
+                onRegistryChange()
+                if case .newAccount = target { newAccountLabels[.devin] = "" }
+                await viewModel.retryAccountProvider(identity)
+                if !Task.isCancelled { feedback = nil }
+            } catch is CancellationError {
+                feedback = nil
+            } catch {
+                feedback = .key(.browserLoginFailed)
+            }
+        }
+    }
+
+    private func cancelDevinConnection() {
+        devinLoginTask?.cancel()
+        feedback = nil
     }
 
     /// Re-samples the companion credential without leaving the waiting
@@ -1254,7 +1342,8 @@ private struct ProviderAccountsSection<
                     .accessibilityIdentifier(
                         "account-waiting-\(provider.rawValue)"
                     )
-                    Text(localization.text(.companionCredentialMissing))
+                    Text(localization.text(provider == .devin
+                        ? .waitingForBrowserLogin : .companionCredentialMissing))
                         .font(.system(size: 11.5))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -1268,7 +1357,7 @@ private struct ProviderAccountsSection<
                         .accessibilityIdentifier(
                             "cancel-addition-\(provider.rawValue)"
                         )
-                        Button(
+                        if provider != .devin { Button(
                             localization.text(
                                 .checkAgainForCompanionCredentials
                             ),
@@ -1278,6 +1367,7 @@ private struct ProviderAccountsSection<
                         .accessibilityIdentifier(
                             "check-again-\(provider.rawValue)"
                         )
+                        }
                     }
                     .controlSize(.small)
                 }
@@ -2226,6 +2316,8 @@ private struct ProviderSettingsRow: View {
     let isAwaitingConnectionCredential: Bool
     let onCheckAgainConnection: () -> Void
     let onCancelConnection: () -> Void
+    let browserConnectionTarget: DevinBrowserConnectionTarget?
+    let onBrowserConnect: (AccountProviderID) -> Void
     let codexPlanMultiplier:
         ((AccountProviderID) -> Binding<CodexPlanMultiplier>)?
 
@@ -2303,12 +2395,14 @@ private struct ProviderSettingsRow: View {
         let primary = row.role == .primary
         let availability = viewModel.accountConnectionStates[row.identity]
         let disconnected = viewModel.isDisconnected(row.identity)
-        let waiting = primary && isAwaitingConnectionCredential
+        let waiting = provider == .devin
+            ? browserConnectionTarget == .existing(row.identity)
+            : primary && isAwaitingConnectionCredential
         let suffix = "\(provider.rawValue)-\(row.identity.accountID.rawValue)"
         HStack(spacing: 8) {
             ConnectionBadge(
                 availability: disconnected ? .authenticationRequired : availability,
-                presentation: primary ? connectionPresentation : nil
+                presentation: waiting ? .waitingForCredential : primary ? connectionPresentation : nil
             )
             .accessibilityIdentifier("account-connection-status-\(suffix)")
             Spacer(minLength: 8)
@@ -2322,7 +2416,11 @@ private struct ProviderSettingsRow: View {
             ) { control in
                 switch control {
                 case .connect:
-                    if !primary {
+                    if provider == .devin {
+                        Button(localization.text(.startConnection)) { onBrowserConnect(row.identity) }
+                            .buttonStyle(.bordered)
+                            .accessibilityIdentifier("account-connect-\(suffix)")
+                    } else if !primary {
                         Button(localization.text(.refresh)) {
                             Task { await viewModel.retryAccountProvider(row.identity) }
                         }
@@ -2343,7 +2441,8 @@ private struct ProviderSettingsRow: View {
                     .accessibilityIdentifier("account-disconnect-\(suffix)")
                 case .reconnect:
                     Button(localization.text(.reconnectProvider)) {
-                        if primary && !descriptor.acceptsAPIKey { onReconnect() }
+                        if provider == .devin { onBrowserConnect(row.identity) }
+                        else if primary && !descriptor.acceptsAPIKey { onReconnect() }
                         else {
                             viewModel.reconnectAccountProvider(row.identity)
                             Task { await viewModel.retryAccountProvider(row.identity) }
@@ -2361,12 +2460,13 @@ private struct ProviderSettingsRow: View {
                     .buttonStyle(.borderedProminent)
                     .accessibilityIdentifier("account-retry-connection-\(suffix)")
                 case .checkAgainConnection:
-                    Button(
+                    if provider != .devin { Button(
                         localization.text(.checkAgainForCompanionCredentials),
                         action: onCheckAgainConnection
                     )
                     .buttonStyle(.borderedProminent)
                     .accessibilityIdentifier("account-check-again-connection-\(suffix)")
+                    }
                 case .cancelConnection:
                     Button(localization.text(.cancel), action: onCancelConnection)
                         .buttonStyle(.bordered)
@@ -2374,10 +2474,11 @@ private struct ProviderSettingsRow: View {
                 }
             }
             .controlSize(.small)
-            .disabled(connectionControlsDisabled)
+            .disabled(connectionControlsDisabled && !waiting)
         }
         if waiting {
-            Text(localization.text(.waitingForCompanionCredentials))
+            Text(localization.text(provider == .devin
+                ? .waitingForBrowserLogin : .waitingForCompanionCredentials))
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
                 .accessibilityIdentifier("connection-waiting-\(provider.rawValue)")

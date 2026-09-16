@@ -29,6 +29,11 @@ credential discovery, owns API-key entry where required, and launches each
 companion provider's official connection flow. Adding a non-default account
 captures that provider's currently authenticated credential into an isolated
 OmoUsage Keychain item without rewriting the companion's credential store.
+Devin also supports browser PKCE sign-in without a companion installation.
+Its callback validates state, and OmoUsage verifies usage before storing the
+credential for the selected account. Cancelled or rejected sign-ins do not
+replace that account's credential. Existing Devin CLI and app credentials
+remain discovery sources only when no app-owned credential exists.
 
 The native dashboard offers two mutually exclusive presentation styles.
 `Popover` is the default and preserves the status-item-anchored 320 pt
