@@ -7,6 +7,62 @@ import Testing
 @MainActor
 struct ProviderAccountRegistryControllerTests {
     @Test
+    func browserLoginReplacesOnlySelectedDevinAccountAndReconnectsIt() throws {
+        let fixture = try ControllerFixture()
+        defer { fixture.remove() }
+        let controller = try fixture.makeController()
+        let primary = AccountProviderID(accountID: .legacy, providerID: .devin)
+        let secondary = try controller.addCapturedCompanionAccount(
+            provider: .devin, label: "Other Devin",
+            encodedSecret: ControllerFixture.encodedSecret(provider: .devin, accessToken: "other-token")
+        )
+        try controller.saveDisconnected([primary])
+        let secret = try ControllerFixture.encodedSecret(provider: .devin, accessToken: "browser-token")
+
+        try controller.replaceDevinCredential(for: primary, encodedSecret: secret)
+
+        #expect(fixture.keyStore(.devin, .legacy)?.load() == secret)
+        #expect(controller.registry?.disconnected.contains(primary) == false)
+        #expect(fixture.keyStore(.devin, secondary.accountID)?.load()?.contains("other-token") == true)
+        #expect(try fixture.store.loadOrMigrate().disconnected.contains(primary) == false)
+    }
+
+    @Test
+    func failedDevinCredentialTransactionPreservesOldCredential() throws {
+        let fixture = try ControllerFixture()
+        defer { fixture.remove() }
+        let controller = try fixture.makeController()
+        let identity = try controller.addCapturedCompanionAccount(
+            provider: .devin, label: "Devin account",
+            encodedSecret: ControllerFixture.encodedSecret(provider: .devin, accessToken: "old-browser")
+        )
+        let failing = try fixture.makeController(failingAfter: .secretStaged)
+        let replacement = try ControllerFixture.encodedSecret(provider: .devin, accessToken: "replacement")
+        #expect(throws: ControllerMutationFailure.self) {
+            try failing.replaceDevinCredential(for: identity, encodedSecret: replacement)
+        }
+        #expect(fixture.keyStore(.devin, identity.accountID)?.load()?.contains("old-browser") == true)
+    }
+
+    @Test
+    func devinReplacementRejectsOtherProvidersAndMissingAccounts() throws {
+        let fixture = try ControllerFixture()
+        defer { fixture.remove() }
+        let controller = try fixture.makeController()
+        let secret = try ControllerFixture.encodedSecret(provider: .devin, accessToken: "browser")
+        #expect(throws: ProviderAccountRegistryControllerError.unsupportedProvider) {
+            try controller.replaceDevinCredential(
+                for: AccountProviderID(accountID: .legacy, providerID: .codex), encodedSecret: secret
+            )
+        }
+        #expect(throws: ProviderAccountRegistryControllerError.accountNotFound) {
+            try controller.replaceDevinCredential(
+                for: AccountProviderID(accountID: AccountID(), providerID: .devin), encodedSecret: secret
+            )
+        }
+    }
+
+    @Test
     func addsCapturedAccountsForEveryCompanionProvider() throws {
         let fixture = try ControllerFixture()
         defer { fixture.remove() }
