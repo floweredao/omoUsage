@@ -344,6 +344,35 @@ final class ProviderAccountRegistryController {
         }
     }
 
+    func replaceDevinCredential(
+        for identity: AccountProviderID,
+        encodedSecret: String
+    ) throws {
+        guard identity.providerID == .devin else {
+            throw ProviderAccountRegistryControllerError.unsupportedProvider
+        }
+        _ = try CredentialSnapshot(encodedSecret: encodedSecret, provider: .devin)
+        guard persistenceEnabled else {
+            throw ProviderAccountRegistryControllerError.persistenceUnavailable
+        }
+        registry = try mutationCoordinator.writeSecret(identity: identity, key: encodedSecret) { current in
+            guard current.accounts.contains(where: { $0.id == identity.accountID }),
+                  identity.accountID == .legacy || current.providerReferences.contains(identity)
+            else {
+                throw ProviderAccountRegistryControllerError.accountNotFound
+            }
+            return ProviderAccountRegistry(
+                version: current.version,
+                migrationVersion: current.migrationVersion,
+                accounts: current.accounts,
+                displayOrder: current.displayOrder,
+                disconnected: current.disconnected.filter { $0 != identity },
+                providerReferences: current.providerReferences
+            )
+        }
+        recoveryState = .ready
+    }
+
     func ensureLegacyAPIKeyReference(for provider: ProviderID) throws {
         _ = try requireRegistry()
         try requireAPIKeyProvider(provider)

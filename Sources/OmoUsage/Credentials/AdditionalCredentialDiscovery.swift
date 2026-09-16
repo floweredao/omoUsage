@@ -182,15 +182,12 @@ extension CredentialDiscovery {
     func devin(
         accountID: AccountID = .legacy
     ) throws -> DiscoveredCredential {
+        let identity = AccountProviderID(accountID: accountID, providerID: .devin)
+        if let snapshot = try snapshotStore.snapshot(for: identity) {
+            return snapshot.credential(storage: .accountSnapshot(identity))
+        }
         guard accountID == .legacy else {
-            // The captured snapshot keeps the account's own server URL in
-            // `accountID`, so a self-hosted account keeps its host.
-            return try snapshotCredential(
-                for: .devin,
-                accountID: accountID,
-                now: .distantPast,
-                allowingExpired: true
-            )
+            throw CredentialDiscoveryError.notFound(.devin)
         }
         let dataDirectory: URL
         if

@@ -10,6 +10,7 @@
 		0599F5C016D60F67403C42C2 /* CopilotUsageProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5569E48222BF50022CEA5B0 /* CopilotUsageProvider.swift */; };
 		08E130090A54B77649BBF5CF /* ProviderHTTP.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5026452A4FFB4EC36C26BBF8 /* ProviderHTTP.swift */; };
 		098A1A499BB09A93EFCAC141 /* RefreshTimestampPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F31A95484F3E7C27B3246C59 /* RefreshTimestampPresenter.swift */; };
+		0A961ABD79A5BED151A58F0F /* DevinBrowserAuthenticationListener.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4B872B2A57A896FFDF03140 /* DevinBrowserAuthenticationListener.swift */; };
 		0DB3F13EF62480568A7A6303 /* SideNotchPanelController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84D95E7F3D9E2DDFEE8CE404 /* SideNotchPanelController.swift */; };
 		0FADE3BDD279957305E58A95 /* LaunchAtLoginController.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED1D70323A1B8E46FBA98247 /* LaunchAtLoginController.swift */; };
 		1160F94B0162838844F9EF0C /* index.html in Resources */ = {isa = PBXBuildFile; fileRef = D22DA425B69FC84A83C77935 /* index.html */; };
@@ -64,6 +65,7 @@
 		90DCF0C3402F0974561CA955 /* UsageDashboardViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDD3136D2B697F932F2F4157 /* UsageDashboardViewModel.swift */; };
 		9366A7898546A6A9713A7FBD /* ProviderMutationCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2A9B80D74389B95B9D955E3 /* ProviderMutationCoordinator.swift */; };
 		9BEA667587DEC3895D1D4B45 /* LocalDataAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56DAA835165D9917F4E0C489 /* LocalDataAccess.swift */; };
+		9DD31002064EE7269C23BD58 /* DevinBrowserAuthentication.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF9D6DDBF0F39BD9CA0B4AE7 /* DevinBrowserAuthentication.swift */; };
 		A10F7E3BDA4E51B05C061B74 /* BoundedProcessRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 945BC4BBC002A094B10D8A0B /* BoundedProcessRunner.swift */; };
 		A9F96F5F80FC0EAC299BBB6F /* WebDashboardAssets.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0F4EC80CCE9E554E5F97735 /* WebDashboardAssets.swift */; };
 		AE3D66BA181CF528785B9141 /* CodexPlanMultiplierStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA2DFDCC52C819D174BBECE1 /* CodexPlanMultiplierStore.swift */; };
@@ -84,6 +86,7 @@
 		D6712313D01B279FD91F9573 /* SecurityKeychainReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EABF919950219809021F3EC /* SecurityKeychainReader.swift */; };
 		D6D3219CE75A0F7941AB807C /* ClaudeDesktopSessionReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 035DD26480869B2DDFE54E8C /* ClaudeDesktopSessionReader.swift */; };
 		D82EE3B108EEA1BDA4026430 /* GrokUsageProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75B31A35E61DC72262265D84 /* GrokUsageProvider.swift */; };
+		D86DDA30A723000468E07D83 /* DevinBrowserConnectionCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0C17CBEEABC6FE304881A7E /* DevinBrowserConnectionCoordinator.swift */; };
 		DA299BE40BC3DE1D20D9F8E0 /* claude.svg in Resources */ = {isa = PBXBuildFile; fileRef = A081648FEC2B1C86F53B4A00 /* claude.svg */; };
 		DC4FC34D73444DD0D4A3E003 /* ProviderFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90AB4BC350C05CBD76F7B6CD /* ProviderFactory.swift */; };
 		DE3B1178445FAC9DD34755D6 /* ProviderOrderingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EE0E4EACC8A1D3CF2749BBC /* ProviderOrderingView.swift */; };
@@ -202,8 +205,11 @@
 		A0F4EC80CCE9E554E5F97735 /* WebDashboardAssets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebDashboardAssets.swift; sourceTree = "<group>"; };
 		A8DA9D36A26BE61B88ED41BB /* UsageModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageModels.swift; sourceTree = "<group>"; };
 		AE0964670AAFD31CF7602CFF /* Version.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Version.xcconfig; sourceTree = "<group>"; };
+		AF9D6DDBF0F39BD9CA0B4AE7 /* DevinBrowserAuthentication.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevinBrowserAuthentication.swift; sourceTree = "<group>"; };
 		BBE0F4DB355CE64D19098317 /* Redactor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Redactor.swift; sourceTree = "<group>"; };
 		C3D3D4A69F4FA62AD31142D2 /* SingleInstanceController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SingleInstanceController.swift; sourceTree = "<group>"; };
+		C4B872B2A57A896FFDF03140 /* DevinBrowserAuthenticationListener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevinBrowserAuthenticationListener.swift; sourceTree = "<group>"; };
+		D0C17CBEEABC6FE304881A7E /* DevinBrowserConnectionCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevinBrowserConnectionCoordinator.swift; sourceTree = "<group>"; };
 		D0C4BE01E14207E07EE49590 /* ProviderContractCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderContractCatalog.swift; sourceTree = "<group>"; };
 		D10C4986CF84E3A839055E01 /* ZAIUsageProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZAIUsageProvider.swift; sourceTree = "<group>"; };
 		D14D433914F0A08A93F1ECD9 /* SecurityKeychainWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecurityKeychainWriter.swift; sourceTree = "<group>"; };
@@ -458,6 +464,9 @@
 				25A9BD2A6FB5200F937748B8 /* AppUpdateController.swift */,
 				DA2DFDCC52C819D174BBECE1 /* CodexPlanMultiplierStore.swift */,
 				6EE503F1840C89846ED927FF /* DashboardPresentationStyleStore.swift */,
+				AF9D6DDBF0F39BD9CA0B4AE7 /* DevinBrowserAuthentication.swift */,
+				C4B872B2A57A896FFDF03140 /* DevinBrowserAuthenticationListener.swift */,
+				D0C17CBEEABC6FE304881A7E /* DevinBrowserConnectionCoordinator.swift */,
 				07A191A0AA2679DA39909983 /* ProviderAccountRegistryController.swift */,
 				12880EC739A2114067FFC005 /* ProviderAccountStore.swift */,
 				904BE1BBDC988ADD8BE50A13 /* ProviderAPIKeyStore.swift */,
@@ -650,6 +659,9 @@
 				E3D4C74035B8B1823B6D6353 /* DashboardLayout.swift in Sources */,
 				DF7EFE43A9DBE736F8CAF4AA /* DashboardPresentationStyleStore.swift in Sources */,
 				24785217C15545587AFE7E48 /* DashboardView.swift in Sources */,
+				9DD31002064EE7269C23BD58 /* DevinBrowserAuthentication.swift in Sources */,
+				0A961ABD79A5BED151A58F0F /* DevinBrowserAuthenticationListener.swift in Sources */,
+				D86DDA30A723000468E07D83 /* DevinBrowserConnectionCoordinator.swift in Sources */,
 				C4EA5C82813C76747D7861AB /* DevinUsageProvider.swift in Sources */,
 				6CC9EB7C2A3E0A03B5A4FE6E /* DiagnosticEvent.swift in Sources */,
 				4545BD1043566A0598150B91 /* DiagnosticStore.swift in Sources */,

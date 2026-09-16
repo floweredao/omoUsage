@@ -22,6 +22,10 @@ struct DevinUsageProvider: UsageProvider {
 
     func fetch(now: Date) async throws -> ProviderUsage {
         let credential = try discovery.devin(accountID: accountID)
+        return try await fetch(credential: credential, now: now)
+    }
+
+    func fetch(credential: DiscoveredCredential, now: Date) async throws -> ProviderUsage {
         let endpoint = ProviderContractCatalog.endpoint(
             .devinUserStatus,
             for: id
@@ -50,17 +54,24 @@ struct DevinUsageProvider: UsageProvider {
             forHTTPHeaderField: "Content-Type"
         )
         request.setValue("1", forHTTPHeaderField: "Connect-Protocol-Version")
+        var metadata = [
+            "apiKey": credential.accessToken,
+            "ideName": "devin",
+            "ideVersion": "1.108.2",
+            "extensionName": "devin",
+            "extensionVersion": "1.108.2",
+            "locale": "ko"
+        ]
+        if credential.accessToken.hasPrefix("devin-session-token$") {
+            metadata["ideName"] = "devin-cli"
+            metadata["ideType"] = "chisel"
+            metadata["extensionName"] = "chisel"
+            metadata["ideVersion"] = "3000.6.2"
+            metadata["extensionVersion"] = "3000.6.2"
+            metadata["os"] = "darwin"
+        }
         request.httpBody = try JSONSerialization.data(
-            withJSONObject: [
-                "metadata": [
-                    "apiKey": credential.accessToken,
-                    "ideName": "devin",
-                    "ideVersion": "1.108.2",
-                    "extensionName": "devin",
-                    "extensionVersion": "1.108.2",
-                    "locale": "ko"
-                ]
-            ]
+            withJSONObject: ["metadata": metadata]
         )
         let data = try await http.data(for: request, endpoint: endpoint)
         return try endpoint.schemaChecked {
