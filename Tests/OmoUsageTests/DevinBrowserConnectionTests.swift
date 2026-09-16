@@ -127,6 +127,27 @@ struct DevinBrowserConnectionTests {
     }
 
     @Test
+    func inaccessibleBrowserKeychainCannotFallBackToCompanion() throws {
+        let fixture = try DevinCredentialFixture()
+        defer { fixture.remove() }
+        try fixture.writeCompanion("unrelated-companion")
+        let discovery = CredentialDiscovery(
+            paths: CredentialPaths(
+                claude: fixture.home.appending(path: "claude"),
+                codex: fixture.home.appending(path: "codex")
+            ),
+            environment: [:],
+            keychain: DevinEmptyKeychain(),
+            providerKeychain: DevinDeniedKeychain(),
+            homeDirectory: fixture.home,
+            commandPaths: []
+        )
+        #expect(throws: CredentialDiscoveryError.notFound(.devin)) {
+            try discovery.devin()
+        }
+    }
+
+    @Test
     func browserAccountsRemainIsolatedFromPrimaryAndCompanion() throws {
         let fixture = try DevinCredentialFixture()
         defer { fixture.remove() }
@@ -187,6 +208,13 @@ private struct DevinCredentialFixture {
 
 private struct DevinEmptyKeychain: KeychainReading {
     func value(service: String, account: String) throws -> String? { nil }
+}
+
+private struct DevinDeniedKeychain: ProviderKeychain {
+    struct Denied: Error {}
+    func value(service: String, account: String) throws -> String? { throw Denied() }
+    func set(_ value: String, service: String, account: String) throws { throw Denied() }
+    func remove(service: String, account: String) throws { throw Denied() }
 }
 
 private final class DevinBrowserQuotaProtocol: URLProtocol {

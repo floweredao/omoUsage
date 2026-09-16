@@ -38,6 +38,7 @@ enum ProviderSetupAction: Equatable, Sendable {
     )
     case web(URL)
     case apiKey
+    case browserOAuth
 }
 
 struct ProviderSetupDescriptor: Equatable, Sendable {
@@ -747,18 +748,16 @@ enum ProviderSetup {
                 )
             )
         case .devin:
-            terminal(
-                instruction: "devin auth login 실행",
-                executable: "devin",
-                arguments: ["auth", "login"],
-                opensFallback: false,
+            ProviderSetupDescriptor(
+                instruction: "브라우저에서 Devin 로그인",
+                action: .browserOAuth,
                 help: help(
                     provider,
                     [
-                        "연결 시작을 눌러 Devin CLI 인증을 진행하세요.",
-                        "OmoUsage는 Devin이 저장한 로컬 인증값을 자동으로 찾습니다."
+                        "연결 시작을 눌러 브라우저에서 Devin에 로그인하세요.",
+                        "CLI 설치 없이 사용량을 확인하고 인증값을 이 Mac의 Keychain에 저장합니다."
                     ],
-                    "https://docs.devin.ai/cli"
+                    "https://app.devin.ai/settings/plans"
                 )
             )
         case .grok:
@@ -864,6 +863,9 @@ enum ProviderSetup {
                 return .failure(.unableToOpen(url))
             }
         case .apiKey:
+            return .failure(.unavailable(provider))
+        case .browserOAuth:
+            // Browser authentication is asynchronous and owned by Settings.
             return .failure(.unavailable(provider))
         }
     }
