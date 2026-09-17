@@ -27,9 +27,9 @@ struct ReleasePipelineTests {
             )
             previousIndex = range.upperBound
         }
-        #expect(result.output.contains("OmoUsage-0.1.19.zip"))
-        #expect(result.output.contains("OmoUsage-0.1.19.sha256"))
-        #expect(result.output.contains("OmoUsage-0.1.19-manifest.txt"))
+        #expect(result.output.contains("OmoUsage-0.1.20.zip"))
+        #expect(result.output.contains("OmoUsage-0.1.20.sha256"))
+        #expect(result.output.contains("OmoUsage-0.1.20-manifest.txt"))
         #expect(result.output.contains("SOURCE_COMMIT=\(try sourceCommit())"))
     }
 
@@ -309,7 +309,7 @@ struct ReleasePipelineTests {
             "OMO_USAGE_TEAM_IDENTIFIER": "TESTTEAM",
             "OMO_USAGE_NOTARY_PROFILE": "synthetic-notary-profile",
             "OMO_USAGE_NOTARY_KEYCHAIN": "/tmp/synthetic.keychain-db",
-            "OMO_USAGE_RELEASE_REF": "refs/tags/v0.1.19"
+            "OMO_USAGE_RELEASE_REF": "refs/tags/v0.1.20"
         ]
     }
 
