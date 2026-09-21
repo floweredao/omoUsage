@@ -15,6 +15,7 @@ enum ProviderEndpointPurpose: String, CaseIterable, Sendable {
     case grokSettings = "grok.settings"
     case grokOpenIDConfiguration = "grok.openid-configuration"
     case grokTokenRefresh = "grok.token-refresh"
+    case kiroUsageLimits = "kiro.usage-limits"
     case openCodeGoUsage = "opencode.go-usage"
     case openRouterCredits = "openrouter.credits"
     case openRouterKey = "openrouter.key"

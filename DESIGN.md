@@ -158,7 +158,7 @@ other privileged controls remain native-only.
 ## 4. Layout
 
 - Provider order follows OpenUsage: Claude, Codex, Cursor, Antigravity,
-  Copilot, Devin, Grok, OpenCode, OpenRouter, Z.ai.
+  Copilot, Devin, Grok, Kiro, OpenCode, OpenRouter, Z.ai.
 - Side-notch mode pins a 6 pt hidden handle or 56 pt revealed rail to
   `NSScreen.visibleFrame.maxX`, centers it vertically with 20 pt minimum top
   and bottom margins, and grows to 344 pt inward without moving its right

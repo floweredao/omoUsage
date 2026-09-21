@@ -52,6 +52,7 @@ public enum ProviderID: String, CaseIterable, Codable, Sendable {
     case copilot
     case devin
     case grok
+    case kiro
     case opencode
     case openrouter
     case zai
@@ -65,6 +66,7 @@ public enum ProviderID: String, CaseIterable, Codable, Sendable {
         case .copilot: "Copilot"
         case .devin: "Devin"
         case .grok: "Grok"
+        case .kiro: "Kiro"
         case .opencode: "OpenCode"
         case .openrouter: "OpenRouter"
         case .zai: "Z.ai"
@@ -80,6 +82,7 @@ public enum ProviderID: String, CaseIterable, Codable, Sendable {
         case .copilot: "∞"
         case .devin: "D"
         case .grok: "G"
+        case .kiro: "K"
         case .opencode: "O"
         case .openrouter: "R"
         case .zai: "Z"

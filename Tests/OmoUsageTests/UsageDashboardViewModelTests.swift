@@ -303,6 +303,7 @@ struct UsageDashboardViewModelTests {
                     .copilot,
                     .devin,
                     .grok,
+                    .kiro,
                     .opencode,
                     .openrouter,
                     .zai

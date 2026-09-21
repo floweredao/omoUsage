@@ -241,10 +241,10 @@ struct ProviderAPIKeyStore: Sendable {
         case .zai:
             fileName = "zai.json"
             environmentNames = ["ZAI_API_KEY", "GLM_API_KEY"]
-        case .devin:
-            // Browser credentials use the same exact account-scoped store
+        case .devin, .kiro:
+            // Imported credentials use the same exact account-scoped store
             // and transaction journal as captured companion snapshots.
-            fileName = "devin.json"
+            fileName = "\(provider.rawValue).json"
             environmentNames = []
         default:
             guard accountID != .legacy else { return nil }

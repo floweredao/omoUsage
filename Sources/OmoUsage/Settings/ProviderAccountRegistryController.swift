@@ -344,6 +344,66 @@ final class ProviderAccountRegistryController {
         }
     }
 
+    func preserveLegacyKiroCredentialIfAbsent(_ encodedSecret: String) throws {
+        _ = try requireRegistry()
+        guard persistenceEnabled else {
+            throw ProviderAccountRegistryControllerError.persistenceUnavailable
+        }
+        guard let store = credentialSnapshotStore() else {
+            throw ProviderAccountRegistryControllerError.keyStoreUnavailable
+        }
+        let identity = AccountProviderID(accountID: .legacy, providerID: .kiro)
+        guard try store.snapshot(for: identity) == nil else { return }
+        try store.save(
+            CredentialSnapshot(encodedSecret: encodedSecret, provider: .kiro),
+            for: identity
+        )
+    }
+
+    /// An explicit import renews a captured login, never changes its profile.
+    func importKiroCredential(
+        _ encodedSecret: String,
+        for identity: AccountProviderID,
+        now: Date
+    ) throws {
+        guard identity.providerID == .kiro else {
+            throw ProviderAccountRegistryControllerError.unsupportedProvider
+        }
+        let snapshot = try CredentialSnapshot(encodedSecret: encodedSecret, provider: .kiro)
+        guard let profile = snapshot.accountReference,
+              let expiresAt = snapshot.expiresAt, expiresAt > now,
+              !snapshot.accessToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw ProviderAccountRegistryControllerError.credentialUnavailable
+        }
+        _ = try CredentialDiscovery.kiroEndpoint(profileARN: profile)
+        guard persistenceEnabled else {
+            throw ProviderAccountRegistryControllerError.persistenceUnavailable
+        }
+        guard let store = credentialSnapshotStore() else {
+            throw ProviderAccountRegistryControllerError.keyStoreUnavailable
+        }
+        registry = try mutationCoordinator.writeSecret(identity: identity, key: encodedSecret) { current in
+            guard current.accounts.contains(where: { $0.id == identity.accountID }),
+                  identity.accountID == .legacy || current.providerReferences.contains(identity) else {
+                throw ProviderAccountRegistryControllerError.accountNotFound
+            }
+            let stored = try store.snapshot(for: identity)
+            guard (stored == nil && identity.accountID == .legacy)
+                    || stored?.accountReference == profile else {
+                throw ProviderAccountRegistryControllerError.credentialUnavailable
+            }
+            return ProviderAccountRegistry(
+                version: current.version,
+                migrationVersion: current.migrationVersion,
+                accounts: current.accounts,
+                displayOrder: current.displayOrder,
+                disconnected: current.disconnected.filter { $0 != identity },
+                providerReferences: current.providerReferences
+            )
+        }
+        recoveryState = .ready
+    }
+
     func replaceDevinCredential(
         for identity: AccountProviderID,
         encodedSecret: String

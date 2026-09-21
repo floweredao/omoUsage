@@ -1,7 +1,7 @@
 # OmoUsage
 
-A native macOS menu-bar app that shows how much quota you have left across ten
-coding-AI providers, in one popover, without asking you to log in again.
+A native macOS menu-bar app that shows how much quota you have left across eleven
+coding-AI providers in one popover, reusing existing logins where possible.
 
 <img src="Docs/screenshot.png" width="346" alt="OmoUsage popover showing remaining Codex and Claude Code quota">
 
@@ -21,6 +21,7 @@ endpoint and renders quota, spend, credit, count, and informational metrics.
 | Copilot | `copilot login` or `gh auth login` | `copilot-cli` keychain item, `~/.config/gh/hosts.yml`, or an editor's OAuth token |
 | Devin | `devin auth login` | `~/.local/share/devin/credentials.toml` (honours `XDG_DATA_HOME`) |
 | Grok | `grok login` | `~/.grok/auth.json` |
+| Kiro | `kiro-cli login` | `~/Library/Application Support/kiro-cli/data.sqlite3` (honours absolute `KIRO_DATA_DIR`) |
 | OpenCode | `opencode auth login` or API key in Settings | OpenCode's `auth.json` plus local usage records, or an OmoUsage-owned Keychain item |
 | OpenRouter | API key in Settings | OmoUsage-owned Keychain item |
 | Z.ai | API key in Settings | OmoUsage-owned Keychain item |
@@ -31,6 +32,15 @@ and are deleted only after registry and Keychain state converge. Everything
 else reuses an existing login. Providers you are not signed in to are omitted.
 
 ## Requirements
+
+Kiro uses the CLI's regional `GetUsageLimits` service in `us-east-1` and
+`eu-central-1`. This is an undocumented service API and may change with Kiro.
+OmoUsage reads the CLI database without modifying it and does not rotate its
+refresh tokens. If authentication expires, sign in to the same Kiro profile
+with `kiro-cli login`, then choose **Import Credential** on that account in
+Settings. Captured accounts never fall back to another CLI login.
+When the response mixes bonus or trial credits with plan usage, OmoUsage
+shows the balance as unavailable instead of inventing a remaining percentage.
 
 - macOS 15 or later
 - Swift 6.1 toolchain (Xcode 26) to build

@@ -7,6 +7,84 @@ import Testing
 @MainActor
 struct ProviderAccountAdditionCoordinatorTests {
     @Test
+    func kiroTokenRenewalDoesNotAddTheSameProfileAgain() throws {
+        let kiro = try #require(ProviderID(rawValue: "kiro"))
+        let fixture = try AdditionFixture()
+        defer { fixture.remove() }
+        let coordinator = fixture.makeCoordinator()
+        let original = try CredentialSnapshot(
+            provider: kiro, accessToken: "kiro-original", refreshToken: nil,
+            accountReference: "arn:aws:codewhisperer:us-east-1:123456789012:profile/original",
+            planName: nil, expiresAt: nil, source: .file
+        ).encodedSecret()
+        let renewed = try CredentialSnapshot(
+            provider: kiro, accessToken: "kiro-renewed", refreshToken: nil,
+            accountReference: "arn:aws:codewhisperer:us-east-1:123456789012:profile/original",
+            planName: nil, expiresAt: nil, source: .file
+        ).encodedSecret()
+        fixture.capture[kiro] = .success(original)
+        #expect(coordinator.addAccount(provider: kiro, label: "Work", key: nil) == .waitingForCompanion)
+        fixture.capture[kiro] = .success(renewed)
+        #expect(coordinator.checkAgain() == .credentialUnchanged)
+        #expect(fixture.controller.accounts.isEmpty)
+    }
+
+    @Test
+    func kiroAdditionPinsPrimaryBeforeSwitchingCompanionProfile() throws {
+        let kiro = try #require(ProviderID(rawValue: "kiro"))
+        let fixture = try AdditionFixture()
+        defer { fixture.remove() }
+        let coordinator = fixture.makeCoordinator()
+        let original = try CredentialSnapshot(
+            provider: kiro, accessToken: "kiro-original", refreshToken: nil,
+            accountReference: "arn:aws:codewhisperer:us-east-1:123456789012:profile/original",
+            planName: nil, expiresAt: nil, source: .file
+        ).encodedSecret()
+        let other = try CredentialSnapshot(
+            provider: kiro, accessToken: "kiro-other", refreshToken: nil,
+            accountReference: "arn:aws:codewhisperer:us-east-1:123456789012:profile/other",
+            planName: nil, expiresAt: nil, source: .file
+        ).encodedSecret()
+        fixture.capture[kiro] = .success(original)
+        #expect(coordinator.addAccount(provider: kiro, label: "Work", key: nil) == .waitingForCompanion)
+        #expect(fixture.keyStore(kiro, .legacy)?.load() == original)
+        fixture.capture[kiro] = .success(other)
+        #expect(coordinator.checkAgain() == .addedAccount("Work"))
+        #expect(fixture.keyStore(kiro, .legacy)?.load() == original)
+        let added = try #require(fixture.controller.accounts.first)
+        #expect(fixture.keyStore(kiro, added.accountProviderID.accountID)?.load() == other)
+    }
+
+    @Test
+    func kiroExplicitImportRenewsOnlyTheSelectedProfile() throws {
+        let kiro = try #require(ProviderID(rawValue: "kiro"))
+        let fixture = try AdditionFixture()
+        defer { fixture.remove() }
+        let now = Date(timeIntervalSince1970: 1_790_000_000)
+        func secret(_ token: String, profile: String) throws -> String {
+            try CredentialSnapshot(
+                provider: kiro, accessToken: token, refreshToken: nil,
+                accountReference: "arn:aws:codewhisperer:us-east-1:123456789012:profile/\(profile)",
+                planName: nil, expiresAt: now.addingTimeInterval(3_600), source: .file
+            ).encodedSecret()
+        }
+        let original = try secret("kiro-original", profile: "original")
+        let renewed = try secret("kiro-renewed", profile: "original")
+        let other = try secret("kiro-other", profile: "other")
+        let account = try fixture.controller.addCapturedCompanionAccount(
+            provider: kiro, label: "Work", encodedSecret: original
+        )
+        let identity = account
+        try fixture.controller.importKiroCredential(renewed, for: identity, now: now)
+        #expect(fixture.keyStore(kiro, account.accountID)?.load() == renewed)
+        #expect(throws: ProviderAccountRegistryControllerError.credentialUnavailable) {
+            try fixture.controller.importKiroCredential(other, for: identity, now: now)
+        }
+        #expect(fixture.keyStore(kiro, account.accountID)?.load() == renewed)
+        #expect(fixture.keyStore(kiro, .legacy)?.load() == nil)
+    }
+
+    @Test
     func launchesCompanionBeforePersistingAnyAccount() throws {
         let fixture = try AdditionFixture()
         defer { fixture.remove() }

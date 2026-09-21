@@ -432,6 +432,8 @@ final class ProviderAccountAdditionCoordinator {
                 try controller.preserveLegacyCodexCredentialIfAbsent(
                     encodedSecret
                 )
+            } else if provider == .kiro {
+                try controller.preserveLegacyKiroCredentialIfAbsent(encodedSecret)
             }
             baseline = Self.additionFingerprint(encodedSecret, provider: provider)
         } catch CredentialDiscoveryError.notFound {
@@ -527,8 +529,8 @@ final class ProviderAccountAdditionCoordinator {
     }
 
     private static func additionFingerprint(_ secret: String, provider: ProviderID) -> String {
-        if provider == .codex,
-           let snapshot = try? CredentialSnapshot(encodedSecret: secret, provider: .codex),
+        if provider == .codex || provider == .kiro,
+           let snapshot = try? CredentialSnapshot(encodedSecret: secret, provider: provider),
            let identity = snapshot.accountReference, !identity.isEmpty {
             return fingerprint(identity)
         }
@@ -773,6 +775,22 @@ enum ProviderSetup {
                         "OmoUsage는 Grok의 로컬 auth.json을 자동으로 찾습니다."
                     ],
                     "https://docs.x.ai/build/cli/reference"
+                )
+            )
+        case .kiro:
+            terminal(
+                instruction: "kiro-cli login 실행",
+                executable: "kiro-cli",
+                arguments: ["login"],
+                opensFallback: false,
+                help: help(
+                    provider,
+                    [
+                        "Kiro CLI를 설치하고 kiro-cli login으로 로그인하세요.",
+                        "OmoUsage는 Kiro CLI의 로컬 인증값으로 월간 크레딧을 조회합니다.",
+                        "인증이 만료되면 같은 Kiro 계정으로 로그인한 뒤 인증 가져오기를 누르세요."
+                    ],
+                    "https://kiro.dev/docs/cli/"
                 )
             )
         case .opencode:

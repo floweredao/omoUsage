@@ -16,6 +16,7 @@ struct ProviderRosterTests {
                 .copilot,
                 .devin,
                 .grok,
+                .kiro,
                 .opencode,
                 .openrouter,
                 .zai

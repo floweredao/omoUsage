@@ -32,6 +32,9 @@ enum ProviderContractCatalog {
             .opencode: [
                 .get(.openCodeGoUsage, ["Authorization", "Accept"])
             ],
+            .kiro: [
+                .post(.kiroUsageLimits, ["Authorization", "Content-Type", "X-Amz-Target"])
+            ],
             .openrouter: [
                 .get(.openRouterCredits, ["Authorization", "Accept"]),
                 .get(.openRouterKey, ["Authorization", "Accept"])

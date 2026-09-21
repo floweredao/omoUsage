@@ -242,6 +242,7 @@ struct WebDashboardServerTests {
                 "copilot",
                 "devin",
                 "grok",
+                "kiro",
                 "opencode",
                 "openrouter",
                 "zai"

@@ -307,6 +307,8 @@ struct ProviderHTTP: Sendable {
         let mime = contentType.split(separator: ";", maxSplits: 1).first?
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
-        return mime == "application/json" || mime?.hasSuffix("+json") == true
+        return mime == "application/json"
+            || mime == "application/x-amz-json-1.0"
+            || mime?.hasSuffix("+json") == true
     }
 }

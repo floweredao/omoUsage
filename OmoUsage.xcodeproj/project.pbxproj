@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		058497388EA5ADA9A11CF5F7 /* KiroCredentialDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = B58F3EEA41813039298DC387 /* KiroCredentialDiscovery.swift */; };
 		0599F5C016D60F67403C42C2 /* CopilotUsageProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5569E48222BF50022CEA5B0 /* CopilotUsageProvider.swift */; };
 		08E130090A54B77649BBF5CF /* ProviderHTTP.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5026452A4FFB4EC36C26BBF8 /* ProviderHTTP.swift */; };
 		098A1A499BB09A93EFCAC141 /* RefreshTimestampPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F31A95484F3E7C27B3246C59 /* RefreshTimestampPresenter.swift */; };
@@ -25,6 +26,7 @@
 		2A5A76CECF983C678675A9D6 /* ClaudeSafeStorageKeychainReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E2DF97B8FE48D28C14CD0C0 /* ClaudeSafeStorageKeychainReader.swift */; };
 		2D2BB0F1375CA855D93301EE /* OmoUsageCore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 194AED28C9C20A8BDA503544 /* OmoUsageCore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		2DCD16665AC3EDDDDDF21AC5 /* antigravity.svg in Resources */ = {isa = PBXBuildFile; fileRef = 29E125B432F6AF3B9025F9C9 /* antigravity.svg */; };
+		323623D130654D3674CADAB5 /* KiroUsageProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26824BF739E32100B72B1803 /* KiroUsageProvider.swift */; };
 		33A51AED460468A6840802CC /* OmoUsageCore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 194AED28C9C20A8BDA503544 /* OmoUsageCore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		3852FAF9A3344DFB927A4FE3 /* ProviderVisualStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5043503948695FCA371FC1C2 /* ProviderVisualStyle.swift */; };
 		3A0FB04FFE0809B98130C2DE /* AntigravityUsageProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C3BFF00D4540808AB1C860C /* AntigravityUsageProvider.swift */; };
@@ -160,6 +162,7 @@
 		1EE0E4EACC8A1D3CF2749BBC /* ProviderOrderingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderOrderingView.swift; sourceTree = "<group>"; };
 		25A9BD2A6FB5200F937748B8 /* AppUpdateController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUpdateController.swift; sourceTree = "<group>"; };
 		25DDBD14AFA75AB0522C6FDD /* CursorUsageProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CursorUsageProvider.swift; sourceTree = "<group>"; };
+		26824BF739E32100B72B1803 /* KiroUsageProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KiroUsageProvider.swift; sourceTree = "<group>"; };
 		2839AE5CADDD8BD525BF4E86 /* OmoUsageMobile.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = OmoUsageMobile.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		29E125B432F6AF3B9025F9C9 /* antigravity.svg */ = {isa = PBXFileReference; path = antigravity.svg; sourceTree = "<group>"; };
 		2FF0322D5D63B947145ED7D6 /* OmoUsageMobileApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OmoUsageMobileApp.swift; sourceTree = "<group>"; };
@@ -206,6 +209,7 @@
 		A8DA9D36A26BE61B88ED41BB /* UsageModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageModels.swift; sourceTree = "<group>"; };
 		AE0964670AAFD31CF7602CFF /* Version.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Version.xcconfig; sourceTree = "<group>"; };
 		AF9D6DDBF0F39BD9CA0B4AE7 /* DevinBrowserAuthentication.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevinBrowserAuthentication.swift; sourceTree = "<group>"; };
+		B58F3EEA41813039298DC387 /* KiroCredentialDiscovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KiroCredentialDiscovery.swift; sourceTree = "<group>"; };
 		BBE0F4DB355CE64D19098317 /* Redactor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Redactor.swift; sourceTree = "<group>"; };
 		C3D3D4A69F4FA62AD31142D2 /* SingleInstanceController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SingleInstanceController.swift; sourceTree = "<group>"; };
 		C4B872B2A57A896FFDF03140 /* DevinBrowserAuthenticationListener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevinBrowserAuthenticationListener.swift; sourceTree = "<group>"; };
@@ -276,6 +280,7 @@
 				3DABB14A0BEE73305B501919 /* DevinUsageProvider.swift */,
 				704F0659E7DABE1646D48DE4 /* FixtureUsageProvider.swift */,
 				75B31A35E61DC72262265D84 /* GrokUsageProvider.swift */,
+				26824BF739E32100B72B1803 /* KiroUsageProvider.swift */,
 				D5CF7CBDBE3A6256C0F1694C /* OpenCodeUsageProvider.swift */,
 				332B6061B110A89D9233C052 /* OpenRouterUsageProvider.swift */,
 				E1B9E88530B0E8A542576A73 /* ProviderContract.swift */,
@@ -433,6 +438,7 @@
 				035DD26480869B2DDFE54E8C /* ClaudeDesktopSessionReader.swift */,
 				0E2DF97B8FE48D28C14CD0C0 /* ClaudeSafeStorageKeychainReader.swift */,
 				78E247810A053AD78274650A /* CredentialDiscovery.swift */,
+				B58F3EEA41813039298DC387 /* KiroCredentialDiscovery.swift */,
 				56DAA835165D9917F4E0C489 /* LocalDataAccess.swift */,
 				9EABF919950219809021F3EC /* SecurityKeychainReader.swift */,
 				D14D433914F0A08A93F1ECD9 /* SecurityKeychainWriter.swift */,
@@ -668,6 +674,8 @@
 				5F3ABEB2226604C3D97E3FE9 /* FixtureUsageProvider.swift in Sources */,
 				D82EE3B108EEA1BDA4026430 /* GrokUsageProvider.swift in Sources */,
 				26C516A883C98131D9EEF56A /* InteractiveIconButton.swift in Sources */,
+				058497388EA5ADA9A11CF5F7 /* KiroCredentialDiscovery.swift in Sources */,
+				323623D130654D3674CADAB5 /* KiroUsageProvider.swift in Sources */,
 				0FADE3BDD279957305E58A95 /* LaunchAtLoginController.swift in Sources */,
 				9BEA667587DEC3895D1D4B45 /* LocalDataAccess.swift in Sources */,
 				C397307DE370FD6C72255AA7 /* LocalizationMacExtensions.swift in Sources */,

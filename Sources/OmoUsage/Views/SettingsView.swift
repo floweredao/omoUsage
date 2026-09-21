@@ -90,6 +90,7 @@ struct SettingsView: View {
         ProviderSetupOutcome, ProviderSetupError
     >
     private let authenticateDevin: @MainActor () async throws -> CredentialSnapshot
+    private let captureCurrentCompanion: (ProviderID) throws -> String
     @State private var devinConnection = DevinBrowserConnectionCoordinator()
     @State private var devinLoginTask: Task<Void, Never>?
     @State private var keyDrafts: [ProviderID: String] = [:]
@@ -171,6 +172,7 @@ struct SettingsView: View {
         self.authorizeClaude = authorizeClaude
         self.launchClaudeLogin = launchClaudeLogin
         self.authenticateDevin = authenticateDevin
+        self.captureCurrentCompanion = captureCompanionCredential
         _presentationStyle = State(initialValue: presentationStyle)
         _sideNotchHideDelay = State(initialValue: sideNotchHideDelay)
         _additionCoordinator = State(
@@ -487,6 +489,7 @@ struct SettingsView: View {
                                 },
                                 browserConnectionTarget: devinConnection.pending,
                                 onBrowserConnect: { startDevinConnection(.existing($0)) },
+                                onImportKiroCredential: importKiroCredential,
                                 codexPlanMultiplier:
                                     codexPlanMultiplierBinding(
                                         for: provider
@@ -765,6 +768,21 @@ struct SettingsView: View {
             startConnection: startConnection,
             launchOfficialLogin: startConnection
         )
+    }
+
+    private func importKiroCredential(for identity: AccountProviderID) {
+        do {
+            try accountRegistryController.importKiroCredential(
+                captureCurrentCompanion(.kiro),
+                for: identity,
+                now: Date()
+            )
+            onRegistryChange()
+            feedback = nil
+            Task { await viewModel.retryAccountProvider(identity) }
+        } catch {
+            feedback = .key(.authenticationRequired)
+        }
     }
 
     private func saveKey(for provider: ProviderID) {
@@ -2318,6 +2336,7 @@ private struct ProviderSettingsRow: View {
     let onCancelConnection: () -> Void
     let browserConnectionTarget: DevinBrowserConnectionTarget?
     let onBrowserConnect: (AccountProviderID) -> Void
+    let onImportKiroCredential: (AccountProviderID) -> Void
     let codexPlanMultiplier:
         ((AccountProviderID) -> Binding<CodexPlanMultiplier>)?
 
@@ -2475,6 +2494,15 @@ private struct ProviderSettingsRow: View {
             }
             .controlSize(.small)
             .disabled(connectionControlsDisabled && !waiting)
+            if provider == .kiro {
+                Button(localization.providerText("인증 가져오기")) {
+                    onImportKiroCredential(row.identity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(connectionControlsDisabled)
+                .accessibilityIdentifier("account-import-credential-\(suffix)")
+            }
         }
         if waiting {
             Text(localization.text(provider == .devin
