@@ -103,6 +103,8 @@ public struct ProviderVisualStyle {
             )
         case .grok:
             solid(.black.opacity(0.9))
+        case .kiro:
+            solid(Color(red: 0.43, green: 0.24, blue: 0.78))
         case .opencode:
             solid(Color(red: 0.18, green: 0.2, blue: 0.23))
         case .openrouter:

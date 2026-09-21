@@ -54,6 +54,30 @@ struct FixtureUsageProvider: UsageProvider {
                 Data(Self.antigravityJSON.utf8),
                 now: now
             )
+        case .kiro:
+            return ProviderUsage(
+                provider: .kiro,
+                planName: "Kiro Pro",
+                groups: [
+                    UsageGroup(
+                        id: "kiro-credits",
+                        title: nil,
+                        meters: [
+                            UsageMeter(
+                                id: "kiro-monthly",
+                                title: "월간",
+                                period: .session,
+                                percentRemaining: 72,
+                                resetsAt: now.addingTimeInterval(604_800),
+                                resetText: "7일 후 리셋"
+                            )
+                        ],
+                        creditText: "360 / 500 크레딧"
+                    )
+                ],
+                availability: .available,
+                updatedAt: now
+            )
         case .cursor, .copilot, .devin, .grok, .opencode,
              .openrouter, .zai:
             return Self.additionalFixture(provider: id, now: now)

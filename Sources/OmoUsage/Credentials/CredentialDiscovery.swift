@@ -1100,6 +1100,8 @@ struct CredentialDiscovery: Sendable {
             try devin()
         case .grok:
             try grok(now: now)
+        case .kiro:
+            try mutableKiroCredential(now: now)
         case .opencode:
             try opencode()
         case .openrouter:

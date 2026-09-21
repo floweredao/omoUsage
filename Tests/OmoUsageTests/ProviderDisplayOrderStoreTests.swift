@@ -29,6 +29,7 @@ struct ProviderDisplayOrderStoreTests {
             .copilot,
             .devin,
             .grok,
+            .kiro,
             .opencode,
             .openrouter,
             .zai

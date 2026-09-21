@@ -28,7 +28,7 @@ struct ProviderSetupTruthfulnessTests {
     }
 
     @Test
-    func authBindingMatchesAllTenProviders() throws {
+    func authBindingMatchesAllProviders() throws {
         let apiKeyProviders = ProviderID.allCases.filter {
             ProviderSetup.descriptor(for: $0)?.acceptsAPIKey == true
         }
@@ -40,7 +40,7 @@ struct ProviderSetupTruthfulnessTests {
         #expect(
             companionProviders == [
                 .claude, .codex, .cursor, .antigravity,
-                .copilot, .devin, .grok
+                .copilot, .devin, .grok, .kiro
             ]
         )
         guard

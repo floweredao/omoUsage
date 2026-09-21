@@ -103,6 +103,13 @@ enum ProviderFactory {
                     accountID: account.id,
                     accountLabel: account.label
                 )
+            case .kiro:
+                KiroUsageProvider(
+                    discovery: discovery,
+                    http: http,
+                    accountID: account.id,
+                    accountLabel: account.label
+                )
             case .opencode:
                 OpenCodeUsageProvider(
                     discovery: discovery,
@@ -138,7 +145,8 @@ enum ProviderFactory {
             AntigravityUsageProvider(discovery: discovery, http: http),
             CopilotUsageProvider(discovery: discovery, http: http),
             DevinUsageProvider(discovery: discovery, http: http),
-            GrokUsageProvider(discovery: discovery, http: http)
+            GrokUsageProvider(discovery: discovery, http: http),
+            KiroUsageProvider(discovery: discovery, http: http)
         ]
     }
 }
