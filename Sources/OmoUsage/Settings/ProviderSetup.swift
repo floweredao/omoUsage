@@ -778,17 +778,14 @@ enum ProviderSetup {
                 )
             )
         case .kiro:
-            terminal(
-                instruction: "kiro-cli login 실행",
-                executable: "kiro-cli",
-                arguments: ["login"],
-                opensFallback: false,
+            ProviderSetupDescriptor(
+                instruction: "Kiro 계정 연결",
+                action: .browserOAuth,
                 help: help(
                     provider,
                     [
-                        "Kiro CLI를 설치하고 kiro-cli login으로 로그인하세요.",
-                        "OmoUsage는 Kiro CLI의 로컬 인증값으로 월간 크레딧을 조회합니다.",
-                        "인증이 만료되면 같은 Kiro 계정으로 로그인한 뒤 인증 가져오기를 누르세요."
+                        "기존 Kiro 인증을 사용하며, 인증이 없으면 브라우저에서 로그인합니다.",
+                        "연결한 계정의 인증은 이 Mac의 키체인에 안전하게 저장합니다."
                     ],
                     "https://kiro.dev/docs/cli/"
                 )

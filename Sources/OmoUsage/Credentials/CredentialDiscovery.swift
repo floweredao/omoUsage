@@ -33,6 +33,9 @@ struct DiscoveredCredential: Equatable, Sendable, CustomStringConvertible {
     let source: CredentialSource
     let oidcIssuer: String?
     let oidcClientID: String?
+    /// App-owned OIDC registration material; serialized only inside the Keychain secret.
+    let oidcClientSecret: String?
+    let oidcClientSecretExpiresAt: Date?
     let principalType: String?
     let principalID: String?
     let storage: CredentialStorage?
@@ -49,6 +52,8 @@ struct DiscoveredCredential: Equatable, Sendable, CustomStringConvertible {
         source: CredentialSource,
         oidcIssuer: String? = nil,
         oidcClientID: String? = nil,
+        oidcClientSecret: String? = nil,
+        oidcClientSecretExpiresAt: Date? = nil,
         principalType: String? = nil,
         principalID: String? = nil,
         storage: CredentialStorage? = nil,
@@ -64,6 +69,8 @@ struct DiscoveredCredential: Equatable, Sendable, CustomStringConvertible {
         self.source = source
         self.oidcIssuer = oidcIssuer
         self.oidcClientID = oidcClientID
+        self.oidcClientSecret = oidcClientSecret
+        self.oidcClientSecretExpiresAt = oidcClientSecretExpiresAt
         self.principalType = principalType
         self.principalID = principalID
         self.email = email
@@ -101,6 +108,8 @@ struct CredentialSnapshot: Codable, Equatable, Sendable,
     let source: CredentialSource
     let oidcIssuer: String?
     let oidcClientID: String?
+    let oidcClientSecret: String?
+    let oidcClientSecretExpiresAt: Date?
     let principalType: String?
     let principalID: String?
     let email: String?
@@ -116,6 +125,8 @@ struct CredentialSnapshot: Codable, Equatable, Sendable,
         source: CredentialSource,
         oidcIssuer: String? = nil,
         oidcClientID: String? = nil,
+        oidcClientSecret: String? = nil,
+        oidcClientSecretExpiresAt: Date? = nil,
         principalType: String? = nil,
         principalID: String? = nil,
         email: String? = nil
@@ -130,6 +141,8 @@ struct CredentialSnapshot: Codable, Equatable, Sendable,
         self.source = source
         self.oidcIssuer = oidcIssuer
         self.oidcClientID = oidcClientID
+        self.oidcClientSecret = oidcClientSecret
+        self.oidcClientSecretExpiresAt = oidcClientSecretExpiresAt
         self.principalType = principalType
         self.principalID = principalID
         self.email = email
@@ -146,6 +159,8 @@ struct CredentialSnapshot: Codable, Equatable, Sendable,
             source: credential.source,
             oidcIssuer: credential.oidcIssuer,
             oidcClientID: credential.oidcClientID,
+            oidcClientSecret: credential.oidcClientSecret,
+            oidcClientSecretExpiresAt: credential.oidcClientSecretExpiresAt,
             principalType: credential.principalType,
             principalID: credential.principalID,
             email: credential.email
@@ -196,6 +211,8 @@ struct CredentialSnapshot: Codable, Equatable, Sendable,
             source: source,
             oidcIssuer: oidcIssuer,
             oidcClientID: oidcClientID,
+            oidcClientSecret: oidcClientSecret,
+            oidcClientSecretExpiresAt: oidcClientSecretExpiresAt,
             principalType: principalType,
             principalID: principalID,
             storage: storage,
@@ -220,6 +237,8 @@ struct CredentialSnapshot: Codable, Equatable, Sendable,
             source: source,
             oidcIssuer: oidcIssuer,
             oidcClientID: oidcClientID,
+            oidcClientSecret: oidcClientSecret,
+            oidcClientSecretExpiresAt: oidcClientSecretExpiresAt,
             principalType: principalType,
             principalID: principalID,
             email: identityEmail

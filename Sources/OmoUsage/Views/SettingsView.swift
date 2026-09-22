@@ -90,9 +90,13 @@ struct SettingsView: View {
         ProviderSetupOutcome, ProviderSetupError
     >
     private let authenticateDevin: @MainActor () async throws -> CredentialSnapshot
-    private let captureCurrentCompanion: (ProviderID) throws -> String
+    private let authenticateKiro: @MainActor () async throws -> CredentialSnapshot
+    private let discoverKiro: (KiroBrowserConnectionTarget) throws -> CredentialSnapshot
+    private let validateKiro: @MainActor (CredentialSnapshot) async throws -> ProviderUsage
     @State private var devinConnection = DevinBrowserConnectionCoordinator()
     @State private var devinLoginTask: Task<Void, Never>?
+    @State private var kiroConnection = KiroBrowserConnectionCoordinator()
+    @State private var kiroLoginTask: Task<Void, Never>?
     @State private var keyDrafts: [ProviderID: String] = [:]
     @State private var newAccountLabels: [ProviderID: String] = [:]
     @State private var newAccountKeys: [ProviderID: String] = [:]
@@ -137,6 +141,30 @@ struct SettingsView: View {
                 NSWorkspace.shared.open($0)
             }
         },
+        authenticateKiro: @escaping @MainActor () async throws -> CredentialSnapshot = {
+            try await KiroBrowserAuthenticationClient().authenticate {
+                NSWorkspace.shared.open($0)
+            }
+        },
+        discoverKiro: @escaping (KiroBrowserConnectionTarget) throws -> CredentialSnapshot = { target in
+            let discovery = CredentialDiscovery.live()
+            let credential: DiscoveredCredential
+            switch target {
+            case .existing(let identity):
+                credential = try discovery.kiro(accountID: identity.accountID, now: Date())
+            case .newAccount:
+                credential = try discovery.mutableKiroCredential(now: Date())
+            }
+            return CredentialSnapshot(credential)
+        },
+        validateKiro: @escaping @MainActor (CredentialSnapshot) async throws -> ProviderUsage = { snapshot in
+            try await KiroUsageProvider(discovery: .live(), http: ProviderHTTP()).fetch(
+                credential: snapshot.credential(storage: .accountSnapshot(
+                    AccountProviderID(accountID: .legacy, providerID: .kiro)
+                )),
+                now: Date()
+            )
+        },
         onRegistryChange: @escaping () -> Void,
         onLanguageChange: @escaping () -> Void,
         onPresentationStyleChange:
@@ -172,7 +200,9 @@ struct SettingsView: View {
         self.authorizeClaude = authorizeClaude
         self.launchClaudeLogin = launchClaudeLogin
         self.authenticateDevin = authenticateDevin
-        self.captureCurrentCompanion = captureCompanionCredential
+        self.authenticateKiro = authenticateKiro
+        self.discoverKiro = discoverKiro
+        self.validateKiro = validateKiro
         _presentationStyle = State(initialValue: presentationStyle)
         _sideNotchHideDelay = State(initialValue: sideNotchHideDelay)
         _additionCoordinator = State(
@@ -484,12 +514,14 @@ struct SettingsView: View {
                                 onCheckAgainConnection:
                                     checkForCodexReconnectCredential,
                                 onCancelConnection: {
-                                    if provider == .devin { cancelDevinConnection() }
+                                    if provider == .kiro { cancelKiroConnection() }
+                                    else if provider == .devin { cancelDevinConnection() }
                                     else { cancelCodexReconnect() }
                                 },
                                 browserConnectionTarget: devinConnection.pending,
+                                kiroConnectionTarget: kiroConnection.pending,
                                 onBrowserConnect: { startDevinConnection(.existing($0)) },
-                                onImportKiroCredential: importKiroCredential,
+                                onKiroConnect: { startKiroConnection(.existing($0)) },
                                 codexPlanMultiplier:
                                     codexPlanMultiplierBinding(
                                         for: provider
@@ -577,6 +609,7 @@ struct SettingsView: View {
         .onDisappear {
             connectionCoordinator.cancelClaudeLogin()
             cancelDevinConnection()
+            cancelKiroConnection()
         }
     }
 
@@ -647,6 +680,7 @@ struct SettingsView: View {
         for provider: ProviderID
     ) -> Bool {
         if provider == .devin, devinLoginTask != nil { return true }
+        if provider == .kiro, kiroLoginTask != nil { return true }
         return !ProviderConnectionMutationPolicy.allows(
             provider: provider,
             pendingAddition: additionCoordinator.pending?.provider
@@ -654,6 +688,10 @@ struct SettingsView: View {
     }
 
     private func connectProvider(_ provider: ProviderID) {
+        if provider == .kiro {
+            startKiroConnection(.existing(AccountProviderID(accountID: .legacy, providerID: .kiro)))
+            return
+        }
         guard !connectionControlsDisabled(for: provider) else { return }
         ProviderConnectionControl.performConnect(
             provider: provider,
@@ -770,21 +808,6 @@ struct SettingsView: View {
         )
     }
 
-    private func importKiroCredential(for identity: AccountProviderID) {
-        do {
-            try accountRegistryController.importKiroCredential(
-                captureCurrentCompanion(.kiro),
-                for: identity,
-                now: Date()
-            )
-            onRegistryChange()
-            feedback = nil
-            Task { await viewModel.retryAccountProvider(identity) }
-        } catch {
-            feedback = .key(.authenticationRequired)
-        }
-    }
-
     private func saveKey(for provider: ProviderID) {
         do {
             try accountRegistryController.saveLegacyAPIKey(
@@ -828,6 +851,10 @@ struct SettingsView: View {
     }
 
     private func addAccount(for provider: ProviderID) {
+        if provider == .kiro {
+            startKiroConnection(.newAccount(newAccountLabels[provider, default: ""]))
+            return
+        }
         if provider == .devin {
             startDevinConnection(.newAccount(newAccountLabels[provider, default: ""]))
             return
@@ -851,6 +878,7 @@ struct SettingsView: View {
     /// typed, so retrying does not start from an empty field.
     private func cancelAddition() {
         if case .newAccount = devinConnection.pending { cancelDevinConnection() }
+        if case .newAccount = kiroConnection.pending { cancelKiroConnection() }
         additionCoordinator.cancel()
         feedback = nil
     }
@@ -860,6 +888,7 @@ struct SettingsView: View {
     ) -> ProviderAccountAdditionRowState {
         let browserAddition: ProviderID?
         if case .newAccount = devinConnection.pending { browserAddition = .devin }
+        else if case .newAccount = kiroConnection.pending { browserAddition = .kiro }
         else { browserAddition = nil }
         return ProviderAccountAdditionRowState.resolve(
             provider: provider,
@@ -919,6 +948,73 @@ struct SettingsView: View {
                 feedback = .key(.browserLoginFailed)
             }
         }
+    }
+
+    private func startKiroConnection(_ target: KiroBrowserConnectionTarget) {
+        guard kiroLoginTask == nil else { return }
+        kiroLoginTask = Task { @MainActor in
+            defer { kiroLoginTask = nil }
+            do {
+                var expectedProfile: String?
+                var excludedProfiles: Set<String> = []
+                switch target {
+                case .existing(let identity):
+                    expectedProfile = try accountRegistryController
+                        .storedKiroCredential(for: identity)?.accountReference
+                case .newAccount:
+                    for row in accountRegistryController.settingsAccounts(for: .kiro) {
+                        if let profile = try accountRegistryController
+                            .storedKiroCredential(for: row.accountProviderID)?.accountReference {
+                            excludedProfiles.insert(profile)
+                        }
+                    }
+                    do {
+                        let primary = try discoverKiro(.existing(
+                            AccountProviderID(accountID: .legacy, providerID: .kiro)
+                        ))
+                        if let profile = primary.accountReference { excludedProfiles.insert(profile) }
+                    } catch CredentialDiscoveryError.notFound(.kiro) {
+                        // No primary credential to exclude.
+                    } catch CredentialDiscoveryError.expired(.kiro) {
+                        // A captured profile was already excluded above.
+                    }
+                }
+                let identity = try await kiroConnection.connect(
+                    target: target,
+                    expectedProfile: expectedProfile,
+                    excludedProfiles: excludedProfiles,
+                    discover: { try discoverKiro(target) },
+                    authenticate: authenticateKiro,
+                    validate: validateKiro,
+                    persist: { destination, snapshot in
+                        let secret = try snapshot.encodedSecret()
+                        switch destination {
+                        case .existing(let identity):
+                            try accountRegistryController.importKiroCredential(
+                                secret, for: identity, now: Date()
+                            )
+                            return identity
+                        case .newAccount(let label):
+                            return try accountRegistryController.addCapturedCompanionAccount(
+                                provider: .kiro, label: label, encodedSecret: secret
+                            )
+                        }
+                    }
+                )
+                onRegistryChange()
+                await viewModel.retryAccountProvider(identity)
+                if !Task.isCancelled { feedback = nil }
+                if case .newAccount = target { newAccountLabels[.kiro] = "" }
+            } catch is CancellationError {
+                feedback = nil
+            } catch {
+                feedback = .key(.authenticationRequired)
+            }
+        }
+    }
+
+    private func cancelKiroConnection() {
+        kiroLoginTask?.cancel()
     }
 
     private func cancelDevinConnection() {
@@ -1360,7 +1456,7 @@ private struct ProviderAccountsSection<
                     .accessibilityIdentifier(
                         "account-waiting-\(provider.rawValue)"
                     )
-                    Text(localization.text(provider == .devin
+                    Text(localization.text(provider == .devin || provider == .kiro
                         ? .waitingForBrowserLogin : .companionCredentialMissing))
                         .font(.system(size: 11.5))
                         .foregroundStyle(.secondary)
@@ -1375,7 +1471,7 @@ private struct ProviderAccountsSection<
                         .accessibilityIdentifier(
                             "cancel-addition-\(provider.rawValue)"
                         )
-                        if provider != .devin { Button(
+                        if provider != .devin && provider != .kiro { Button(
                             localization.text(
                                 .checkAgainForCompanionCredentials
                             ),
@@ -2335,8 +2431,9 @@ private struct ProviderSettingsRow: View {
     let onCheckAgainConnection: () -> Void
     let onCancelConnection: () -> Void
     let browserConnectionTarget: DevinBrowserConnectionTarget?
+    let kiroConnectionTarget: KiroBrowserConnectionTarget?
     let onBrowserConnect: (AccountProviderID) -> Void
-    let onImportKiroCredential: (AccountProviderID) -> Void
+    let onKiroConnect: (AccountProviderID) -> Void
     let codexPlanMultiplier:
         ((AccountProviderID) -> Binding<CodexPlanMultiplier>)?
 
@@ -2414,14 +2511,17 @@ private struct ProviderSettingsRow: View {
         let primary = row.role == .primary
         let availability = viewModel.accountConnectionStates[row.identity]
         let disconnected = viewModel.isDisconnected(row.identity)
-        let waiting = provider == .devin
+        let waiting = provider == .kiro
+            ? kiroConnectionTarget == .existing(row.identity)
+            : provider == .devin
             ? browserConnectionTarget == .existing(row.identity)
             : primary && isAwaitingConnectionCredential
         let suffix = "\(provider.rawValue)-\(row.identity.accountID.rawValue)"
         HStack(spacing: 8) {
             ConnectionBadge(
                 availability: disconnected ? .authenticationRequired : availability,
-                presentation: waiting ? .waitingForCredential : primary ? connectionPresentation : nil
+                presentation: waiting ? .waitingForCredential : primary ? connectionPresentation : nil,
+                waitingForBrowser: provider == .kiro
             )
             .accessibilityIdentifier("account-connection-status-\(suffix)")
             Spacer(minLength: 8)
@@ -2435,7 +2535,11 @@ private struct ProviderSettingsRow: View {
             ) { control in
                 switch control {
                 case .connect:
-                    if provider == .devin {
+                    if provider == .kiro {
+                        Button(localization.text(.startConnection)) { onKiroConnect(row.identity) }
+                            .buttonStyle(.bordered)
+                            .accessibilityIdentifier("account-connect-\(suffix)")
+                    } else if provider == .devin {
                         Button(localization.text(.startConnection)) { onBrowserConnect(row.identity) }
                             .buttonStyle(.bordered)
                             .accessibilityIdentifier("account-connect-\(suffix)")
@@ -2460,7 +2564,8 @@ private struct ProviderSettingsRow: View {
                     .accessibilityIdentifier("account-disconnect-\(suffix)")
                 case .reconnect:
                     Button(localization.text(.reconnectProvider)) {
-                        if provider == .devin { onBrowserConnect(row.identity) }
+                        if provider == .kiro { onKiroConnect(row.identity) }
+                        else if provider == .devin { onBrowserConnect(row.identity) }
                         else if primary && !descriptor.acceptsAPIKey { onReconnect() }
                         else {
                             viewModel.reconnectAccountProvider(row.identity)
@@ -2479,7 +2584,7 @@ private struct ProviderSettingsRow: View {
                     .buttonStyle(.borderedProminent)
                     .accessibilityIdentifier("account-retry-connection-\(suffix)")
                 case .checkAgainConnection:
-                    if provider != .devin { Button(
+                    if provider != .devin && provider != .kiro { Button(
                         localization.text(.checkAgainForCompanionCredentials),
                         action: onCheckAgainConnection
                     )
@@ -2494,18 +2599,9 @@ private struct ProviderSettingsRow: View {
             }
             .controlSize(.small)
             .disabled(connectionControlsDisabled && !waiting)
-            if provider == .kiro {
-                Button(localization.providerText("인증 가져오기")) {
-                    onImportKiroCredential(row.identity)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(connectionControlsDisabled)
-                .accessibilityIdentifier("account-import-credential-\(suffix)")
-            }
         }
         if waiting {
-            Text(localization.text(provider == .devin
+            Text(localization.text(provider == .devin || provider == .kiro
                 ? .waitingForBrowserLogin : .waitingForCompanionCredentials))
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
@@ -2617,6 +2713,7 @@ private struct ProviderHelpPopover: View {
 private struct ConnectionBadge: View {
     let availability: ProviderAvailability?
     let presentation: ProviderConnectionPresentationState?
+    var waitingForBrowser = false
     @Environment(\.appLocalization)
     private var localization
 
@@ -2639,7 +2736,9 @@ private struct ConnectionBadge: View {
         case .companionRequired:
             localization.text(.companionRequired)
         case .waitingForCredential:
-            localization.text(.waitingForCompanionCredentials)
+            waitingForBrowser
+                ? localization.providerText("로그인 대기 중")
+                : localization.text(.waitingForCompanionCredentials)
         case .authenticated, .failed, nil:
             switch availability {
             case .available: localization.text(.connected)

@@ -21,17 +21,11 @@ struct KiroIntegrationTests {
     }
 
     @Test
-    func setupUsesOfficialKiroLoginInsteadOfAnAPIKey() throws {
+    func setupUsesIntegratedAuthenticationWithoutRequiringCLI() throws {
         let kiro = try #require(ProviderID(rawValue: "kiro"))
         let descriptor = try #require(ProviderSetup.descriptor(for: kiro))
         #expect(!descriptor.acceptsAPIKey)
-        guard case .terminal(let specification, let fallback) = descriptor.action else {
-            Issue.record("Kiro must launch its official CLI login")
-            return
-        }
-        #expect(specification.executable == "kiro-cli")
-        #expect(specification.arguments == ["login"])
-        #expect(fallback == nil)
+        #expect(descriptor.action == .browserOAuth)
     }
 
     @Test

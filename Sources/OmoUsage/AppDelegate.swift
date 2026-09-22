@@ -1041,6 +1041,63 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 launchCompanion: companionLaunch,
                 authorizeClaude: authorizeClaude,
                 launchClaudeLogin: launchClaudeLogin,
+                authenticateKiro: {
+                    try await KiroBrowserAuthenticationClient().authenticate { url in
+                        #if OMO_USAGE_FIXTURES
+                        if let root = CompanionAccountFixture.resolve(
+                            requestKey: CompanionAccountFixture.userInterfaceKey
+                        )?.root {
+                            try? url.absoluteString.write(
+                                to: root.appendingPathComponent("kiro-browser-url.txt"),
+                                atomically: true, encoding: .utf8
+                            )
+                        }
+                        #endif
+                        return NSWorkspace.shared.open(url)
+                    }
+                },
+                discoverKiro: { target in
+                    #if OMO_USAGE_FIXTURES
+                    if CompanionAccountFixture.resolve(
+                        requestKey: CompanionAccountFixture.userInterfaceKey
+                    ) != nil,
+                       let mode = ProcessInfo.processInfo.environment["OMO_USAGE_KIRO_AUTH_QA"] {
+                        if mode != "existing" { throw CredentialDiscoveryError.notFound(.kiro) }
+                        return CredentialSnapshot(
+                            provider: .kiro, accessToken: "fixture-existing-kiro",
+                            refreshToken: nil,
+                            accountReference: "arn:aws:codewhisperer:us-east-1:123456789012:profile/qa",
+                            planName: "Kiro Pro", expiresAt: Date().addingTimeInterval(3_600), source: .file
+                        )
+                    }
+                    #endif
+                    let discovery = CredentialDiscovery.live()
+                    switch target {
+                    case .existing(let identity):
+                        return CredentialSnapshot(try discovery.kiro(accountID: identity.accountID, now: Date()))
+                    case .newAccount:
+                        return CredentialSnapshot(try discovery.mutableKiroCredential(now: Date()))
+                    }
+                },
+                validateKiro: { snapshot in
+                    #if OMO_USAGE_FIXTURES
+                    if let root = CompanionAccountFixture.resolve(
+                        requestKey: CompanionAccountFixture.userInterfaceKey
+                    )?.root,
+                       ProcessInfo.processInfo.environment["OMO_USAGE_KIRO_AUTH_QA"] != nil {
+                        try "validated".write(
+                            to: root.appendingPathComponent("kiro-validated.txt"),
+                            atomically: true, encoding: .utf8
+                        )
+                        return try await FixtureUsageProvider(id: .kiro).fetch(now: Date())
+                    }
+                    #endif
+                    return try await KiroUsageProvider(discovery: .live(), http: ProviderHTTP()).fetch(
+                        credential: snapshot.credential(storage: .accountSnapshot(
+                            AccountProviderID(accountID: .legacy, providerID: .kiro)
+                        )), now: Date()
+                    )
+                },
                 onRegistryChange: { [weak self] in
                     self?.applyAccountRegistryChange()
                 },
