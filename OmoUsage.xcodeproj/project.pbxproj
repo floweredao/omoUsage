@@ -27,10 +27,12 @@
 		2D2BB0F1375CA855D93301EE /* OmoUsageCore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 194AED28C9C20A8BDA503544 /* OmoUsageCore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		2DCD16665AC3EDDDDDF21AC5 /* antigravity.svg in Resources */ = {isa = PBXBuildFile; fileRef = 29E125B432F6AF3B9025F9C9 /* antigravity.svg */; };
 		323623D130654D3674CADAB5 /* KiroUsageProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26824BF739E32100B72B1803 /* KiroUsageProvider.swift */; };
+		32CA1F82D9CD7767B951C6A1 /* KiroBrowserAuthenticationListener.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A85E449E6244DF1A88E66A7 /* KiroBrowserAuthenticationListener.swift */; };
 		33A51AED460468A6840802CC /* OmoUsageCore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 194AED28C9C20A8BDA503544 /* OmoUsageCore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		3852FAF9A3344DFB927A4FE3 /* ProviderVisualStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5043503948695FCA371FC1C2 /* ProviderVisualStyle.swift */; };
 		3A0FB04FFE0809B98130C2DE /* AntigravityUsageProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C3BFF00D4540808AB1C860C /* AntigravityUsageProvider.swift */; };
 		3E1A91CBF12D7769C67D2549 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA86CD1B61D42BC30787D861 /* AppDelegate.swift */; };
+		3F6F1E5D4E9449D46B6DA745 /* KiroBrowserConnectionCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2D4D4BD58C2C522EF2812EC /* KiroBrowserConnectionCoordinator.swift */; };
 		422ED8EDC53E991E5F71D7A6 /* ProviderRetryPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97A750E49E148983D0B09FFB /* ProviderRetryPolicy.swift */; };
 		440F27E36B0B17BD49E0ADDA /* UsageProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E6D7E23743FBBC34BFEED57 /* UsageProvider.swift */; };
 		4545BD1043566A0598150B91 /* DiagnosticStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88A3EEA0AD46B5A6B8F84F81 /* DiagnosticStore.swift */; };
@@ -48,6 +50,7 @@
 		69CED2C3D7304C984EE2EFE7 /* CodexUsageParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA8723B6284BF3D3844961E1 /* CodexUsageParser.swift */; };
 		6B54768C9F0582C4FA1DAF76 /* ClaudeRefreshCooldown.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5958F1C5F8136597C4779138 /* ClaudeRefreshCooldown.swift */; };
 		6CC9EB7C2A3E0A03B5A4FE6E /* DiagnosticEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFEEFCFF387AF376394D1FB5 /* DiagnosticEvent.swift */; };
+		6D64D8214C621A4884876C71 /* KiroBrowserAuthentication.swift in Sources */ = {isa = PBXBuildFile; fileRef = F72E244067DA26F3D67C9BC5 /* KiroBrowserAuthentication.swift */; };
 		6D821BD2B0C3844758A1576E /* OmoUsageCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 194AED28C9C20A8BDA503544 /* OmoUsageCore.framework */; };
 		707C579D88BE8B268CAD3CEF /* OmoUsageMobileApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2FF0322D5D63B947145ED7D6 /* OmoUsageMobileApp.swift */; };
 		70C1FB6DDED9DA2B0ABCBA89 /* OmoUsageCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 194AED28C9C20A8BDA503544 /* OmoUsageCore.framework */; };
@@ -80,6 +83,7 @@
 		C4CD7FCF26DEF2E0C8383AF8 /* DashboardSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1008C6991F867F79B709AED8 /* DashboardSnapshot.swift */; };
 		C4EA5C82813C76747D7861AB /* DevinUsageProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DABB14A0BEE73305B501919 /* DevinUsageProvider.swift */; };
 		C5EF94BD9C75D85DE6C6731D /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 73AD61AC65FDFD58179E6224 /* Sparkle */; };
+		C651CDE479CE00263FEFA40E /* KiroBuilderIDAuthentication.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A4FC7D5621656A0D4BEE25F /* KiroBuilderIDAuthentication.swift */; };
 		C8791D837E30716C7F09C57C /* CodexUsageProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4ECD87E197A72829FA4FEF8F /* CodexUsageProvider.swift */; };
 		D0C4057361D5DE869F36320A /* CursorUsageProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25DDBD14AFA75AB0522C6FDD /* CursorUsageProvider.swift */; };
 		D1D669FE091363FA8F5C9F6D /* SingleInstanceController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3D3D4A69F4FA62AD31142D2 /* SingleInstanceController.swift */; };
@@ -159,6 +163,7 @@
 		18E04655A177A8AA235FBDB9 /* AdditionalCredentialDiscovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdditionalCredentialDiscovery.swift; sourceTree = "<group>"; };
 		190F3B1AE7E3ED6996235F35 /* ProviderID.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderID.swift; sourceTree = "<group>"; };
 		194AED28C9C20A8BDA503544 /* OmoUsageCore.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = OmoUsageCore.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		1A85E449E6244DF1A88E66A7 /* KiroBrowserAuthenticationListener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KiroBrowserAuthenticationListener.swift; sourceTree = "<group>"; };
 		1EE0E4EACC8A1D3CF2749BBC /* ProviderOrderingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderOrderingView.swift; sourceTree = "<group>"; };
 		25A9BD2A6FB5200F937748B8 /* AppUpdateController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUpdateController.swift; sourceTree = "<group>"; };
 		25DDBD14AFA75AB0522C6FDD /* CursorUsageProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CursorUsageProvider.swift; sourceTree = "<group>"; };
@@ -201,6 +206,7 @@
 		97A750E49E148983D0B09FFB /* ProviderRetryPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderRetryPolicy.swift; sourceTree = "<group>"; };
 		992059EF749B76617EA61E1D /* AppLanguage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLanguage.swift; sourceTree = "<group>"; };
 		99E35EB45A3EB81DB7A55A08 /* ProviderIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderIcon.swift; sourceTree = "<group>"; };
+		9A4FC7D5621656A0D4BEE25F /* KiroBuilderIDAuthentication.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KiroBuilderIDAuthentication.swift; sourceTree = "<group>"; };
 		9EABF919950219809021F3EC /* SecurityKeychainReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecurityKeychainReader.swift; sourceTree = "<group>"; };
 		A076EBF8590E1B517FFA8635 /* WebDashboardAccess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebDashboardAccess.swift; sourceTree = "<group>"; };
 		A081648FEC2B1C86F53B4A00 /* claude.svg */ = {isa = PBXFileReference; path = claude.svg; sourceTree = "<group>"; };
@@ -219,6 +225,7 @@
 		D14D433914F0A08A93F1ECD9 /* SecurityKeychainWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecurityKeychainWriter.swift; sourceTree = "<group>"; };
 		D1BCF394421F7C8988DC6567 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
 		D22DA425B69FC84A83C77935 /* index.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = index.html; sourceTree = "<group>"; };
+		D2D4D4BD58C2C522EF2812EC /* KiroBrowserConnectionCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KiroBrowserConnectionCoordinator.swift; sourceTree = "<group>"; };
 		D5CF7CBDBE3A6256C0F1694C /* OpenCodeUsageProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenCodeUsageProvider.swift; sourceTree = "<group>"; };
 		D743407BB6070410C37C24ED /* PopoverDismissalController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PopoverDismissalController.swift; sourceTree = "<group>"; };
 		DA2DFDCC52C819D174BBECE1 /* CodexPlanMultiplierStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexPlanMultiplierStore.swift; sourceTree = "<group>"; };
@@ -237,6 +244,7 @@
 		EDBDAA9604D9D64ED51A325C /* AppIconFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconFactory.swift; sourceTree = "<group>"; };
 		F2F93832A03EEFC4678E3EFD /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		F31A95484F3E7C27B3246C59 /* RefreshTimestampPresenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RefreshTimestampPresenter.swift; sourceTree = "<group>"; };
+		F72E244067DA26F3D67C9BC5 /* KiroBrowserAuthentication.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KiroBrowserAuthentication.swift; sourceTree = "<group>"; };
 		F935CA0E95F3EE3F07E1431F /* WebDashboardServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebDashboardServer.swift; sourceTree = "<group>"; };
 		FBD6F6A5B76A2BAD347F2D9B /* SideNotchPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SideNotchPanelView.swift; sourceTree = "<group>"; };
 		FDD3136D2B697F932F2F4157 /* UsageDashboardViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageDashboardViewModel.swift; sourceTree = "<group>"; };
@@ -473,6 +481,10 @@
 				AF9D6DDBF0F39BD9CA0B4AE7 /* DevinBrowserAuthentication.swift */,
 				C4B872B2A57A896FFDF03140 /* DevinBrowserAuthenticationListener.swift */,
 				D0C17CBEEABC6FE304881A7E /* DevinBrowserConnectionCoordinator.swift */,
+				F72E244067DA26F3D67C9BC5 /* KiroBrowserAuthentication.swift */,
+				1A85E449E6244DF1A88E66A7 /* KiroBrowserAuthenticationListener.swift */,
+				D2D4D4BD58C2C522EF2812EC /* KiroBrowserConnectionCoordinator.swift */,
+				9A4FC7D5621656A0D4BEE25F /* KiroBuilderIDAuthentication.swift */,
 				07A191A0AA2679DA39909983 /* ProviderAccountRegistryController.swift */,
 				12880EC739A2114067FFC005 /* ProviderAccountStore.swift */,
 				904BE1BBDC988ADD8BE50A13 /* ProviderAPIKeyStore.swift */,
@@ -674,6 +686,10 @@
 				5F3ABEB2226604C3D97E3FE9 /* FixtureUsageProvider.swift in Sources */,
 				D82EE3B108EEA1BDA4026430 /* GrokUsageProvider.swift in Sources */,
 				26C516A883C98131D9EEF56A /* InteractiveIconButton.swift in Sources */,
+				6D64D8214C621A4884876C71 /* KiroBrowserAuthentication.swift in Sources */,
+				32CA1F82D9CD7767B951C6A1 /* KiroBrowserAuthenticationListener.swift in Sources */,
+				3F6F1E5D4E9449D46B6DA745 /* KiroBrowserConnectionCoordinator.swift in Sources */,
+				C651CDE479CE00263FEFA40E /* KiroBuilderIDAuthentication.swift in Sources */,
 				058497388EA5ADA9A11CF5F7 /* KiroCredentialDiscovery.swift in Sources */,
 				323623D130654D3674CADAB5 /* KiroUsageProvider.swift in Sources */,
 				0FADE3BDD279957305E58A95 /* LaunchAtLoginController.swift in Sources */,

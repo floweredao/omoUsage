@@ -7,6 +7,7 @@ extension CredentialDiscovery {
     func kiro(
         accountID: AccountID = .legacy,
         now: Date,
+        allowingExpiredAppOAuth: Bool = false,
         sqliteValue: KiroSQLiteValue = { database, sql in
             try LocalDataAccess.sqliteValue(database: database, sql: sql)
         }
@@ -14,7 +15,10 @@ extension CredentialDiscovery {
         let identity = AccountProviderID(accountID: accountID, providerID: .kiro)
         if let snapshot = try snapshotStore.snapshot(for: identity) {
             let credential = snapshot.credential(storage: .accountSnapshot(identity))
-            try Self.validateKiroCredential(credential, now: now)
+            try Self.validateKiroCredential(
+                credential, now: now,
+                allowingExpired: allowingExpiredAppOAuth && Self.isAppOwnedKiroOAuth(credential)
+            )
             return credential
         }
         guard accountID == .legacy else {
@@ -106,8 +110,43 @@ extension CredentialDiscovery {
         }
     }
 
-    private static func validateKiroCredential(_ credential: DiscoveredCredential, now: Date) throws {
+    static func isAppOwnedKiroOAuth(_ credential: DiscoveredCredential) -> Bool {
+        guard credential.provider == .kiro,
+              (credential.oidcIssuer == KiroOAuthTokenResponse.issuer
+                || KiroBuilderIDAuthentication.hasRegistration(credential)),
+              case .accountSnapshot(let identity) = credential.storage,
+              identity.providerID == .kiro,
+              let refresh = credential.refreshToken, !refresh.isEmpty,
+              refresh.utf8.allSatisfy({ $0 > 32 && $0 < 127 })
+        else { return false }
+        return true
+    }
+
+    /// Never replace an account removed or reconnected while the exchange was in flight.
+    func persistKiroOAuth(
+        _ snapshot: CredentialSnapshot, replacing original: DiscoveredCredential
+    ) throws -> DiscoveredCredential {
+        try Task.checkCancellation()
+        guard Self.isAppOwnedKiroOAuth(original),
+              case .accountSnapshot(let identity) = original.storage,
+              let stored = try snapshotStore.snapshot(for: identity),
+              stored == CredentialSnapshot(original),
+              snapshot.provider == .kiro,
+              snapshot.accountReference == stored.accountReference,
+              snapshot.oidcIssuer == stored.oidcIssuer
+        else { throw CredentialDiscoveryError.malformed(.kiro) }
+        try snapshotStore.save(snapshot, for: identity)
+        guard try snapshotStore.snapshot(for: identity) == snapshot else {
+            throw CredentialDiscoveryError.malformed(.kiro)
+        }
+        return snapshot.credential(storage: .accountSnapshot(identity))
+    }
+
+    static func validateKiroCredential(
+        _ credential: DiscoveredCredential, now: Date, allowingExpired: Bool = false
+    ) throws {
         guard
+            credential.provider == .kiro,
             !credential.accessToken.isEmpty,
             credential.accessToken.rangeOfCharacter(from: .whitespacesAndNewlines.union(.controlCharacters)) == nil,
             let profileARN = credential.accountID,
@@ -116,8 +155,15 @@ extension CredentialDiscovery {
         else {
             throw CredentialDiscoveryError.malformed(.kiro)
         }
-        _ = try kiroEndpoint(profileARN: profileARN)
-        guard expiry > now else {
+        if credential.oidcIssuer == KiroBuilderIDAuthentication.issuer {
+            guard KiroBuilderIDAuthentication.hasRegistration(credential),
+                  let refresh = credential.refreshToken, !refresh.isEmpty,
+                  refresh.utf8.allSatisfy({ $0 > 32 && $0 < 127 })
+            else { throw CredentialDiscoveryError.malformed(.kiro) }
+        } else {
+            _ = try kiroEndpoint(profileARN: profileARN)
+        }
+        guard allowingExpired || expiry > now else {
             throw CredentialDiscoveryError.expired(.kiro)
         }
     }

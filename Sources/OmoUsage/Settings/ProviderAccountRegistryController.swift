@@ -344,6 +344,16 @@ final class ProviderAccountRegistryController {
         }
     }
 
+    func storedKiroCredential(for identity: AccountProviderID) throws -> CredentialSnapshot? {
+        guard identity.providerID == .kiro else {
+            throw ProviderAccountRegistryControllerError.unsupportedProvider
+        }
+        guard let store = credentialSnapshotStore() else {
+            throw ProviderAccountRegistryControllerError.keyStoreUnavailable
+        }
+        return try store.snapshot(for: identity)
+    }
+
     func preserveLegacyKiroCredentialIfAbsent(_ encodedSecret: String) throws {
         _ = try requireRegistry()
         guard persistenceEnabled else {
@@ -375,7 +385,9 @@ final class ProviderAccountRegistryController {
               !snapshot.accessToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw ProviderAccountRegistryControllerError.credentialUnavailable
         }
-        _ = try CredentialDiscovery.kiroEndpoint(profileARN: profile)
+        try CredentialDiscovery.validateKiroCredential(
+            snapshot.credential(storage: .accountSnapshot(identity)), now: now
+        )
         guard persistenceEnabled else {
             throw ProviderAccountRegistryControllerError.persistenceUnavailable
         }

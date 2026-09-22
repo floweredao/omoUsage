@@ -21,7 +21,7 @@ endpoint and renders quota, spend, credit, count, and informational metrics.
 | Copilot | `copilot login` or `gh auth login` | `copilot-cli` keychain item, `~/.config/gh/hosts.yml`, or an editor's OAuth token |
 | Devin | `devin auth login` | `~/.local/share/devin/credentials.toml` (honours `XDG_DATA_HOME`) |
 | Grok | `grok login` | `~/.grok/auth.json` |
-| Kiro | `kiro-cli login` | `~/Library/Application Support/kiro-cli/data.sqlite3` (honours absolute `KIRO_DATA_DIR`) |
+| Kiro | Connect in Settings; reuses an existing login or opens browser sign-in | Account-scoped Keychain credential, or `~/Library/Application Support/kiro-cli/data.sqlite3` (honours absolute `KIRO_DATA_DIR`) |
 | OpenCode | `opencode auth login` or API key in Settings | OpenCode's `auth.json` plus local usage records, or an OmoUsage-owned Keychain item |
 | OpenRouter | API key in Settings | OmoUsage-owned Keychain item |
 | Z.ai | API key in Settings | OmoUsage-owned Keychain item |
@@ -29,16 +29,28 @@ endpoint and renders quota, spend, credit, count, and informational metrics.
 OpenRouter and Z.ai use keys entered in Settings; OpenCode can optionally use
 one. Legacy OmoUsage plaintext key files migrate transactionally to Keychain
 and are deleted only after registry and Keychain state converge. Everything
-else reuses an existing login. Providers you are not signed in to are omitted.
+else can reuse an existing login. Kiro opens browser sign-in automatically
+when you choose Connect without a usable existing credential.
+Providers you are not signed in to are omitted.
 
 ## Requirements
 
-Kiro uses the CLI's regional `GetUsageLimits` service in `us-east-1` and
-`eu-central-1`. This is an undocumented service API and may change with Kiro.
-OmoUsage reads the CLI database without modifying it and does not rotate its
-refresh tokens. If authentication expires, sign in to the same Kiro profile
-with `kiro-cli login`, then choose **Import Credential** on that account in
-Settings. Captured accounts never fall back to another CLI login.
+Kiro first uses the selected account's saved credential or an existing CLI
+login. If it is absent, expired, or rejected, Connect opens Kiro's browser
+sign-in directly, without requiring the CLI or a separate import action.
+The callback binds only to loopback port 3128 and validates PKCE and state.
+OmoUsage validates usage before saving the credential to Keychain and renews
+only its own OAuth tokens. It never rotates copied CLI tokens, substitutes a
+different profile on reconnect, or opens login windows during background refresh.
+Network and response errors do not trigger browser login.
+
+Kiro's regional usage and desktop OAuth services are undocumented integration
+surfaces and may change. Supported profile regions are `us-east-1` and
+`eu-central-1`; the browser flow uses Kiro's hosted Google/GitHub sign-in
+or continues Builder ID through AWS's browser approval flow. Builder ID's
+OIDC registration secrets are kept with that account in Keychain.
+Organization-specific external identity providers are not supported by
+the integrated browser flow; existing supported CLI credentials still work.
 When the response mixes bonus or trial credits with plan usage, OmoUsage
 shows the balance as unavailable instead of inventing a remaining percentage.
 

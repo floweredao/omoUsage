@@ -85,6 +85,29 @@ struct ProviderAccountAdditionCoordinatorTests {
     }
 
     @Test
+    func kiroBuilderIDImportUsesStableUserIdentityInsteadOfProfileARN() throws {
+        let fixture = try AdditionFixture()
+        defer { fixture.remove() }
+        let now = Date(timeIntervalSince1970: 1_790_000_000)
+        let identity = AccountProviderID(accountID: .legacy, providerID: .kiro)
+        let snapshot = CredentialSnapshot(
+            provider: .kiro, accessToken: "builder-access", refreshToken: "builder-refresh",
+            accountReference: "builder-user-fixture", planName: nil,
+            expiresAt: now.addingTimeInterval(3_600), source: .keychain,
+            oidcIssuer: KiroBuilderIDAuthentication.issuer,
+            oidcClientID: "registered-client",
+            oidcClientSecret: "registered-secret",
+            oidcClientSecretExpiresAt: now.addingTimeInterval(86_400),
+            principalType: KiroBuilderIDAuthentication.principalType,
+            principalID: "builder-user-fixture"
+        )
+        let encoded = try snapshot.encodedSecret()
+        try fixture.controller.importKiroCredential(encoded, for: identity, now: now)
+        #expect(fixture.keyStore(.kiro, .legacy)?.load() == encoded)
+        #expect(try fixture.controller.storedKiroCredential(for: identity) == snapshot)
+    }
+
+    @Test
     func launchesCompanionBeforePersistingAnyAccount() throws {
         let fixture = try AdditionFixture()
         defer { fixture.remove() }
