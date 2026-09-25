@@ -14,9 +14,18 @@ enum DashboardLayout {
     static func panelHeight(
         for providers: [ProviderUsage]
     ) -> CGFloat {
+        guard !providers.isEmpty else { return 190 }
+        let providerCounts = Dictionary(grouping: providers, by: \.provider)
+            .mapValues(\.count)
         let separators = CGFloat(max(0, providers.count - 1)) * 21
         let sections = providers.reduce(CGFloat.zero) {
-            $0 + sectionHeight($1)
+            $0 + sectionHeight(
+                $1,
+                showsAccountLabel: DashboardAccountIdentityRule.showsAlias(
+                    for: $1,
+                    sameProviderCount: providerCounts[$1.provider, default: 0]
+                )
+            )
         }
         let listHeight = 12
             + sections

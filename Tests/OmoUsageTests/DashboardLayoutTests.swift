@@ -50,6 +50,25 @@ struct DashboardLayoutTests {
     }
 
     @Test
+    func repeatedProviderAccountsReserveBothAliasRows() {
+        let codex = usage(provider: .codex, meterCount: 1)
+        let claude = usage(provider: .claude, meterCount: 1)
+        let work = codex.assigningAccount(
+            id: AccountID(rawValue: "00000000-0000-0000-0000-000000000002")!,
+            label: "Work"
+        )
+
+        #expect(
+            DashboardLayout.panelHeight(for: [codex, work])
+                == DashboardLayout.panelHeight(for: [codex, claude]) + 26
+        )
+        #expect(
+            DashboardLayout.panelHeight(for: [work])
+                == DashboardLayout.panelHeight(for: [codex]) + 13
+        )
+    }
+
+    @Test
     func codexTimestampUsesCompactSectionHeight() {
         let codex = usage(provider: .codex, meterCount: 1)
 

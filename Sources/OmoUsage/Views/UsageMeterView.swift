@@ -35,6 +35,7 @@ struct UsageMeterView: View {
 
                 Text(localization.metricValue(meter.metric))
                     .font(.system(size: 12.5, weight: .semibold))
+                    .monospacedDigit()
                     .foregroundStyle(.primary)
                     .multilineTextAlignment(.trailing)
             }

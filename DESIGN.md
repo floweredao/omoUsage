@@ -143,6 +143,10 @@ other privileged controls remain native-only.
 ## 3. Typography
 
 - Provider names: 15 pt bold.
+- Native meter values use monospaced digits with trailing alignment. Provider
+  names, account aliases, and plan pills stay on one line in the compact
+  header; truncated aliases and plans expose their complete text in help.
+  Identity takes priority over the plan pill when horizontal space is tight.
 - Plan pills: 10.5 pt semibold.
 - Meter labels: 11.5–12 pt medium.
 - Metadata and reset labels: 10.5 pt regular/medium.
@@ -159,6 +163,19 @@ other privileged controls remain native-only.
 
 - Provider order follows OpenUsage: Claude, Codex, Cursor, Antigravity,
   Copilot, Devin, Grok, Kiro, OpenCode, OpenRouter, Z.ai.
+- An empty popover reserves 190 pt including its existing footer. Its body
+  explains that no usage is displayed and offers Open Settings. During an
+  initial refresh the same region shows a checking message, not a connection
+  failure. The settings action stays reachable in both states.
+- Popover height calculation uses the same account-alias visibility rule as
+  provider headers, including a lone non-default account and repeated providers.
+- Settings groups general controls, presentation, and web access under native
+  14 pt bold section headings with 12 pt leading separation and 4 pt trailing
+  separation. Updates belong to General; Dashboard Order remains between
+  presentation/web controls and Provider Authentication. The existing outer
+  body remains the only scroll owner, following StyleGallery
+  `patterns/viewport-shell/scroll-body-shell.md`; no sidebar, tab, nested scroll,
+  checkbox, new palette, or new material is introduced.
 - Side-notch mode pins a 6 pt hidden handle or 56 pt revealed rail to
   `NSScreen.visibleFrame.maxX`, centers it vertically with 20 pt minimum top
   and bottom margins, and grows to 344 pt inward without moving its right

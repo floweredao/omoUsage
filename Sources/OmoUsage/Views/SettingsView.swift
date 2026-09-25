@@ -275,6 +275,8 @@ struct SettingsView: View {
                         )
                     }
 
+                    settingsSectionTitle(.generalSettings)
+
                     HStack {
                         Text(localization.text(.language))
                             .font(.system(size: 13.5, weight: .semibold))
@@ -306,6 +308,10 @@ struct SettingsView: View {
                             style: .continuous
                         )
                     )
+
+                    AppUpdateSettingsRow(controller: appUpdateController)
+
+                    settingsSectionTitle(.displaySettings)
 
                     HStack {
                         Text(localization.text(.dashboardPresentation))
@@ -401,6 +407,8 @@ struct SettingsView: View {
                         )
                     }
 
+                    settingsSectionTitle(.webAccessSettings)
+
                     WebDashboardSettingsRow(
                         status: webDashboardStatusStore.status,
                         tailscaleController:
@@ -437,8 +445,6 @@ struct SettingsView: View {
                         onRetry: onRetryWebDashboard
                     )
 
-                    AppUpdateSettingsRow(controller: appUpdateController)
-
                     if accountRegistryController.registry != nil {
                         ProviderOrderingView(viewModel: viewModel)
                             .padding(.top, 4)
@@ -449,7 +455,9 @@ struct SettingsView: View {
                                 maxWidth: .infinity,
                                 alignment: .leading
                             )
-                            .padding(.top, 4)
+                            .padding(.top, 12)
+                            .padding(.bottom, 4)
+                            .accessibilityAddTraits(.isHeader)
 
                         ForEach(viewModel.providerOrder, id: \.self) {
                             provider in
@@ -611,6 +619,15 @@ struct SettingsView: View {
             cancelDevinConnection()
             cancelKiroConnection()
         }
+    }
+
+    private func settingsSectionTitle(_ key: AppStringKey) -> some View {
+        Text(localization.text(key))
+            .font(.system(size: 14, weight: .bold))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 12)
+            .padding(.bottom, 4)
+            .accessibilityAddTraits(.isHeader)
     }
 
     private func refreshPendingConnectionsAfterActivation() async {
