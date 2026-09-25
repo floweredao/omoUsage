@@ -51,7 +51,18 @@ func string(_ element: AXUIElement, _ name: String) -> String {
     attribute(element, name) as? String ?? ""
 }
 func children(_ element: AXUIElement) -> [AXUIElement] {
-    attribute(element, kAXChildrenAttribute) as? [AXUIElement] ?? []
+    var result = attribute(element, kAXChildrenAttribute) as? [AXUIElement] ?? []
+    // AppKit can expose an NSPopover beneath its status item rather than
+    // AXWindows. Include that live subtree when walking the application.
+    if string(element, kAXRoleAttribute) == kAXApplicationRole,
+       let bar = attribute(element, "AXExtrasMenuBar"),
+       CFGetTypeID(bar) == AXUIElementGetTypeID() {
+        let menuBar = bar as! AXUIElement
+        if !result.contains(where: { CFEqual($0, menuBar) }) {
+            result.append(menuBar)
+        }
+    }
+    return result
 }
 func elements(_ root: AXUIElement, depth: Int = 0) -> [AXUIElement] {
     guard depth < 50 else { return [] }
@@ -542,6 +553,7 @@ extension Driver {
         case "accounts": try accounts()
         case "aliases": try aliases()
         case "identity": try identity()
+        case "polish": try polish()
         case "connections": try connections()
         default: throw QAError("unknown scenario \(args.scenario)")
         }
@@ -899,6 +911,51 @@ extension Driver {
             try screenshot("dashboard-\(plan.replacingOccurrences(of: " ", with: "-"))")
         }
         pass("real-provider-plans-reflect-independent-tiers")
+    }
+
+    func polish() throws {
+        try screenshot("settings-sections")
+        guard let bar = attribute(gate.app, "AXExtrasMenuBar"),
+              CFGetTypeID(bar) == AXUIElementGetTypeID(),
+              let item = children(bar as! AXUIElement).first else {
+            throw QAError("status item missing")
+        }
+        func openDashboard(until predicate: @escaping () throws -> Bool) throws {
+            try gate.wait("dashboard presentation", trigger: {
+                try require(AXUIElementPerformAction(item, kAXPressAction as CFString) == .success,
+                            "status item press failed")
+            }, until: predicate)
+        }
+        if args.phase == "exercise" {
+            let alias = "개발팀 장기 프로젝트 계정 Work Production"
+            try rename(secondary, to: alias)
+            let provider = "dashboard-provider-codex-\(alias)"
+            try openDashboard { self.find(provider) != nil }
+            try reveal(provider)
+            try screenshot("multi-account-popover")
+            try gate.wait("close dashboard", trigger: { try self.key(53) },
+                          until: { self.find(provider) == nil })
+            let identities = try registry()["displayOrder"] as? [[String: String]] ?? []
+            try require(!identities.isEmpty, "fixture has no account identities")
+            for identity in identities {
+                guard let provider = identity["providerID"], let account = identity["accountID"] else {
+                    throw QAError("malformed fixture identity")
+                }
+                let disconnect = accountID("account-disconnect", provider, account)
+                try changed("disconnect fixture account", pressing: disconnect, until: {
+                    try self.isSavedDisconnected(provider, account)
+                })
+            }
+        }
+        try openDashboard { self.find("dashboard-open-settings") != nil }
+        try require(try isVisible(get("dashboard-open-settings")), "empty-state action is clipped")
+        try screenshot("empty-popover")
+        try gate.wait("empty-state settings action", trigger: {
+            try self.press("dashboard-open-settings")
+        }, until: { self.find("dashboard-open-settings") == nil })
+        try require(elements(gate.app).contains { string($0, kAXRoleAttribute) == kAXScrollAreaRole },
+                    "settings action did not expose settings")
+        pass("empty-state-settings-action-and-relaunch")
     }
 
     func gating() throws {
