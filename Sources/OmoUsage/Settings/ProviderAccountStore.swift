@@ -145,7 +145,7 @@ struct ProviderAccountStore {
         home: URL = FileManager.default.homeDirectoryForCurrentUser,
         environment: [String: String] = ProcessInfo.processInfo.environment,
         defaults: UserDefaults = .standard,
-        providerKeychain: any ProviderKeychain = SecurityProviderKeychain()
+        providerKeychain: any ProviderKeychain = UnifiedProviderKeychain()
     ) -> ProviderAccountStore {
         let configHome: URL
         if

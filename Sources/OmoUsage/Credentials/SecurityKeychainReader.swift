@@ -85,13 +85,15 @@ final class ClaudeKeychainAccessSession: @unchecked Sendable {
         let value: String
     }
 
-    private static let mirrorService = "com.omo.usage.claude-authorized-credential"
+    /// The app-owned mirror service. Internal (not private) so the
+    /// consolidated store can import legacy mirror items.
+    static let mirrorService = "com.omo.usage.claude-authorized-credential"
     private static let mirrorAccount = "oauth"
     private static let safeStorageService = "Claude Safe Storage"
 
     private let providerKeychain: any ProviderKeychain
 
-    init(providerKeychain: any ProviderKeychain = SecurityProviderKeychain()) {
+    init(providerKeychain: any ProviderKeychain = UnifiedProviderKeychain()) {
         self.providerKeychain = providerKeychain
     }
 

@@ -3,6 +3,7 @@ import AppKit
 #if OMO_USAGE_FIXTURES
 import CryptoKit
 import Darwin
+import LocalAuthentication
 #endif
 
 @main
@@ -26,6 +27,12 @@ enum OmoUsageApp {
             "OMO_USAGE_KEY_MIGRATION_QA"
         ] == "1" {
             runProviderKeyMigrationQA()
+            return
+        }
+        if ProcessInfo.processInfo.environment[
+            "OMO_USAGE_UNIFIED_KEYCHAIN_QA"
+        ] == "1" {
+            runUnifiedKeychainQA()
             return
         }
         if ProcessInfo.processInfo.environment[
@@ -725,6 +732,187 @@ enum OmoUsageApp {
             Darwin.exit(EXIT_FAILURE)
         }
         writeFixtureEvent("exported")
+    }
+
+    /// Exercises UnifiedProviderKeychain against the real login Keychain
+    /// under QA-scoped services only: seeds legacy per-service items, proves
+    /// the lazy import consolidates them into exactly one item, proves CRUD
+    /// keeps a single item, and removes everything it created.
+    private static func runUnifiedKeychainQA() {
+        let environment = ProcessInfo.processInfo.environment
+        guard let root = environment[
+                "OMO_USAGE_UNIFIED_KEYCHAIN_QA_ROOT"
+              ],
+              root.hasPrefix("/tmp/omousage-unified-qa-"),
+              let service = environment[
+                "OMO_USAGE_UNIFIED_QA_SERVICE"
+              ],
+              service.hasPrefix("com.omo.usage.qa."),
+              let legacyService = environment[
+                "OMO_USAGE_UNIFIED_QA_LEGACY_SERVICE"
+              ],
+              legacyService.hasPrefix("com.omo.usage.qa.")
+        else {
+            writeFixtureEvent("status=invalid-fixture-configuration")
+            Darwin.exit(EXIT_FAILURE)
+        }
+
+        let api = SecurityFrameworkItemAPI()
+        let legacy = SecurityProviderKeychain(api: api)
+        let unified = UnifiedProviderKeychain(
+            api: api,
+            service: service,
+            legacyServices: [legacyService]
+        )
+
+        func itemCount(_ forService: String) -> Int {
+            let query: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: forService,
+                kSecReturnAttributes as String: true,
+                kSecMatchLimit as String: kSecMatchLimitAll,
+                SecurityKeychainAuthenticationUIPolicy.queryKey:
+                    SecurityKeychainAuthenticationUIPolicy.failValue,
+            ]
+            var value: CFTypeRef?
+            let status = SecItemCopyMatching(query as CFDictionary, &value)
+            guard status == errSecSuccess,
+                  let items = value as? [[String: Any]] else { return 0 }
+            return items.count
+        }
+
+        func fail(_ reason: String) -> Never {
+            writeFixtureEvent("status=failed reason=\(reason)")
+            try? unified.remove(service: legacyService, account: "a")
+            try? unified.remove(service: legacyService, account: "b")
+            try? unified.remove(service: "svc2", account: "c")
+            try? legacy.remove(service: legacyService, account: "a")
+            try? legacy.remove(service: legacyService, account: "b")
+            Darwin.exit(EXIT_FAILURE)
+        }
+
+        do {
+            try? legacy.remove(service: legacyService, account: "a")
+            try? legacy.remove(service: legacyService, account: "b")
+            try legacy.set("sa", service: legacyService, account: "a")
+            try legacy.set("sb", service: legacyService, account: "b")
+            guard itemCount(legacyService) == 2 else {
+                fail("legacy-seed")
+            }
+            writeFixtureEvent("status=legacy-seeded items=\(itemCount(legacyService))")
+
+            let context = LAContext()
+            context.interactionNotAllowed = true
+            func enumProbe(_ label: String, _ extra: [String: Any]) {
+                var q: [String: Any] = [
+                    kSecClass as String: kSecClassGenericPassword,
+                    kSecAttrService as String: legacyService,
+                    kSecReturnAttributes as String: true,
+                    kSecReturnPersistentRef as String: true,
+                    kSecMatchLimit as String: kSecMatchLimitAll,
+                ]
+                for (k, v) in extra { q[k] = v }
+                var v: CFTypeRef?
+                let s = SecItemCopyMatching(q as CFDictionary, &v)
+                writeFixtureEvent(
+                    "status=\(label) os=\(s) " +
+                    "rows=\((v as? [[String: Any]])?.count ?? -1)"
+                )
+            }
+            enumProbe("enum-plain", [:])
+            enumProbe("enum-ctx", [
+                kSecUseAuthenticationContext as String: context,
+            ])
+            enumProbe("enum-uif", [
+                SecurityKeychainAuthenticationUIPolicy.queryKey:
+                    SecurityKeychainAuthenticationUIPolicy.failValue,
+            ])
+            enumProbe("enum-both", [
+                kSecUseAuthenticationContext as String: context,
+                SecurityKeychainAuthenticationUIPolicy.queryKey:
+                    SecurityKeychainAuthenticationUIPolicy.failValue,
+            ])
+
+            // Fresh-state cleanup must not run through the unified store:
+            // its lazy import is once-per-instance, so touching it before
+            // seeding would spend the attempt on an empty keychain.
+            var staleValue: CFTypeRef?
+            if SecItemCopyMatching(
+                [
+                    kSecClass as String: kSecClassGenericPassword,
+                    kSecAttrService as String: service,
+                    kSecAttrAccount as String: "all",
+                ] as CFDictionary,
+                &staleValue
+            ) == errSecSuccess {
+                SecItemDelete(
+                    [
+                        kSecClass as String: kSecClassGenericPassword,
+                        kSecAttrService as String: service,
+                        kSecAttrAccount as String: "all",
+                    ] as CFDictionary
+                )
+            }
+
+            let readA = try unified.value(
+                service: legacyService, account: "a"
+            )
+            var payloadValue: CFTypeRef?
+            let payloadStatus = SecItemCopyMatching(
+                [
+                    kSecClass as String: kSecClassGenericPassword,
+                    kSecAttrService as String: service,
+                    kSecAttrAccount as String: "all",
+                    kSecReturnData as String: true,
+                    kSecMatchLimit as String: kSecMatchLimitOne,
+                ] as CFDictionary,
+                &payloadValue
+            )
+            writeFixtureEvent(
+                "status=payload-debug os=\(payloadStatus) " +
+                "bytes=\((payloadValue as? Data)?.count ?? -1) " +
+                "readA=\(readA ?? "nil")"
+            )
+            guard readA == "sa" else { fail("import-a") }
+            guard try unified.value(
+                service: legacyService, account: "b"
+            ) == "sb" else { fail("import-b") }
+            writeFixtureEvent("status=imported")
+
+            guard itemCount(service) == 1 else {
+                fail("consolidated-count=\(itemCount(service))")
+            }
+            writeFixtureEvent("status=single-item items=\(itemCount(service))")
+
+            try unified.set("sc", service: "svc2", account: "c")
+            guard try unified.value(service: "svc2", account: "c") == "sc"
+            else { fail("write-c") }
+            guard itemCount(service) == 1 else {
+                fail("post-write-count=\(itemCount(service))")
+            }
+            writeFixtureEvent("status=written items=\(itemCount(service))")
+
+            try unified.remove(service: legacyService, account: "a")
+            try unified.remove(service: legacyService, account: "b")
+            try unified.remove(service: "svc2", account: "c")
+            guard itemCount(service) == 0 else {
+                fail("post-remove-count=\(itemCount(service))")
+            }
+            writeFixtureEvent("status=cleaned items=\(itemCount(service))")
+            try? legacy.remove(service: legacyService, account: "a")
+            try? legacy.remove(service: legacyService, account: "b")
+            writeFixtureEvent(
+                "status=legacy-cleaned items=\(itemCount(legacyService))"
+            )
+            writeFixtureEvent("status=passed")
+            Darwin.exit(EXIT_SUCCESS)
+        } catch let error as KeychainReadError {
+            writeFixtureEvent("status=failed reason=thrown keychain=\(error.status)")
+            Darwin.exit(EXIT_FAILURE)
+        } catch {
+            writeFixtureEvent("status=failed reason=thrown \(error)")
+            Darwin.exit(EXIT_FAILURE)
+        }
     }
 
     private static func writeFixtureEvent(_ event: String) {
