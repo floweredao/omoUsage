@@ -6,7 +6,7 @@ set -eu
 umask 077
 
 usage() {
-    printf '%s\n' 'Usage: sh Scripts/qa-account-settings.sh --scenario ordering|tiers|gating|accounts|aliases|identity|connections|all --evidence-dir PATH [--app-path PATH/OmoUsage.app]'
+    printf '%s\n' 'Usage: sh Scripts/qa-account-settings.sh --scenario ordering|tiers|gating|accounts|aliases|identity|connections|polish|all --evidence-dir PATH [--app-path PATH/OmoUsage.app]'
 }
 scenario= evidence_dir= app=
 while [ "$#" -gt 0 ]; do
@@ -24,7 +24,7 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 case "$scenario" in
-    ordering|tiers|gating|accounts|aliases|identity|connections|all) ;;
+    ordering|tiers|gating|accounts|aliases|identity|connections|polish|all) ;;
     *) usage >&2; exit 64 ;;
 esac
 [ -n "$evidence_dir" ] || { usage >&2; exit 64; }
@@ -206,7 +206,7 @@ run_scenario() {
     [ "$cleanup_failed" -eq 0 ] || exit 1
 }
 if [ "$scenario" = all ]; then
-    for item in ordering tiers gating accounts aliases identity connections; do run_scenario "$item"; done
+    for item in ordering tiers gating accounts aliases identity connections polish; do run_scenario "$item"; done
 else
     run_scenario "$scenario"
 fi
