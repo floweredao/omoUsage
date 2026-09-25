@@ -36,6 +36,12 @@ enum ClaudeUsageParser {
         if let meter = extraUsage(object["extra_usage"]) {
             meters.append(meter)
         }
+        if let meter = resetGrantMeter(object["cedar_ember"], now: now) {
+            meters.append(meter)
+        }
+        if let meter = cloudSessionCredit(object["iguana_necktie"], now: now) {
+            meters.append(meter)
+        }
 
         guard !meters.isEmpty else {
             throw UsageParsingError.invalidPayload
@@ -194,6 +200,99 @@ enum ClaudeUsageParser {
             percentRemaining: remaining,
             resetText: object["reset_text"] as? String
         )
+    }
+
+    /// Claude's usage-limit reset vouchers ship inside the `cedar_ember`
+    /// block (requested via `?cedar_ember=1`). A voucher counts while it is
+    /// unpaused, has resets left, and has not expired — matching the grant
+    /// rules the official clients apply before offering a reset.
+    private static func resetGrantMeter(_ value: Any?, now: Date) -> UsageMeter? {
+        guard
+            let object = UsageJSON.object(value),
+            object["eligible"] as? Bool == true,
+            let grants = UsageJSON.array(object["grants"])
+        else {
+            return nil
+        }
+        var available = 0
+        var earliestExpiry: Date?
+        for grant in grants {
+            guard
+                grant["paused"] as? Bool != true,
+                let left = UsageJSON.number(grant["resets_left"])
+                    .flatMap(ProviderPayload.nonnegativeInteger),
+                left > 0
+            else {
+                continue
+            }
+            let endsAtValue = grant["ends_at"]
+            let endsAt = endsAtValue.flatMap(UsageJSON.date)
+            if endsAtValue != nil, !(endsAtValue is NSNull) {
+                guard let endsAt, endsAt > now else { continue }
+                if
+                    let current = earliestExpiry,
+                    endsAt < current
+                {} else {
+                    earliestExpiry = endsAt
+                }
+            }
+            available += left
+        }
+        guard available > 0 else { return nil }
+        return UsageMeter(
+            id: "claude.reset-tickets",
+            title: "초기화권",
+            period: .extra,
+            metric: .count(value: available, unit: .tickets),
+            resetText: ProviderPayload.expiryText(earliestExpiry, now: now)
+        )
+    }
+
+    /// Cloud session credits ship as the `iguana_necktie` bucket: a
+    /// dollar-denominated promotional balance that cloud sessions consume
+    /// before plan usage. `resets_at` is the credit's expiry, so the meter
+    /// carries an expiry label instead of a reset label.
+    private static func cloudSessionCredit(
+        _ value: Any?,
+        now: Date
+    ) -> UsageMeter? {
+        guard let object = UsageJSON.object(value) else { return nil }
+        let resetValue = object["resets_at"]
+        let expiresAt = resetValue.flatMap(UsageJSON.date)
+        guard
+            resetValue == nil || resetValue is NSNull || expiresAt != nil
+        else {
+            return nil
+        }
+        let resetText = ProviderPayload.expiryText(expiresAt, now: now)
+        if
+            let remaining = UsageJSON.number(object["remaining_dollars"]),
+            remaining.isFinite,
+            remaining >= 0
+        {
+            return UsageMeter(
+                id: "claude.cloud-session-credits",
+                title: "클라우드 세션 크레딧",
+                period: .extra,
+                metric: .credit(balance: remaining, unit: .usd),
+                resetText: resetText
+            )
+        }
+        if
+            let utilization = UsageJSON.number(object["utilization"]),
+            let remaining = ProviderPayload.remainingPercent(
+                usedPercent: utilization
+            )
+        {
+            return UsageMeter(
+                id: "claude.cloud-session-credits",
+                title: "클라우드 세션 크레딧",
+                period: .extra,
+                percentRemaining: remaining,
+                resetText: resetText
+            )
+        }
+        return nil
     }
 
     private static func scopedWeeklyMeters(
