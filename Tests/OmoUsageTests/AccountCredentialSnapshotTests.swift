@@ -996,7 +996,8 @@ private final class AccountRotationURLProtocol: URLProtocol,
                   "expires_in": 3600
                 }
                 """)
-        case "https://api.anthropic.com/api/oauth/usage":
+        case "https://api.anthropic.com/api/oauth/usage"
+            + "?cedar_ember=1&skip_spend=1":
             authorized(bearer, "Bearer rotated-claude-access", """
                 {
                   "five_hour": {"utilization": 42},

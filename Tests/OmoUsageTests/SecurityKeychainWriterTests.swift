@@ -720,7 +720,9 @@ private final class AuthorizedClaudeUsageURLProtocol: URLProtocol {
                 return
             }
             body = #"{"access_token":"fixture-provider-rotated","refresh_token":"fixture-provider-refresh","expires_in":3600}"#
-        } else if request.url?.absoluteString == "https://api.anthropic.com/api/oauth/usage",
+        } else if request.url?.absoluteString
+            == "https://api.anthropic.com/api/oauth/usage"
+                + "?cedar_ember=1&skip_spend=1",
                   request.value(forHTTPHeaderField: "Authorization") == "Bearer fixture-provider-rotated" {
             body = #"{"five_hour":{"utilization":10},"seven_day":{"utilization":20},"limits":[{"kind":"weekly_scoped","group":"weekly","percent":44,"resets_at":"2026-08-20T00:00:00Z","scope":{"model":{"id":null,"display_name":"Fable"}}}]}"#
         } else {

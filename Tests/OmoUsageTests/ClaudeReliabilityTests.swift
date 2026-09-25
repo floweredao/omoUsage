@@ -65,6 +65,7 @@ struct ClaudeReliabilityTests {
         #expect(
             headers.url
                 == "https://api.anthropic.com/api/oauth/usage"
+                    + "?cedar_ember=1&skip_spend=1"
         )
         #expect(headers.method == "GET")
         #expect(headers.authorization == "Bearer header-test-token")

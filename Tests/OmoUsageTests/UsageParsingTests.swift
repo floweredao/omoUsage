@@ -93,6 +93,129 @@ struct ClaudeUsageParsingTests {
     }
 
     @Test
+    func surfacesResetVouchersAndCloudSessionCredits() throws {
+        let usage = try ClaudeUsageParser.parse(
+            Data(
+                """
+                {
+                  "five_hour": {"utilization": 100, "resets_at": "2026-08-02T18:30:00Z"},
+                  "seven_day": {"utilization": 18, "resets_at": "2026-08-08T00:00:00Z"},
+                  "cedar_ember": {
+                    "eligible": true,
+                    "at_limit": true,
+                    "exhausted": ["five_hour"],
+                    "grants": [
+                      {
+                        "id": "opus55-launch-promax-20260921",
+                        "resets_total": 1,
+                        "resets_left": 1,
+                        "starts_at": "2026-08-01T00:00:00Z",
+                        "ends_at": "2026-09-01T00:00:00Z",
+                        "clears": ["five_hour", "seven_day"],
+                        "paused": false,
+                        "usable_now": true
+                      },
+                      {
+                        "id": "expired-grant",
+                        "resets_total": 1,
+                        "resets_left": 1,
+                        "starts_at": "2026-06-01T00:00:00Z",
+                        "ends_at": "2026-07-01T00:00:00Z",
+                        "clears": ["five_hour"],
+                        "paused": false,
+                        "usable_now": false
+                      },
+                      {
+                        "id": "paused-grant",
+                        "resets_total": 2,
+                        "resets_left": 2,
+                        "starts_at": "2026-08-01T00:00:00Z",
+                        "ends_at": "2026-09-10T00:00:00Z",
+                        "clears": ["five_hour"],
+                        "paused": true,
+                        "usable_now": false
+                      }
+                    ],
+                    "next_grant_id": "opus55-launch-promax-20260921"
+                  },
+                  "iguana_necktie": {
+                    "utilization": 12,
+                    "resets_at": "2026-09-10T00:00:00Z",
+                    "limit_dollars": 250,
+                    "used_dollars": 30,
+                    "remaining_dollars": 220
+                  }
+                }
+                """.utf8
+            ),
+            planName: "Max",
+            now: fixedNow
+        )
+        let meters = usage.groups.flatMap(\.meters)
+        let resets = try #require(
+            meters.first { $0.id == "claude.reset-tickets" }
+        )
+        #expect(resets.metric == .count(value: 1, unit: .tickets))
+        #expect(resets.title == "초기화권")
+        #expect(resets.resetText == "29일 후 만료")
+        let credits = try #require(
+            meters.first { $0.id == "claude.cloud-session-credits" }
+        )
+        #expect(credits.metric == .credit(balance: 220, unit: .usd))
+        #expect(credits.resetText == "38일 후 만료") // 2026-09-10 minus 2026-08-02T15:30 = 38d 8.5h
+    }
+
+    @Test
+    func omitsIneligibleOrSpentResetVouchersAndNullCredits() throws {
+        let usage = try ClaudeUsageParser.parse(
+            Data(
+                """
+                {
+                  "five_hour": {"utilization": 42},
+                  "cedar_ember": {
+                    "eligible": false,
+                    "ineligible_reason": "no_grant",
+                    "grants": []
+                  },
+                  "iguana_necktie": null
+                }
+                """.utf8
+            ),
+            planName: "Max",
+            now: fixedNow
+        )
+        #expect(usage.groups.flatMap(\.meters).map(\.id) == ["claude.session"])
+    }
+
+    @Test
+    func cloudSessionCreditsFallBackToUtilizationWithoutDollars() throws {
+        let usage = try ClaudeUsageParser.parse(
+            Data(
+                """
+                {
+                  "five_hour": {"utilization": 10},
+                  "iguana_necktie": {
+                    "utilization": 25,
+                    "resets_at": null,
+                    "limit_dollars": null,
+                    "used_dollars": null,
+                    "remaining_dollars": null
+                  }
+                }
+                """.utf8
+            ),
+            planName: "Max",
+            now: fixedNow
+        )
+        let meter = try #require(
+            usage.groups.flatMap(\.meters)
+                .first { $0.id == "claude.cloud-session-credits" }
+        )
+        #expect(meter.metric == .quotaRemaining(percent: 75))
+        #expect(meter.resetText == nil)
+    }
+
+    @Test
     func usesScopedUtilizationWhenPercentIsNull() throws {
         let usage = try ClaudeUsageParser.parse(
             Data(
