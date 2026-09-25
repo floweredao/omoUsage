@@ -172,6 +172,29 @@ struct FixtureUsageProvider: UsageProvider {
         "used_credits": 7800,
         "monthly_limit": 10000,
         "reset_text": "1분 전 기준"
+      },
+      "cedar_ember": {
+        "eligible": true,
+        "grants": [
+          {
+            "id": "opus55-launch-promax-20260921",
+            "resets_total": 1,
+            "resets_left": 1,
+            "starts_at": "2098-01-01T00:00:00Z",
+            "ends_at": "2099-02-01T00:00:00Z",
+            "clears": ["five_hour", "seven_day"],
+            "paused": false,
+            "usable_now": true
+          }
+        ],
+        "next_grant_id": "opus55-launch-promax-20260921"
+      },
+      "iguana_necktie": {
+        "utilization": 12,
+        "resets_at": "2099-02-05T00:00:00Z",
+        "limit_dollars": 250,
+        "used_dollars": 30,
+        "remaining_dollars": 220
       }
     }
     """
