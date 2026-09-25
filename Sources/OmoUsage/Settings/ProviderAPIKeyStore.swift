@@ -208,7 +208,7 @@ struct ProviderAPIKeyStore: Sendable {
         for provider: ProviderID,
         home: URL = FileManager.default.homeDirectoryForCurrentUser,
         environment: [String: String] = ProcessInfo.processInfo.environment,
-        keychain: any ProviderKeychain = SecurityProviderKeychain(),
+        keychain: any ProviderKeychain = UnifiedProviderKeychain(),
         legacyFileSystem: any ProviderLegacyFileSystem = LiveProviderLegacyFileSystem()
     ) -> ProviderAPIKeyStore? {
         live(
@@ -226,7 +226,7 @@ struct ProviderAPIKeyStore: Sendable {
         accountID: AccountID,
         home: URL = FileManager.default.homeDirectoryForCurrentUser,
         environment: [String: String] = ProcessInfo.processInfo.environment,
-        keychain: any ProviderKeychain = SecurityProviderKeychain(),
+        keychain: any ProviderKeychain = UnifiedProviderKeychain(),
         legacyFileSystem: any ProviderLegacyFileSystem = LiveProviderLegacyFileSystem()
     ) -> ProviderAPIKeyStore? {
         let fileName: String

@@ -1136,7 +1136,7 @@ struct CredentialDiscovery: Sendable {
         environment: [String: String] =
             ProcessInfo.processInfo.environment,
         keychain: any KeychainReading = SecurityKeychainReader(),
-        providerKeychain: any ProviderKeychain = SecurityProviderKeychain()
+        providerKeychain: any ProviderKeychain = UnifiedProviderKeychain()
     ) -> CredentialDiscovery {
         let codexHome: URL
         if let path = environment["CODEX_HOME"]?.nonEmpty {
