@@ -374,6 +374,43 @@ enum SettingsWindowContract {
     }
 }
 
+/// The accessory app has no nib and no other menu, so without a main menu
+/// key equivalents such as Cmd+W never reach a window. This contract owns the
+/// minimal File -> Close wiring; the action stays gated to the settings
+/// window so the transient popover's internal panel can never receive it.
+@MainActor
+enum ApplicationMenuContract {
+    static let closeAction = #selector(
+        AppDelegate.closeSettingsWindow(_:)
+    )
+
+    static func makeMenu(
+        fileTitle: String,
+        closeTitle: String,
+        closeTarget: AnyObject
+    ) -> (fileMenu: NSMenu, closeItem: NSMenuItem) {
+        let mainMenu = NSMenu()
+        let fileItem = NSMenuItem(
+            title: fileTitle,
+            action: nil,
+            keyEquivalent: ""
+        )
+        let fileMenu = NSMenu(title: fileTitle)
+        fileItem.submenu = fileMenu
+        let closeItem = NSMenuItem(
+            title: closeTitle,
+            action: closeAction,
+            keyEquivalent: "w"
+        )
+        closeItem.keyEquivalentModifierMask = NSEvent.ModifierFlags.command
+        closeItem.target = closeTarget
+        fileMenu.addItem(closeItem)
+        mainMenu.addItem(fileItem)
+        NSApplication.shared.mainMenu = mainMenu
+        return (fileMenu, closeItem)
+    }
+}
+
 enum StatusPanelPresentationContract {
     static let usesNativePopover = true
     static let drawsCustomPointer = false
@@ -505,6 +542,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         await self?.viewModel.refresh()
     }
     private var settingsWindow: NSWindow?
+    private var applicationFileMenu: NSMenu?
+    private var applicationCloseItem: NSMenuItem?
     private weak var stabilizedPopoverWindow: NSWindow?
     private var hasFinishedLaunching = false
     private var hasPendingSecondaryActivation = false
@@ -804,6 +843,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     func applicationDidFinishLaunching(
         _ notification: Notification
     ) {
+        installApplicationMenu()
         configureStatusItem()
         configureStatusPopover()
         if presentationStyle == .sideNotch {
@@ -1233,6 +1273,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         statusItem?.button?.toolTip = title
         statusItem?.button?.setAccessibilityLabel(title)
         settingsWindow?.title = localization.text(.settingsTitle)
+        applicationFileMenu?.title = localization.text(.fileMenu)
+        applicationCloseItem?.title = localization.text(.close)
+    }
+
+    private func installApplicationMenu() {
+        let menu = ApplicationMenuContract.makeMenu(
+            fileTitle: localization.text(.fileMenu),
+            closeTitle: localization.text(.close),
+            closeTarget: self
+        )
+        applicationFileMenu = menu.fileMenu
+        applicationCloseItem = menu.closeItem
+    }
+
+    @objc
+    func closeSettingsWindow(_ sender: NSMenuItem) {
+        guard let settingsWindow,
+              settingsWindow.isKeyWindow
+        else { return }
+        settingsWindow.performClose(sender)
+    }
+
+    @objc
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        guard menuItem.action == ApplicationMenuContract.closeAction
+        else { return true }
+        guard let settingsWindow else { return false }
+        return settingsWindow.isKeyWindow
     }
 
     private func setPresentationStyle(

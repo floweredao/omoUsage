@@ -21,6 +21,8 @@ public enum AppStringKey: String, CaseIterable, Sendable {
     case registryResetSucceeded
     case registryRecoveryFailed
     case cancel
+    case fileMenu
+    case close
     case language
     case korean
     case english
@@ -212,6 +214,8 @@ public struct AppStrings: Sendable {
         .registryResetSucceeded: "새 계정 레지스트리를 만들었습니다.",
         .registryRecoveryFailed: "계정 레지스트리를 복구하지 못했습니다.",
         .cancel: "취소",
+        .fileMenu: "파일",
+        .close: "닫기",
         .language: "언어",
         .korean: "한국어",
         .english: "English",
@@ -406,6 +410,8 @@ public struct AppStrings: Sendable {
         .registryResetSucceeded: "Created a new account registry.",
         .registryRecoveryFailed: "Could not recover the account registry.",
         .cancel: "Cancel",
+        .fileMenu: "File",
+        .close: "Close",
         .language: "Language",
         .korean: "한국어",
         .english: "English",
