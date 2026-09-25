@@ -63,18 +63,23 @@ struct ProviderSectionView: View {
                     Text(usage.provider.displayName)
                         .font(.system(size: 15, weight: .bold))
                         .foregroundStyle(.primary)
+                        .lineLimit(1)
                     if showsAccountLabel {
                         Text(AccountLabel.sanitized(usage.accountLabel))
                             .font(.system(size: 10.5, weight: .medium))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
+                            .help(AccountLabel.sanitized(usage.accountLabel))
                     }
                 }
+                .layoutPriority(1)
 
                 if !usage.planName.isEmpty {
                     Text(usage.planName)
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .help(usage.planName)
                         .padding(.horizontal, 7)
                         .padding(.vertical, 3)
                         .background(
