@@ -218,8 +218,11 @@ struct ClaudeUsageProvider: UsageProvider {
             "oauth-2025-04-20",
             forHTTPHeaderField: "anthropic-beta"
         )
+        // cedar_ember vouchers are gated on the CLI's User-Agent shape;
+        // any other client string gets eligible:false / ineligible_reason:
+        // "surface" even when the account holds a live reset grant.
         request.setValue(
-            "claude-code/2.1.69",
+            "claude-cli/2.1.220 (external, cli)",
             forHTTPHeaderField: "User-Agent"
         )
         let data: Data
