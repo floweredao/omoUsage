@@ -26,6 +26,7 @@ targets:
           - AGENTS.md
           - Credentials/AGENTS.md
           - Providers/AGENTS.md
+          - Settings/AGENTS.md
           - WebDashboard/AGENTS.md
     entitlements:
       path: Config/OmoUsage.entitlements
@@ -56,6 +57,8 @@ targets:
       - iOS
     sources:
       - path: Sources/OmoUsageCore
+        excludes:
+          - AGENTS.md
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.omo.usage.core

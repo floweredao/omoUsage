@@ -2,7 +2,7 @@
 
 ## OVERVIEW
 
-One SwiftPM test target, 74 Swift files, all Swift Testing (`import Testing`,
+One SwiftPM test target, all Swift Testing (`import Testing`,
 `@testable import OmoUsage`, and public `OmoUsageCore` where required). No
 XCTest, live network, or real Keychain. Every provider gets a
 `*ReliabilityTests.swift` file that pins its real-world failure modes; shared
@@ -24,6 +24,10 @@ security, release, and web-dashboard suites.
 | Timestamp text, Korean strings | `RefreshBehaviorTests.swift`, `LocalizationTests.swift` |
 | Loopback HTTP routes, nonce checks, request limits, web tokens | `WebDashboardServerTests.swift` |
 | Reading a request body regardless of stream vs data | `URLRequestTestSupport.swift` |
+| Shared HTTP status, retry, deadline, and body contracts | `ProviderContractTests.swift`, `ProviderHTTPRetryTests.swift`, `ProviderDeadlineTests.swift`, `URLRequestTestSupport.swift` |
+| Account add/remove, mutation recovery, key rotation, and provider rebuilds | `ProviderAccountAdditionCoordinatorTests.swift`, `ProviderMutationRecoveryTests.swift`, `ProviderKeyMigrationTests.swift`, `ProviderAccountRecoveryTests.swift` |
+| Side notch hover, hide delay, panel layout, and pointer geometry | `SideNotchHoverPreviewTests.swift`, `SideNotchHideDelayStoreTests.swift`, `SideNotchPanelLayoutTests.swift` |
+| Release, package, CI, repository hygiene, and fixture-mode safety | `ReleasePipelineTests.swift`, `PackageSmokeTests.swift`, `CIConfigurationTests.swift`, `RepositoryHygieneTests.swift` |
 
 ## CONVENTIONS
 

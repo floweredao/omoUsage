@@ -45,6 +45,7 @@ let package = Package(
         .target(
             name: "OmoUsageCore",
             path: "Sources/OmoUsageCore",
+            exclude: ["AGENTS.md"],
             sources: [
                 "Localization/AppLanguage.swift",
                 "Localization/AppStrings.swift",
@@ -69,6 +70,7 @@ let package = Package(
                 "AGENTS.md",
                 "Credentials/AGENTS.md",
                 "Providers/AGENTS.md",
+                "Settings/AGENTS.md",
                 "WebDashboard/AGENTS.md"
             ],
             resources: [

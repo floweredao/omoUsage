@@ -2,55 +2,64 @@
 
 ## OVERVIEW
 
-The macOS executable and two-file Mobile UI consume the separate
-`Sources/OmoUsageCore` library. Core is the enforceable shared boundary;
-credentials, providers, diagnostics, SQLite, Security, and AppKit stay in the
-macOS executable.
+The macOS executable owns credentials, provider calls, diagnostics, AppKit
+lifecycle, and the dashboard server. The iOS/Catalyst companion is limited to
+the two files under `Mobile/` and consumes `OmoUsageCore` snapshots only.
 
 ## STRUCTURE
 
 ```text
-OmoUsageApp.swift        macOS entry, accessory NSApplication
-AppDelegate.swift        composition root: stores -> providers -> view model -> popover
-Credentials/             macOS only; env, files, Keychain, SQLite, CLI paths
-Providers/               one adapter per provider + parsers + ProviderHTTP + fixtures
-Dashboard/               UsageProvider protocol, view model, scheduler, layout
-Settings/                UserDefaults-backed stores and ProviderSetup actions
-Views/                   AppKit/SwiftUI popover and settings surfaces
-../OmoUsageCore/         shared models, localization, schema-v4 snapshot sync
-WebDashboard/            loopback HTTP server, sanitized snapshot/control surface
-Mobile/                  iOS/Catalyst entry and read-only view
-Resources/ProviderIcons  bundled icon assets
-Resources/WebDashboard  single bundled HTML/CSS/JS dashboard
+OmoUsageApp.swift        single-instance gate and accessory NSApplication entry
+AppDelegate.swift        composition root and macOS lifecycle
+Credentials/             macOS credential discovery and redacted diagnostics
+Providers/               provider adapters, parsing, HTTP, and fixtures
+Dashboard/               refresh owner, ordering, scheduler, and layout
+Settings/                account registry, setup/login, keys, and preferences
+Views/                   popover, Side Notch, settings, and accessibility UI
+WebDashboard/            loopback listener, access gateway, router, and assets
+Mobile/                  read-only iOS/Catalyst snapshot UI
 ```
 
 ## WHERE TO LOOK
 
-- Composition happens once in `AppDelegate`: it builds stores, providers, `UsageDashboardViewModel`, refresh scheduling, the native popover, and the loopback web server. Nothing else constructs providers or owns refreshes.
-- The view model takes every dependency by closure or array in `init`, including `now`. Tests build it directly; don't reach for singletons inside it.
-- `../OmoUsageCore/Sync/UsageSnapshotSync.swift` is the only bridge between halves. macOS encodes schema v4 through the privacy-minimized DTO; Mobile decodes versions 1–4. Any Core model field that reaches the codec is a privacy decision.
-- `WebDashboard/WebDashboardServer.swift` owns HTTP parsing, route authorization, settings commands, listener lifecycle, and synchronized snapshot/settings stores. `Resources/WebDashboard/index.html` is its bundled zero-dependency client.
-- The minimum provider path is `Models/ProviderID.swift`, a new `Providers/*UsageProvider.swift`, `ProviderFactory`, and `Settings/ProviderSetup.swift`; roster and reliability tests complete the change. Display strings go through `Localization/`, never string literals in views.
-- Parsing lives apart from fetching for the messy providers (`ClaudeUsageParser`, `CodexUsageParser`, `AntigravityUsageParser`); shared shapes are in `ProviderPayload` and `UsageParsing`. Put schema tolerance in the parser, HTTP concerns in the provider.
+- `OmoUsageApp.swift` claims the single-instance lock, sets accessory policy,
+  installs secondary-launch activation, and runs `AppDelegate`.
+- `AppDelegate.swift` is the composition root. It builds account stores and
+  account-scoped providers, injects them into `UsageDashboardViewModel`, owns
+  the status item/popover and Side Notch controller, starts refresh scheduling,
+  and wires the web command bridge.
+- `Dashboard/UsageDashboardViewModel.swift` is the only refresh owner. Keep
+  provider fetches, cancellation, last-good retention, ordering, visibility,
+  and published control state here.
+- `Settings/ProviderAccountRegistryController.swift` and
+  `ProviderMutationCoordinator.swift` govern account identity, durable registry
+  recovery, per-account ordering, and visibility. Do not collapse account
+  identity into the provider enum.
+- `Settings/ProviderSetup.swift` owns official app/CLI setup and login actions;
+  `ProviderAPIKeyStore.swift` owns API-key persistence for supported providers.
+- `Views/` contains the native popover and Side Notch surfaces. Presentation
+  style, settings actions, provider ordering, account aliases, and accessibility
+  identifiers must remain consistent across both surfaces.
+- `WebDashboard/` serves sanitized snapshots and delegates commands to the
+  existing main-actor dashboard owner. The listener binds loopback; optional
+  private Tailscale Serve exposure is handled by its access/controller layer.
+- `../OmoUsageCore/Sync/UsageSnapshotSync.swift` is the only macOS/mobile data
+  bridge. Treat every field reaching the codec as a privacy decision.
 
 ## CONVENTIONS
 
-- `UsageProvider` is `Sendable` with a single `fetch(now:) async throws`; providers are value types and carry no mutable state. Cross-fetch state needs an actor, as `ClaudeRefreshCooldown` does.
-- View model and views are `@MainActor`; `@Observable` state is `private(set)` and mutated only through intent methods. Injected dependencies are `@ObservationIgnored`.
-- Time is injected (`now`, `sleep`) everywhere it matters. No `Date()` or `Task.sleep` inline in refresh paths.
-- Localization keys are enum cases in `AppStringKey`, so a new string is a compile-time addition, not a lookup that can silently miss.
-- Provider identity is `ProviderID`; order flows from the roster through `ProviderDisplayOrder.repaired` so persisted orders survive roster changes.
+- Providers are `Sendable` value types with `fetch(now:) async throws`; mutable
+  cross-fetch state belongs in an actor.
+- UI and observable state are `@MainActor`; inject time and dependencies for
+  deterministic tests. Never add a second refresh scheduler.
+- Provider identity uses `ProviderID`; account identity uses `AccountProviderID`.
+  Persisted orders must be repaired against the current roster.
+- Display strings and visual tokens come from localization/style catalogs.
 
 ## ANTI-PATTERNS
 
-- Don't import AppKit or reference `Credentials/`, `Providers/`, or
-  `Diagnostics/` from `Mobile/` or `Sources/OmoUsageCore`; Core compiles for
-  macOS, iOS, and Catalyst.
-- Don't widen `DashboardSnapshot` or `ProviderUsage` for UI convenience; those types cross into iCloud.
-- Don't spawn refreshes outside the view model or add a second scheduler. Cancellation must leave state and timestamp untouched.
-- Don't reintroduce `@MainActor` hops inside provider `fetch`; the fetch group runs off the main actor by design.
-- Don't hardcode provider display text, colors, or ordering in `Views/`; they come from `Localization/`, `ProviderVisualStyle`, and the roster.
-- Don't let `WebDashboard/` call providers or credentials directly; it delegates commands to the existing main-actor view model and serves sanitized snapshots.
-- Don't add a file without deciding its target membership in `project.yml`. SwiftPM building clean proves nothing about the mobile target.
-
-Per-folder AGENTS.md files, where present, win over this file for anything inside them.
+- Do not initialize provider stores or UI before the single-instance owner claim.
+- Do not activate both Popover and Side Notch simultaneously; close the prior
+  surface before enabling its replacement, using the same dashboard state.
+- Do not persist Side Notch selection or revealed state across launches.
+- Do not let secondary launches construct another refresh owner or listener.
