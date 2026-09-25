@@ -2,6 +2,13 @@ public enum AppStringKey: String, CaseIterable, Sendable {
     case aiUsage
     case settingsTitle
     case settingsSubtitle
+    case generalSettings
+    case displaySettings
+    case webAccessSettings
+    case dashboardEmptyTitle
+    case dashboardEmptyDescription
+    case dashboardChecking
+    case openSettings
     case registryRecoveredTitle
     case registryRecoveredDescription
     case registryBlockedTitle
@@ -136,6 +143,10 @@ public enum AppStringKey: String, CaseIterable, Sendable {
     case resetHours
     case resetHoursMinutes
     case resetDays
+    case expiryMinutes
+    case expiryHours
+    case expiryHoursMinutes
+    case expiryDays
     case usageSession
     case usageWeek
     case usageExtra
@@ -179,6 +190,13 @@ public struct AppStrings: Sendable {
         .aiUsage: "AI 사용량",
         .settingsTitle: "설정",
         .settingsSubtitle: "프로바이더 인증과 앱 설정을 관리합니다.",
+        .generalSettings: "일반",
+        .displaySettings: "화면 표시",
+        .webAccessSettings: "웹 접근",
+        .dashboardEmptyTitle: "표시할 사용량이 없습니다",
+        .dashboardEmptyDescription: "설정에서 계정을 연결하거나 표시 상태를 확인하세요.",
+        .dashboardChecking: "사용량을 확인하고 있습니다",
+        .openSettings: "설정 열기",
         .registryRecoveredTitle: "계정 레지스트리를 백업에서 불러왔습니다",
         .registryRecoveredDescription:
             "손상된 원본은 격리했습니다. 백업을 복원하거나 새 레지스트리로 재설정하세요.",
@@ -332,6 +350,10 @@ public struct AppStrings: Sendable {
         .resetHours: "%d시간 후 리셋",
         .resetHoursMinutes: "%d시간 %d분 후 리셋",
         .resetDays: "%d일 후 리셋",
+        .expiryMinutes: "%d분 후 만료",
+        .expiryHours: "%d시간 후 만료",
+        .expiryHoursMinutes: "%d시간 %d분 후 만료",
+        .expiryDays: "%d일 후 만료",
         .usageSession: "세션",
         .usageWeek: "주간",
         .usageExtra: "추가 사용량",
@@ -362,6 +384,13 @@ public struct AppStrings: Sendable {
         .aiUsage: "AI Usage",
         .settingsTitle: "Settings",
         .settingsSubtitle: "Manage provider authentication and app settings.",
+        .generalSettings: "General",
+        .displaySettings: "Display",
+        .webAccessSettings: "Web Access",
+        .dashboardEmptyTitle: "No usage to display",
+        .dashboardEmptyDescription: "Connect an account or check its visibility in Settings.",
+        .dashboardChecking: "Checking usage",
+        .openSettings: "Open Settings",
         .registryRecoveredTitle: "Account registry loaded from backup",
         .registryRecoveredDescription:
             "The damaged original was quarantined. Restore the backup or reset to a new registry.",
@@ -515,6 +544,10 @@ public struct AppStrings: Sendable {
         .resetHours: "Resets in %d hr",
         .resetHoursMinutes: "Resets in %d hr %d min",
         .resetDays: "Resets in %d days",
+        .expiryMinutes: "Expires in %d min",
+        .expiryHours: "Expires in %d hr",
+        .expiryHoursMinutes: "Expires in %d hr %d min",
+        .expiryDays: "Expires in %d days",
         .usageSession: "Session",
         .usageWeek: "Weekly",
         .usageExtra: "Extra usage",

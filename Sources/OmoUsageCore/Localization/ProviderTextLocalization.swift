@@ -207,6 +207,40 @@ public enum ProviderTextLocalization {
             return format(.resetDays, language: language, days)
         }
         if
+            value.hasSuffix("분 후 만료"),
+            let minutes = Int(value.dropLast("분 후 만료".count))
+        {
+            return format(.expiryMinutes, language: language, minutes)
+        }
+        if value.hasSuffix("분 후 만료") {
+            let interval = value.dropLast("분 후 만료".count)
+                .components(separatedBy: "시간 ")
+            if
+                interval.count == 2,
+                let hours = Int(interval[0]),
+                let minutes = Int(interval[1])
+            {
+                return format(
+                    .expiryHoursMinutes,
+                    language: language,
+                    hours,
+                    minutes
+                )
+            }
+        }
+        if
+            value.hasSuffix("시간 후 만료"),
+            let hours = Int(value.dropLast("시간 후 만료".count))
+        {
+            return format(.expiryHours, language: language, hours)
+        }
+        if
+            value.hasSuffix("일 후 만료"),
+            let days = Int(value.dropLast("일 후 만료".count))
+        {
+            return format(.expiryDays, language: language, days)
+        }
+        if
             value.hasSuffix("분 전 기준"),
             let minutes = Int(value.dropLast("분 전 기준".count))
         {
@@ -231,6 +265,11 @@ public enum ProviderTextLocalization {
             .replacingOccurrences(
                 of: "풀 리셋 티켓",
                 with: "Full reset tickets"
+            )
+            .replacingOccurrences(of: "초기화권", with: "Limit resets")
+            .replacingOccurrences(
+                of: "클라우드 세션 크레딧",
+                with: "Cloud session credits"
             )
             .replacingOccurrences(of: "최근 30일 ", with: "Last 30 days ")
             .replacingOccurrences(of: "크레딧", with: "Credits")
