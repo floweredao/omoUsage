@@ -124,6 +124,33 @@ enum ProviderPayload {
         return "\(max(1, amount))\(suffix)"
     }
 
+    /// Like `resetText`, but for deadlines that expire rather than reset —
+    /// Claude's reset vouchers and promotional credit buckets end at a fixed
+    /// date instead of rolling into a fresh window.
+    static func expiryText(_ date: Date?, now: Date) -> String? {
+        guard let date else { return nil }
+        let interval = date.timeIntervalSince(now)
+        guard interval.isFinite else { return nil }
+        let seconds = max(0, interval)
+        let divisor: Double
+        let suffix: String
+        if seconds < 3_600 {
+            divisor = 60
+            suffix = "분 후 만료"
+        } else if seconds < 86_400 {
+            divisor = 3_600
+            suffix = "시간 후 만료"
+        } else {
+            divisor = 86_400
+            suffix = "일 후 만료"
+        }
+        guard let amount = Int(exactly: (seconds / divisor).rounded(.down))
+        else {
+            return nil
+        }
+        return "\(max(1, amount))\(suffix)"
+    }
+
     static func money(_ value: Double) -> String {
         String(format: "$%.2f", value)
     }

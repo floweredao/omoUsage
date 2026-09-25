@@ -199,7 +199,10 @@ struct ClaudeUsageProvider: UsageProvider {
             for: id
         )
         var request = URLRequest(
-            url: URL(string: "https://api.anthropic.com/api/oauth/usage")!
+            url: URL(
+                string: "https://api.anthropic.com/api/oauth/usage"
+                    + "?cedar_ember=1&skip_spend=1"
+            )!
         )
         request.timeoutInterval = 10
         request.setValue(
@@ -427,7 +430,7 @@ struct ClaudeUsageProvider: UsageProvider {
             url: URL(
                 string: "https://claude.ai/api/organizations/"
                     + organizationID
-                    + "/usage"
+                    + "/usage?cedar_ember=1&skip_spend=1"
             )!
         )
         request.timeoutInterval = 10
