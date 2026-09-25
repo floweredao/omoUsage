@@ -1,7 +1,7 @@
 # PROJECT KNOWLEDGE BASE
 
-**Generated:** 2026-08-30T12:00:51Z
-**Commit:** 1371442
+**Generated:** 2026-09-14
+**Commit:** 2941f87
 **Branch:** main
 
 ## OVERVIEW
@@ -16,7 +16,7 @@ OmoUsage is a native Swift 6 menu-bar app that aggregates remaining quota from t
 |   |-- Credentials/           # Local environment, file, Keychain, SQLite, and CLI discovery
 |   |-- Providers/             # Provider HTTP adapters, payload parsing, and fixture providers
 |   |-- Dashboard/             # Refresh orchestration, ordering, and provider protocol
-|   |-- Settings/              # Provider setup actions and local API-key storage
+|   |-- Settings/              # Account registry, credential transactions, setup, Sparkle
 |   |-- Views/                 # macOS popover and settings UI
 |   |-- WebDashboard/          # Loopback HTTP router, command bridge, and bundled web assets
 |   `-- Mobile/                # iOS/Catalyst entry point and read-only UI
@@ -36,14 +36,15 @@ OmoUsage is a native Swift 6 menu-bar app that aggregates remaining quota from t
 
 | Task | Location | Notes |
 |------|----------|-------|
-| Trace macOS startup | `OmoUsageApp.swift`, `AppDelegate.swift` | Manual `NSApplication` lifecycle; no SwiftUI `App` on macOS |
-| Add or reorder a provider | `Models/ProviderID.swift`, `Providers/ProviderFactory.swift` | Roster order must stay aligned with setup and tests |
+| Trace macOS startup | `Sources/OmoUsage/OmoUsageApp.swift`, `SingleInstanceController.swift`, `AppDelegate.swift` | Single-instance claim precedes manual `NSApplication` lifecycle |
+| Add or reorder a provider | `Sources/OmoUsageCore/Models/ProviderID.swift`, `Sources/OmoUsage/Providers/ProviderFactory.swift` | Keep contracts, account roster, setup, and tests aligned |
 | Change credential lookup | `Credentials/` | Preserve source precedence, typed failures, and redaction |
 | Change provider requests/parsing | `Providers/` | Shared boundaries are `ProviderHTTP`, `UsageJSON`, and `ProviderPayload` |
 | Change refresh/failure behavior | `Dashboard/UsageDashboardViewModel.swift` | Concurrent fetch, cancellation, last-good retention |
 | Change provider accounts | `Settings/ProviderAccountStore.swift`, `ProviderAccountRegistryController.swift` | Registry changes rebuild account-scoped providers and repair persisted order |
-| Change provider setup/login | `Settings/ProviderSetup.swift` | Only official apps/CLIs; OpenRouter and Z.ai accept API keys |
-| Change desktop UI | `Views/`, `AppDelegate.swift`, `DESIGN.md` | Native 320 pt popover and system appearance |
+| Change provider setup/login | `Settings/ProviderSetup.swift` | Official apps/CLIs; OpenCode Go, OpenRouter, and Z.ai accept API keys |
+| Change desktop UI | `Views/`, `SideNotchPanelController.swift`, `AppDelegate.swift`, `DESIGN.md` | Default 320 pt popover; optional nonactivating Side Notch |
+| Change app updates/version | `Settings/AppUpdateController.swift`, `Config/Version.xcconfig` | Sparkle is macOS-only; packaging embeds its framework |
 | Change web dashboard | `WebDashboard/`, `Resources/WebDashboard/index.html` | Loopback-only sanitized surface; mutations require a launch nonce |
 | Change mobile data/UI | `Sources/OmoUsageCore/`, `Sources/OmoUsage/Mobile/` | Mobile target depends only on Core and its two UI files |
 | Change target membership | `project.yml` | Regenerate the checked-in Xcode project afterward |
@@ -51,20 +52,20 @@ OmoUsage is a native Swift 6 menu-bar app that aggregates remaining quota from t
 
 ## CODE MAP
 
-LSP document symbols supplied declaration shape and semantic spot checks. `Refs` is the number of Swift files containing the symbol; ast-grep was unavailable during this refresh.
+Paths below are repository-relative. Other macOS paths in the lookup table are relative to `Sources/OmoUsage`. SourceKit document/workspace symbols and an ast-grep import scan verified the map. `Refs` is the LSP reference count excluding declarations where measured; `—` means unmeasured.
 
 | Symbol | Type | Location | Refs | Role |
 |--------|------|----------|------|------|
-| `OmoUsageApp.main` | entry point | `Sources/OmoUsage/OmoUsageApp.swift:5` | 1 | Starts the accessory `NSApplication` |
-| `AppDelegate` | class | `Sources/OmoUsage/AppDelegate.swift:107` | 2 | macOS composition root and popover lifecycle |
-| `ProviderFactory.current` | factory | `Sources/OmoUsage/Providers/ProviderFactory.swift:3` | 4 | Registers account-scoped live providers or fixture providers |
-| `CredentialDiscovery` | struct | `Sources/OmoUsage/Credentials/CredentialDiscovery.swift:77` | 33 | Central local credential boundary |
-| `UsageProvider` | protocol | `Sources/OmoUsage/Dashboard/UsageProvider.swift:3` | 21 | `Sendable` async provider contract for live and fixture adapters |
-| `UsageDashboardViewModel` | class | `Sources/OmoUsage/Dashboard/UsageDashboardViewModel.swift:56` | 13 | Main-actor refresh, ordering, connection-state, and snapshot coordinator |
-| `ProviderID` | enum | `Sources/OmoUsageCore/Models/ProviderID.swift` | 49 | Canonical provider identity and order |
-| `UsageSnapshotCodec` | enum | `Sources/OmoUsageCore/Sync/UsageSnapshotSync.swift` | 5 | Validates schema-v4 mobile-safe snapshots |
-| `WebDashboardRouter` | struct | `Sources/OmoUsage/WebDashboard/WebDashboardServer.swift:290` | 3 | Allowlists local HTTP routes and authorized dashboard commands |
-| `OmoUsageMobileApp` | entry point | `Sources/OmoUsage/Mobile/OmoUsageMobileApp.swift:5` | 1 | Loads snapshots; never calls providers |
+| `OmoUsageApp.main` | entry point | `Sources/OmoUsage/OmoUsageApp.swift` | — | Claims single instance, then starts accessory application |
+| `AppDelegate` | class | `Sources/OmoUsage/AppDelegate.swift` | — | Composition root and mutually exclusive dashboard surfaces |
+| `ProviderFactory.current` | factory | `Sources/OmoUsage/Providers/ProviderFactory.swift` | — | Registers account-scoped live or fixture providers |
+| `CredentialDiscovery` | struct | `Sources/OmoUsage/Credentials/CredentialDiscovery.swift` | — | Legacy discovery and isolated account snapshots |
+| `UsageProvider` | protocol | `Sources/OmoUsage/Dashboard/UsageProvider.swift` | — | Sendable async provider and account identity contract |
+| `UsageDashboardViewModel` | class | `Sources/OmoUsage/Dashboard/UsageDashboardViewModel.swift` | — | Refresh, deadlines, account ordering, snapshot coordinator |
+| `ProviderID` | enum | `Sources/OmoUsageCore/Models/ProviderID.swift` | 325 | Canonical provider identity and order |
+| `UsageSnapshotCodec` | enum | `Sources/OmoUsageCore/Sync/UsageSnapshotSync.swift` | — | Explicit privacy-minimized cloud DTO encoding |
+| `WebDashboardRouter` | struct | `Sources/OmoUsage/WebDashboard/WebDashboardServer.swift` | — | HTTP allowlist and authorized command boundary |
+| `OmoUsageMobileApp` | entry point | `Sources/OmoUsage/Mobile/OmoUsageMobileApp.swift` | — | Loads snapshots; never calls providers |
 
 ## CONVENTIONS
 
@@ -74,7 +75,7 @@ LSP document symbols supplied declaration shape and semantic spot checks. `Refs`
 - Provider failures are typed. Missing authentication removes a provider; transient failures may retain its last-good usage.
 - Korean is the persisted default language. Machine values use typed IDs/enums; provider-generated display text is localized separately.
 - SwiftPM builds `OmoUsageCore`, the macOS executable, and tests. XcodeGen/Xcode builds macOS, iOS, and Catalyst targets.
-- `OMO_USAGE_FIXTURE_MODE=1` swaps the production roster for fixture providers and also enables the mobile fixture.
+- macOS fixture hooks require `OMO_USAGE_FIXTURES` (debug by default); release QA packaging uses `--fixtures`. `OMO_USAGE_FIXTURE_MODE=1` selects fixtures, including on Mobile.
 
 ## ANTI-PATTERNS (THIS PROJECT)
 
@@ -84,7 +85,7 @@ LSP document symbols supplied declaration shape and semantic spot checks. `Refs`
 - Never resolve similarly named third-party executables such as `opencodex`; launch only the provider's official app or CLI.
 - Never route provider help through OpenUsage or copy its unrelated product surfaces.
 - Never force Aqua, Dark Aqua, or a SwiftUI color scheme. The app follows system appearance.
-- Never replace the native status-item-anchored `NSPopover` with custom pointer or screen-relative panel geometry.
+- Preserve the native status-item-anchored `NSPopover` in default Popover mode. Optional Side Notch uses its separate `NSPanel` and layout contract.
 - Never expose the web dashboard beyond loopback, serve arbitrary files, or accept mutations without the per-launch nonce.
 - Do not add provider/network/credential code to the mobile target.
 
@@ -101,6 +102,8 @@ LSP document symbols supplied declaration shape and semantic spot checks. `Refs`
 ```bash
 swift build
 swift test
+sh Scripts/check-source-policy.sh
+sh Scripts/check-core-boundary.sh
 sh Scripts/package-app.sh
 ```
 
@@ -111,5 +114,7 @@ sh Scripts/package-app.sh
 - `Package.swift` exports one `OmoUsageCore` library and the macOS executable; `project.yml` makes both apps depend on the same Core target.
 - Both app targets must use the same development team and `$(TeamIdentifierPrefix)com.omo.usage` iCloud identifier.
 - The checked-in `.xcodeproj` mirrors `project.yml`; treat the YAML as the target-definition source.
+- `sh Scripts/ci-check.sh policy` regenerates the Xcode project; it is not a read-only check. `swiftpm`, `xcode`, and `package-smoke` are separate local lanes.
+- Existing GitHub workflows have push/PR/tag triggers. Do not trigger Actions without explicit authorization; check and reversibly disable relevant workflows before an authorized remote write.
 - `UsageSnapshotCodec` currently uses schema version 4, decodes versions 1–3, and keeps a 256 KB payload ceiling.
-- `NWWebDashboardListener` binds `127.0.0.1:7827`; `WebDashboardRouter` is the only HTTP route and mutation boundary.
+- `NWWebDashboardListener` binds production `127.0.0.1:7827`; fixture mode may override the port. Optional Tailscale Serve supplies private HTTPS access. `WebDashboardAccessGateway` validates Host/Origin before the router checks routes and mutation nonces.
