@@ -224,6 +224,73 @@ struct LocalizationTests {
         let localization = LocalizationContext(language: .english)
 
         #expect(
+            localization.providerText("1일 후 리셋")
+                == "Resets in 1 day"
+        )
+        #expect(
+            localization.providerText("1일 후 만료")
+                == "Expires in 1 day"
+        )
+        #expect(
+            localization.providerText("3일 후 리셋")
+                == "Resets in 3 days"
+        )
+    }
+
+    @Test
+    @MainActor
+    func resetDescriptionKeepsRemainingHoursAndLocalResetTime() {
+        let seoul = TimeZone(identifier: "Asia/Seoul")!
+        // Saturday 2026-09-26 18:59:04 KST.
+        let now = Date(timeIntervalSince1970: 1_790_416_744)
+        let english = LocalizationContext(language: .english)
+        let korean = LocalizationContext(language: .korean)
+        func text(
+            _ localization: LocalizationContext,
+            after seconds: TimeInterval
+        ) -> String {
+            localization.resetDescription(
+                until: now.addingTimeInterval(seconds),
+                now: now,
+                timeZone: seoul
+            )
+            .replacingOccurrences(of: "\u{202F}", with: " ")
+        }
+        let sundayEvening: TimeInterval = 1_790_514_796 - 1_790_416_744
+
+        #expect(
+            text(english, after: sundayEvening)
+                == "Resets in 1 day 3 hr · Sun 10:13 PM"
+        )
+        #expect(
+            text(korean, after: sundayEvening)
+                == "1일 3시간 후 리셋 · (일) 오후 10:13"
+        )
+        #expect(
+            text(english, after: 3 * 3_600 + 14 * 60)
+                == "Resets in 3 hr 14 min · 10:13 PM"
+        )
+        #expect(
+            text(english, after: 10 * 3_600)
+                == "Resets in 10 hr 0 min · Sun 4:59 AM"
+        )
+        #expect(
+            text(english, after: 2 * 86_400 + 600)
+                == "Resets in 2 days · Mon 7:09 PM"
+        )
+        #expect(
+            text(korean, after: 2 * 86_400 + 5 * 3_600)
+                == "2일 5시간 후 리셋 · (월) 오후 11:59"
+        )
+        #expect(text(english, after: 20 * 60) == "Resets in 20 min")
+    }
+
+    @Test
+    @MainActor
+    func providerGeneratedHoursAndTitlesStayFullyEnglish() {
+        let localization = LocalizationContext(language: .english)
+
+        #expect(
             localization.providerText("3시간 후 리셋")
                 == "Resets in 3 hr"
         )
