@@ -381,8 +381,7 @@ struct SideNotchPanelLayoutTests {
         )
         #expect(
             detail.height
-                == SideNotchPanelLayout.providerRowMidY(at: 0)
-                    - SideNotchPanelLayout.detailHeaderCenterOffset
+                == SideNotchPanelLayout.verticalPadding / 2
                     + SideNotchPanelLayout.requiredPanelHeight(
                         for: usage
                     )
@@ -638,15 +637,16 @@ struct SideNotchPanelLayoutTests {
         )
 
         for (index, usage) in providers.enumerated() {
-            let rowMidY = SideNotchPanelLayout.verticalPadding / 2
+            let rowTop = SideNotchPanelLayout.verticalPadding / 2
                 + CGFloat(index) * SideNotchPanelLayout.providerRowHeight
-                + SideNotchPanelLayout.providerRowHeight / 2
-            let alignedTop = rowMidY
-                - (SideNotchPanelLayout.detailContentPadding + 10)
             #expect(
-                alignedTop
-                    + SideNotchPanelLayout.requiredPanelHeight(for: usage)
-                    <= detail.height
+                SideNotchPanelLayout.detailTop(
+                    rowTop: rowTop,
+                    detailHeight: SideNotchPanelLayout.detailHeight(
+                        for: usage
+                    ),
+                    containerHeight: detail.height
+                ) == rowTop
             )
         }
         #expect(detail.maxY == revealed.maxY)
@@ -671,6 +671,62 @@ struct SideNotchPanelLayoutTests {
                 .max() ?? 0
         )
         #expect(lowDetail.minY >= visibleFrame.minY + 20)
+    }
+
+    @Test
+    func crowdedRailStillTopAlignsTheLastRowsTallCard() {
+        let small = capturedTwoProviderUsage()[0]
+        let tall = capturedTwoProviderUsage()[1]
+        let smallProviders: [ProviderID] = [
+            .codex, .cursor, .copilot, .antigravity,
+            .devin, .grok, .opencode, .openrouter
+        ]
+        let providers = smallProviders.map {
+            ProviderUsage(
+                provider: $0,
+                planName: small.planName,
+                groups: small.groups,
+                availability: .available,
+                updatedAt: nil
+            )
+        } + [tall]
+        let visibleFrame = NSRect(
+            x: 0,
+            y: 25,
+            width: 1_920,
+            height: 1_055
+        )
+        let revealed = SideNotchPanelLayout.presentationFrame(
+            in: visibleFrame,
+            providers: providers,
+            mode: .revealed,
+            anchorY: 780
+        )
+        let detail = SideNotchPanelLayout.presentationFrame(
+            in: visibleFrame,
+            providers: providers,
+            mode: .detail(.claude),
+            anchorY: 780
+        )
+        let lastRowTop = SideNotchPanelLayout.verticalPadding / 2
+            + CGFloat(providers.count - 1)
+                * SideNotchPanelLayout.providerRowHeight
+
+        #expect(revealed.height == SideNotchPanelLayout.maximumPanelHeight)
+        #expect(detail.maxY == revealed.maxY)
+        #expect(
+            SideNotchPanelLayout.detailTop(
+                rowTop: lastRowTop,
+                detailHeight: SideNotchPanelLayout.detailHeight(for: tall),
+                containerHeight: detail.height
+            ) == lastRowTop
+        )
+        #expect(
+            SideNotchPanelLayout.railContentHeight(
+                providerCount: providers.count,
+                containerHeight: detail.height
+            ) == revealed.height
+        )
     }
 
     @Test

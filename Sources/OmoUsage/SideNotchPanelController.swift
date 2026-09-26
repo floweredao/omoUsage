@@ -24,17 +24,14 @@ enum SideNotchPanelLayout {
     static let railCornerRadius: CGFloat = 20
     static let ringDiameter: CGFloat = 36
     static let providerIconSize: CGFloat = 22
-    static let detailHeaderCenterOffset: CGFloat = detailContentPadding + 10
     static let coordinateSpaceName = "SideNotchPanel"
 
-    static func providerRowMidY(at index: Int) -> CGFloat {
-        verticalPadding / 2
-            + CGFloat(index) * providerRowHeight
-            + providerRowHeight / 2
+    static func providerRowTop(at index: Int) -> CGFloat {
+        verticalPadding / 2 + CGFloat(index) * providerRowHeight
     }
 
     static func detailTop(
-        rowMidY: CGFloat,
+        rowTop: CGFloat,
         detailHeight: CGFloat,
         containerHeight: CGFloat
     ) -> CGFloat {
@@ -42,7 +39,7 @@ enum SideNotchPanelLayout {
             0,
             containerHeight - detailHeight - detailCardMargin
         )
-        return min(max(0, rowMidY - detailHeaderCenterOffset), maximumTop)
+        return min(max(0, rowTop), maximumTop)
     }
 
     static func detailHeight(
@@ -117,7 +114,8 @@ enum SideNotchPanelLayout {
         guard providerCount > 0 else { return containerHeight }
         return min(
             naturalRailHeight(providerCount: providerCount),
-            containerHeight
+            containerHeight,
+            maximumPanelHeight
         )
     }
 
@@ -155,8 +153,7 @@ enum SideNotchPanelLayout {
             }
         }
         let rowAlignedHeights = requiredHeights.enumerated().map {
-            max(0, providerRowMidY(at: $0.offset) - detailHeaderCenterOffset)
-                + $0.element
+            providerRowTop(at: $0.offset) + $0.element
         }
         return frame(
             in: visibleFrame,
@@ -232,18 +229,19 @@ enum SideNotchPanelLayout {
         case .revealed:
             proposedY = anchor - height / 2
         case .detail:
+            let revealedHeight = min(railHeight, maximumHeight)
             let maximumRailY =
-                visibleFrame.maxY - screenMargin - railHeight
+                visibleFrame.maxY - screenMargin - revealedHeight
             let railY = min(
-                max(anchor - railHeight / 2, minimumY),
+                max(anchor - revealedHeight / 2, minimumY),
                 maximumRailY
             )
-            let railTop = railY + railHeight
+            let railTop = railY + revealedHeight
             // Row-aligned cards take extra height only from the space
             // below the rail, so the rail never moves to make room.
-            let preferredHeight = min(
-                max(desiredHeight, presentedContentPreferredHeight),
-                maximumHeight
+            let preferredHeight = max(
+                desiredHeight,
+                presentedContentPreferredHeight
             )
             height = max(height, min(preferredHeight, railTop - minimumY))
             proposedY = railTop - height
