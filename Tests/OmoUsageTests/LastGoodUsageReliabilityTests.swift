@@ -68,6 +68,7 @@ struct LastGoodUsageReliabilityTests {
         )
         let viewModel = UsageDashboardViewModel(
             providers: [provider],
+            staleGracePeriod: 0,
             now: { now }
         )
 

@@ -218,6 +218,12 @@ other privileged controls remain native-only.
   on a failed attempt, while the footer's aggregate attempt time does. Popover,
   Side Notch detail, web, and mobile cards follow the same rule, and the Side
   Notch rail marks the stale provider with the same symbol.
+- A network or service failure within ten minutes of the last success keeps
+  the retained values current, so one dropped refresh never flashes the stale
+  badge. Payload and credential failures, and failures after that window, mark
+  the values stale at once, and they stay stale until the next success.
+- A rate-limited Claude usage read is not retried inside the same refresh. It
+  arms a five-minute cooldown even when the server asks for a longer wait.
 - Settings owns one retained window that closes and reopens without duplication.
   It is deliberately not miniaturizable because a minimized Settings thumbnail
   creates Dock presence for an otherwise Dockless `LSUIElement` application.

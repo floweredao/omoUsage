@@ -22,6 +22,7 @@ struct ProviderDeadlineTests {
         let viewModel = UsageDashboardViewModel(
             providers: [provider, peer],
             providerDeadline: 30,
+            staleGracePeriod: 0,
             sleep: deadline.sleep,
             now: { now }
         )
