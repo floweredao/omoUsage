@@ -695,8 +695,6 @@ final class SideNotchPanelController: NSObject {
     private var revealGeneration = 0
     private var revealTask: (any SideNotchAutoHideTask)?
     private var transitionGeneration = 0
-    private var transitionCompletionTask:
-        (any SideNotchAutoHideTask)?
     private var configuredAutoHideDelay: TimeInterval
     static let autoHideDelay =
         SideNotchHideDelay.standard.rawValue
@@ -1086,8 +1084,16 @@ final class SideNotchPanelController: NSObject {
             from: panel.frame
         )
         transitionState(to: mode, animated: true)
-        animatePanel(to: edgeFrame)
-        scheduleHiddenTriggerReset()
+        transitionGeneration += 1
+        let generation = transitionGeneration
+        // The edge strip keeps the rail's height only while it slides out.
+        // Restore the full-height trigger after AppKit finishes the frame
+        // animation: a timer of the same duration can land before the
+        // animation's last frame, which then leaves the short strip in place
+        // and makes the rest of the right edge unable to reveal the panel.
+        animatePanel(to: edgeFrame) { [weak self] in
+            self?.restoreHiddenTrigger(generation: generation)
+        }
     }
 
     private func transitionSidewaysFromHidden(
@@ -1122,28 +1128,18 @@ final class SideNotchPanelController: NSObject {
         onExpansionChange(mode.isPresented)
     }
 
-    private func scheduleHiddenTriggerReset() {
-        transitionGeneration += 1
-        let generation = transitionGeneration
-        transitionCompletionTask = autoHideScheduler.schedule(
-            after: SideNotchMotionPolicy.duration
-        ) { [weak self] in
-            guard
-                let self,
-                self.transitionGeneration == generation,
-                self.state.mode == .hidden
-            else {
-                return
-            }
-            self.reposition(animated: false)
-            self.transitionCompletionTask = nil
+    private func restoreHiddenTrigger(generation: Int) {
+        guard
+            transitionGeneration == generation,
+            state.mode == .hidden
+        else {
+            return
         }
+        reposition(animated: false)
     }
 
     private func cancelTransitionCompletion() {
         transitionGeneration += 1
-        transitionCompletionTask?.cancel()
-        transitionCompletionTask = nil
     }
 
     private func scheduleAutoHide() {
@@ -1249,7 +1245,10 @@ final class SideNotchPanelController: NSObject {
         )
     }
 
-    private func animatePanel(to frame: NSRect) {
+    private func animatePanel(
+        to frame: NSRect,
+        completion: (@MainActor () -> Void)? = nil
+    ) {
         let horizontalStartFrame = NSRect(
             x: panel.frame.minX,
             y: frame.minY,
@@ -1259,7 +1258,10 @@ final class SideNotchPanelController: NSObject {
         if panel.frame != horizontalStartFrame {
             panel.setFrame(horizontalStartFrame, display: true)
         }
-        guard horizontalStartFrame != frame else { return }
+        guard horizontalStartFrame != frame else {
+            completion?()
+            return
+        }
 
         NSAnimationContext.runAnimationGroup { context in
             context.duration = SideNotchMotionPolicy.duration
@@ -1267,6 +1269,11 @@ final class SideNotchPanelController: NSObject {
                 name: .easeOut
             )
             panel.animator().setFrame(frame, display: true)
+        } completionHandler: {
+            guard let completion else { return }
+            Task { @MainActor in
+                completion()
+            }
         }
     }
 
