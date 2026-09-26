@@ -62,6 +62,77 @@ struct StaleUsagePresentationTests {
         #expect(fresh?.lastRefreshAttemptAt == successAt)
     }
 
+    @Test(
+        arguments: [
+            TransientProviderFailure.network,
+            .transientTransport,
+            .operationTimedOut,
+            .serviceUnavailable
+        ]
+    )
+    @MainActor
+    func briefTransientFailureKeepsRecentValuesCurrent(
+        failure: TransientProviderFailure
+    ) async {
+        let harness = await Harness(failure: failure, step: 60)
+
+        await harness.refreshSucceeding()
+        await harness.refreshFailing()
+
+        let retained = harness.retainedUsage
+        #expect(retained?.groups == harness.usage.groups)
+        #expect(retained?.freshness == .current)
+        #expect(retained?.refreshFailure == nil)
+        #expect(retained?.lastSuccessfulAt == successAt)
+        #expect(
+            retained?.lastRefreshAttemptAt == successAt.addingTimeInterval(60)
+        )
+    }
+
+    @Test
+    @MainActor
+    func transientFailuresTurnStaleOnceLastSuccessIsTenMinutesOld() async {
+        let harness = await Harness(failure: .serviceUnavailable, step: 60)
+
+        await harness.refreshSucceeding()
+        for _ in 1...9 {
+            await harness.refreshFailing()
+        }
+        #expect(harness.retainedUsage?.freshness == .current)
+
+        await harness.refreshFailing()
+
+        let retained = harness.retainedUsage
+        #expect(retained?.freshness == .stale)
+        #expect(retained?.refreshFailure == .service)
+        #expect(retained?.lastSuccessfulAt == successAt)
+        #expect(
+            retained?.lastRefreshAttemptAt
+                == successAt.addingTimeInterval(600)
+        )
+    }
+
+    @Test(
+        arguments: [
+            (TransientProviderFailure.invalidResponse,
+             ProviderRefreshFailure.schema),
+            (.credentialMalformed, .credential)
+        ]
+    )
+    @MainActor
+    func nonTransientFailureMarksRecentValuesStaleImmediately(
+        failure: TransientProviderFailure,
+        expected: ProviderRefreshFailure
+    ) async {
+        let harness = await Harness(failure: failure, step: 60)
+
+        await harness.refreshSucceeding()
+        await harness.refreshFailing()
+
+        #expect(harness.retainedUsage?.freshness == .stale)
+        #expect(harness.retainedUsage?.refreshFailure == expected)
+    }
+
     @Test
     @MainActor
     func repeatedFailuresFreezeSuccessAndAdvanceEveryAttempt() async {
@@ -455,8 +526,10 @@ private struct Harness {
     let provider: SwitchableUsageProvider
     let viewModel: UsageDashboardViewModel
     let clock: TestClock
+    private let step: TimeInterval
 
-    init(failure: TransientProviderFailure) async {
+    init(failure: TransientProviderFailure, step: TimeInterval = 600) async {
+        self.step = step
         let successAt = Date(timeIntervalSince1970: 1_785_675_000)
         usage = ProviderUsage(
             provider: .codex,
@@ -496,13 +569,13 @@ private struct Harness {
         await provider.setFailing(false)
         await provider.setSuccessTimestamp(clock.value)
         await viewModel.refresh()
-        clock.advance(by: 600)
+        clock.advance(by: step)
     }
 
     func refreshFailing() async {
         await provider.setFailing(true)
         await viewModel.refresh()
-        clock.advance(by: 600)
+        clock.advance(by: step)
     }
 }
 

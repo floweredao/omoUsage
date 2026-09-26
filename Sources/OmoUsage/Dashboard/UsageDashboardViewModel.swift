@@ -63,6 +63,7 @@ final class UsageDashboardViewModel {
     private let now: @Sendable () -> Date
     @ObservationIgnored
     private let providerDeadline: TimeInterval
+    private let staleGracePeriod: TimeInterval
     @ObservationIgnored
     private let sleep: @Sendable (
         AccountProviderID,
@@ -147,6 +148,7 @@ final class UsageDashboardViewModel {
         ) -> Void = { _ in },
         diagnosticStore: DiagnosticStore = .shared,
         providerDeadline: TimeInterval = 30,
+        staleGracePeriod: TimeInterval = 600,
         sleep: @escaping @Sendable (
             AccountProviderID,
             TimeInterval
@@ -205,6 +207,7 @@ final class UsageDashboardViewModel {
         self.publishControlState = publishControlState
         self.diagnosticStore = diagnosticStore
         self.providerDeadline = providerDeadline
+        self.staleGracePeriod = staleGracePeriod
         self.sleep = sleep
         self.now = now
         snapshot = DashboardSnapshot(providers: [], refreshedAt: now())
@@ -610,9 +613,16 @@ final class UsageDashboardViewModel {
                     result.availability == .failed
                         || result.retainsPreviousUsage
                 {
-                    return previous[identity]?.recordingRefreshAttempt(
+                    guard let prior = previous[identity] else { return nil }
+                    let failure = result.refreshFailure ?? .unknown
+                    return prior.recordingRefreshAttempt(
                         at: fetchNow,
-                        failure: result.refreshFailure ?? .unknown
+                        failure: Self.isWithinStaleGrace(
+                            prior,
+                            failure: failure,
+                            at: fetchNow,
+                            gracePeriod: staleGracePeriod
+                        ) ? nil : failure
                     )
                 }
                 return nil
@@ -848,6 +858,26 @@ final class UsageDashboardViewModel {
             return .authenticationRequired
         }
         return .failed
+    }
+
+    /// A single network or service hiccup right after a success would
+    /// otherwise flash a stale badge for one refresh cycle. Recent values
+    /// stay current until they are `gracePeriod` old; payload and
+    /// credential failures, and already-stale values, are marked at once.
+    private static func isWithinStaleGrace(
+        _ prior: ProviderUsage,
+        failure: ProviderRefreshFailure,
+        at attemptedAt: Date,
+        gracePeriod: TimeInterval
+    ) -> Bool {
+        guard
+            failure == .network || failure == .service,
+            prior.freshness == .current,
+            let succeededAt = prior.lastSuccessfulAt
+        else {
+            return false
+        }
+        return attemptedAt.timeIntervalSince(succeededAt) < gracePeriod
     }
 
     /// Classifies a retained failure so every surface can explain why the
