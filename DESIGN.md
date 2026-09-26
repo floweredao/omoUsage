@@ -189,10 +189,15 @@ other privileged controls remain native-only.
   its own height inside the taller detail container. Only the zero-provider
   checking state and a rail too crowded for the panel take the full
   container and scroll inside it. Only provider detail reserves the largest
-  visible provider detail height plus 12 pt bottom clearance. Its top edge
-  is flush with the rail's top edge, and the bottom clearance preserves room
-  for the downward shadow. The panel resizes once on entering or leaving
-  detail and never while moving between providers inside it. Detail expansion
+  visible provider detail height plus 12 pt bottom clearance. Each detail
+  card follows its rail row: the card's header icon lines up with the
+  selected row's center, clamped inside the panel, and the bottom clearance
+  preserves room for the downward shadow. The panel reserves enough height
+  for every row's aligned card, taking that extra height only from space
+  below the rail so the rail never moves to make room; where the screen edge
+  leaves too little space, the card clamps upward. The panel resizes once on
+  entering or leaving detail and never while moving between providers inside
+  it. Detail expansion
   preserves the revealed rail's top screen edge, and every SwiftUI container
   uses top-trailing alignment while AppKit resizes, so provider rows never
   shift under the pointer. Both states keep the same right edge and stay

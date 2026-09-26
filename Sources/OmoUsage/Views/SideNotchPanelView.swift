@@ -17,6 +17,7 @@ struct SideNotchPanelView: View {
 
     @Environment(\.accessibilityReduceMotion)
     private var reduceMotion
+    @State private var rowMidYs: [AccountProviderID: CGFloat] = [:]
 
     var body: some View {
         GeometryReader { geometry in
@@ -51,6 +52,12 @@ struct SideNotchPanelView: View {
                                             $0.provider == usage.provider
                                         }
                                 )
+                            let detailHeight = SideNotchPanelLayout
+                                .detailHeight(
+                                    for: usage,
+                                    showsAccountLabel: showsAccountLabel,
+                                    language: localization.language
+                                )
                             SideNotchDetailView(
                                 usage: usage,
                                 showsAccountLabel: showsAccountLabel
@@ -64,11 +71,11 @@ struct SideNotchPanelView: View {
                                         - SideNotchPanelLayout.collapsedWidth
                                         - SideNotchPanelLayout.detailSpacing
                                         - SideNotchPanelLayout.detailWidth / 2,
-                                    y: SideNotchPanelLayout.detailHeight(
-                                        for: usage,
-                                        showsAccountLabel: showsAccountLabel,
-                                        language: localization.language
-                                    ) / 2
+                                    y: SideNotchPanelLayout.detailTop(
+                                        rowMidY: rowMidY(for: usage),
+                                        detailHeight: detailHeight,
+                                        containerHeight: geometry.size.height
+                                    ) + detailHeight / 2
                                 )
                                 .transition(.opacity)
                         }
@@ -84,6 +91,9 @@ struct SideNotchPanelView: View {
                             },
                             onKeyboardFocusTarget:
                                 onKeyboardFocusTarget,
+                            onRowMidY: { target, midY in
+                                rowMidYs[target] = midY
+                            },
                             onRefresh: onRefresh,
                             onSettings: onSettings,
                             onQuit: onQuit
@@ -106,6 +116,9 @@ struct SideNotchPanelView: View {
                         width: geometry.size.width,
                         height: geometry.size.height,
                         alignment: .topTrailing
+                    )
+                    .coordinateSpace(
+                        .named(SideNotchPanelLayout.coordinateSpaceName)
                     )
                 }
             }
@@ -146,6 +159,16 @@ struct SideNotchPanelView: View {
         return viewModel.snapshot.providers.first {
             $0.accountProviderID == target
         }
+    }
+
+    private func rowMidY(for usage: ProviderUsage) -> CGFloat {
+        if let measured = rowMidYs[usage.accountProviderID] {
+            return measured
+        }
+        let index = viewModel.snapshot.providers.firstIndex {
+            $0.accountProviderID == usage.accountProviderID
+        } ?? 0
+        return SideNotchPanelLayout.providerRowMidY(at: index)
     }
 }
 
@@ -257,6 +280,7 @@ private struct SideNotchRailView: View {
     let onSelect: (AccountProviderID) -> Void
     let onHoverTarget: (AccountProviderID) -> Void
     let onKeyboardFocusTarget: (AccountProviderID) -> Void
+    let onRowMidY: (AccountProviderID, CGFloat) -> Void
     let onRefresh: () -> Void
     let onSettings: () -> Void
     let onQuit: () -> Void
@@ -317,6 +341,16 @@ private struct SideNotchRailView: View {
                                 height:
                                     SideNotchPanelLayout.providerRowHeight
                             )
+                            .onGeometryChange(for: CGFloat.self) { proxy in
+                                proxy.frame(
+                                    in: .named(
+                                        SideNotchPanelLayout
+                                            .coordinateSpaceName
+                                    )
+                                ).midY
+                            } action: { midY in
+                                onRowMidY(usage.accountProviderID, midY)
+                            }
                         }
                     }
                     .padding(.vertical, 7)
