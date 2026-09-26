@@ -27,6 +27,11 @@ struct ClaudeUsageProvider: UsageProvider {
     /// polls on a timer, and a token that expires mid-flight reads as a
     /// revoked credential.
     static let refreshLeadTime: TimeInterval = 300
+    /// The usage and token endpoints only serve Claude Code's own agent
+    /// string. Reset vouchers (`cedar_ember`) also require a recent CLI
+    /// version: older ones get `ineligible_reason: "cli_version"`, and
+    /// 2.1.258 still predates voucher support.
+    static let cliUserAgent = "claude-cli/2.1.280 (external, cli)"
 
     let id = ProviderID.claude
     let accountID: AccountID
@@ -218,13 +223,7 @@ struct ClaudeUsageProvider: UsageProvider {
             "oauth-2025-04-20",
             forHTTPHeaderField: "anthropic-beta"
         )
-        // cedar_ember vouchers are gated on the CLI's User-Agent shape;
-        // any other client string gets eligible:false / ineligible_reason:
-        // "surface" even when the account holds a live reset grant.
-        request.setValue(
-            "claude-cli/2.1.220 (external, cli)",
-            forHTTPHeaderField: "User-Agent"
-        )
+        request.setValue(Self.cliUserAgent, forHTTPHeaderField: "User-Agent")
         let data: Data
         do {
             data = try await http.data(for: request, endpoint: endpoint)
@@ -282,13 +281,7 @@ struct ClaudeUsageProvider: UsageProvider {
             forHTTPHeaderField: "Content-Type"
         )
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        // The token endpoint sorts unrecognised clients into a throttle that
-        // answers 429 before validating the grant at all; the CLI agent
-        // string is what gets the request served.
-        request.setValue(
-            "claude-cli/2.1.220 (external, cli)",
-            forHTTPHeaderField: "User-Agent"
-        )
+        request.setValue(Self.cliUserAgent, forHTTPHeaderField: "User-Agent")
         let data: Data
         do {
             data = try await http.data(for: request, endpoint: endpoint)

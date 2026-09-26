@@ -72,8 +72,9 @@ struct ClaudeReliabilityTests {
         #expect(headers.accept == "application/json")
         #expect(headers.beta == "oauth-2025-04-20")
         #expect(headers.contentType == "application/json")
-        // cedar_ember eligibility is gated on the CLI User-Agent shape.
-        #expect(headers.userAgent == "claude-cli/2.1.220 (external, cli)")
+        // cedar_ember eligibility is gated on the CLI User-Agent shape and
+        // a minimum CLI version; 2.1.220 predates reset vouchers.
+        #expect(headers.userAgent == "claude-cli/2.1.280 (external, cli)")
     }
 
     @Test
