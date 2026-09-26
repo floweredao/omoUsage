@@ -58,14 +58,16 @@ struct ProviderHTTP: Sendable {
         return try await data(
             for: request,
             provider: endpoint.provider,
-            operation: endpoint.safety == .safe ? .safe : .unsafe
+            operation: endpoint.safety == .safe ? .safe : .unsafe,
+            retriesRateLimit: endpoint.retriesRateLimit
         )
     }
 
     func data(
         for request: URLRequest,
         provider: ProviderID,
-        operation: ProviderHTTPOperation? = nil
+        operation: ProviderHTTPOperation? = nil,
+        retriesRateLimit: Bool = true
     ) async throws -> Data {
         let retrySafe: Bool
         switch operation {
@@ -122,14 +124,22 @@ struct ProviderHTTP: Sendable {
                     guard
                         retrySafe,
                         Self.isRetryable(status: response.statusCode),
+                        response.statusCode != 429 || retriesRateLimit,
                         attempt < retryPolicy.maximumAttempts
                     else {
                         throw error
                     }
-                    let delay = retryPolicy.retryAfterDelay(
+                    let serverDelay = retryPolicy.retryAfterDelay(
                         from: response,
                         now: wallNow()
-                    ) ?? retryPolicy.backoffDelay(
+                    )
+                    if
+                        let serverDelay,
+                        serverDelay > deadline - monotonicNow()
+                    {
+                        throw error
+                    }
+                    let delay = serverDelay ?? retryPolicy.backoffDelay(
                         afterAttempt: attempt,
                         randomValue: random()
                     )

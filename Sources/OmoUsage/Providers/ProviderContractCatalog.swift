@@ -3,9 +3,9 @@ enum ProviderContractCatalog {
     static let contracts: [ProviderID: ProviderContract] = {
         let definitions: [ProviderID: [EndpointDefinition]] = [
             .claude: [
-                .get(.claudeOAuthUsage, ["Authorization", "Accept", "Content-Type", "anthropic-beta"], userAgent: .requiredStable),
+                .get(.claudeOAuthUsage, ["Authorization", "Accept", "Content-Type", "anthropic-beta"], userAgent: .requiredStable, retriesRateLimit: false),
                 .post(.claudeTokenRefresh, ["Content-Type", "Accept"], userAgent: .requiredStable, safety: .unsafe),
-                .get(.claudeDesktopUsage, ["Accept", "Content-Type", "Cookie", "Origin", "Referer"], userAgent: .requiredStable)
+                .get(.claudeDesktopUsage, ["Accept", "Content-Type", "Cookie", "Origin", "Referer"], userAgent: .requiredStable, retriesRateLimit: false)
             ],
             .codex: [
                 .get(.codexUsage, ["Authorization", "Accept"], userAgent: .requiredStable)
@@ -59,7 +59,8 @@ enum ProviderContractCatalog {
                             requiredHeaderNames: $0.requiredHeaderNames,
                             userAgentPolicy: $0.userAgentPolicy,
                             safety: $0.safety,
-                            schemaRevision: revision
+                            schemaRevision: revision,
+                            retriesRateLimit: $0.retriesRateLimit
                         )
                     }
                 )
@@ -93,19 +94,22 @@ private struct EndpointDefinition {
     let requiredHeaderNames: Set<String>
     let userAgentPolicy: ProviderUserAgentPolicy
     let safety: ProviderRequestSafety
+    let retriesRateLimit: Bool
 
     static func get(
         _ purpose: ProviderEndpointPurpose,
         _ headers: Set<String>,
         userAgent: ProviderUserAgentPolicy = .systemProvided,
-        safety: ProviderRequestSafety = .safe
+        safety: ProviderRequestSafety = .safe,
+        retriesRateLimit: Bool = true
     ) -> EndpointDefinition {
         EndpointDefinition(
             purpose: purpose,
             method: .get,
             requiredHeaderNames: headers,
             userAgentPolicy: userAgent,
-            safety: safety
+            safety: safety,
+            retriesRateLimit: retriesRateLimit
         )
     }
 
@@ -120,7 +124,8 @@ private struct EndpointDefinition {
             method: .post,
             requiredHeaderNames: headers,
             userAgentPolicy: userAgent,
-            safety: safety
+            safety: safety,
+            retriesRateLimit: true
         )
     }
 }

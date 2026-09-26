@@ -47,6 +47,27 @@ struct ProviderHTTPRetryTests {
     }
 
     @Test
+    func retryAfterBeyondOperationBudgetSurfacesServerStatus() async {
+        let fixture = ProviderHTTPRetryFixture(
+            steps: [
+                .response(429, headers: ["Retry-After": "60"]),
+                .json(200, #"{"ok":true}"#)
+            ]
+        )
+
+        await #expect(
+            throws: ProviderTransportError.requestFailed(.codex, 429)
+        ) {
+            try await fixture.http.data(
+                for: fixture.request,
+                provider: .codex
+            )
+        }
+        #expect(fixture.requestCount == 1)
+        #expect(fixture.sleeps.isEmpty)
+    }
+
+    @Test
     func retries500And503ThenSucceedsWithExponentialJitter() async throws {
         let fixture = ProviderHTTPRetryFixture(
             steps: [
