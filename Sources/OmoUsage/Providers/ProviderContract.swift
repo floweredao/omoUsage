@@ -58,6 +58,7 @@ struct ProviderEndpointDescriptor: Equatable, Sendable {
     let userAgentPolicy: ProviderUserAgentPolicy
     let safety: ProviderRequestSafety
     let schemaRevision: Int
+    let retriesRateLimit: Bool
 
     func validate(_ request: URLRequest) throws {
         let methodMatches = (request.httpMethod ?? "GET").uppercased()

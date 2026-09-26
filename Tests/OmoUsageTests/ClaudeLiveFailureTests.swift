@@ -163,6 +163,48 @@ struct ClaudeUsageCooldownTests {
     }
 
     @Test
+    func rateLimitedUsageIsNotRetriedWithinOneRefresh() async throws {
+        ClaudeUsageCooldownExchange.shared.reset(usageStatus: 429)
+        let provider = ClaudeUsageCooldownFixtures.provider(
+            retryPolicy: ProviderRetryPolicy()
+        )
+
+        await #expect(
+            throws: ProviderTransportError.requestFailed(.claude, 429)
+        ) {
+            _ = try await provider.fetch(now: Self.now)
+        }
+
+        #expect(ClaudeUsageCooldownExchange.shared.usageRequests() == 1)
+    }
+
+    @Test
+    func rateLimitWithLongRetryAfterStillArmsCooldown() async throws {
+        ClaudeUsageCooldownExchange.shared.reset(
+            usageStatus: 429,
+            retryAfter: "60"
+        )
+        let provider = ClaudeUsageCooldownFixtures.provider(
+            retryPolicy: ProviderRetryPolicy()
+        )
+
+        await #expect(
+            throws: ProviderTransportError.requestFailed(.claude, 429)
+        ) {
+            _ = try await provider.fetch(now: Self.now)
+        }
+        await #expect(
+            throws: ProviderTransportError.requestFailed(.claude, 429)
+        ) {
+            _ = try await provider.fetch(
+                now: Self.now.addingTimeInterval(60)
+            )
+        }
+
+        #expect(ClaudeUsageCooldownExchange.shared.usageRequests() == 1)
+    }
+
+    @Test
     func successfulUsageDoesNotSuppressSubsequentFetch() async throws {
         ClaudeUsageCooldownExchange.shared.reset(usageStatus: 200)
         let provider = ClaudeUsageCooldownFixtures.provider()
@@ -242,7 +284,10 @@ private enum ClaudeUsageCooldownFixtures {
         """
 
     static func provider(
-        usageCooldown: ClaudeUsageCooldown = .shared
+        usageCooldown: ClaudeUsageCooldown = .shared,
+        retryPolicy: ProviderRetryPolicy = ProviderRetryPolicy(
+            maximumAttempts: 1
+        )
     ) -> ClaudeUsageProvider {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [
@@ -259,7 +304,7 @@ private enum ClaudeUsageCooldownFixtures {
             ),
             http: providerHTTPTestClient(
                 session: URLSession(configuration: configuration),
-                retryPolicy: ProviderRetryPolicy(maximumAttempts: 1)
+                retryPolicy: retryPolicy
             ),
             desktopUsageURL: missing,
             desktopSessionDiscovery: .unavailable,
@@ -300,21 +345,23 @@ private final class ClaudeUsageCooldownExchange: @unchecked Sendable {
 
     private let lock = NSLock()
     private var status = 429
+    private var retryAfter: String?
     private var usageCount = 0
     private var tokenCount = 0
 
-    func reset(usageStatus: Int) {
+    func reset(usageStatus: Int, retryAfter: String? = nil) {
         lock.withLock {
             status = usageStatus
+            self.retryAfter = retryAfter
             usageCount = 0
             tokenCount = 0
         }
     }
 
-    func recordUsage() -> Int {
+    func recordUsage() -> (status: Int, retryAfter: String?) {
         lock.withLock {
             usageCount += 1
-            return status
+            return (status, retryAfter)
         }
     }
 
@@ -354,9 +401,10 @@ private final class ClaudeUsageCooldownURLProtocol: URLProtocol,
             respond(statusCode: 400, body: Data())
             return
         }
-        let status = ClaudeUsageCooldownExchange.shared.recordUsage()
+        let usage = ClaudeUsageCooldownExchange.shared.recordUsage()
         respond(
-            statusCode: status,
+            statusCode: usage.status,
+            retryAfter: usage.retryAfter,
             body: Data(
                 """
                 {
@@ -370,12 +418,18 @@ private final class ClaudeUsageCooldownURLProtocol: URLProtocol,
 
     override func stopLoading() {}
 
-    private func respond(statusCode: Int, body: Data) {
+    private func respond(
+        statusCode: Int,
+        retryAfter: String? = nil,
+        body: Data
+    ) {
+        var headers = ["Content-Type": "application/json"]
+        headers["Retry-After"] = retryAfter
         let response = HTTPURLResponse(
             url: request.url!,
             statusCode: statusCode,
             httpVersion: nil,
-            headerFields: ["Content-Type": "application/json"]
+            headerFields: headers
         )!
         client?.urlProtocol(
             self,
