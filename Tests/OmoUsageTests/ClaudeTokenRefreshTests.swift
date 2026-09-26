@@ -52,7 +52,7 @@ struct ClaudeTokenRefreshTests {
         // that answers 429 before it ever validates the grant; only the
         // claude-cli agent string is served normally.
         #expect(
-            tokenRequest.userAgent == "claude-cli/2.1.220 (external, cli)"
+            tokenRequest.userAgent == "claude-cli/2.1.280 (external, cli)"
         )
     }
 
