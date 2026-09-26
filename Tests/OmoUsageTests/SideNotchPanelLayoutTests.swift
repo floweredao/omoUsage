@@ -381,9 +381,11 @@ struct SideNotchPanelLayoutTests {
         )
         #expect(
             detail.height
-                == SideNotchPanelLayout.requiredPanelHeight(
-                    for: usage
-                )
+                == SideNotchPanelLayout.providerRowMidY(at: 0)
+                    - SideNotchPanelLayout.detailHeaderCenterOffset
+                    + SideNotchPanelLayout.requiredPanelHeight(
+                        for: usage
+                    )
         )
         #expect(detail.height > revealed.height)
         #expect(detail.maxY == revealed.maxY)
@@ -611,6 +613,64 @@ struct SideNotchPanelLayoutTests {
                 containerHeight: crowdedContainer
             ) == crowdedContainer
         )
+    }
+
+    @Test
+    func detailReservesRoomToAlignEachCardWithItsRow() {
+        let providers = capturedTwoProviderUsage()
+        let visibleFrame = NSRect(
+            x: 0,
+            y: 25,
+            width: 1_920,
+            height: 1_055
+        )
+        let revealed = SideNotchPanelLayout.presentationFrame(
+            in: visibleFrame,
+            providers: providers,
+            mode: .revealed,
+            anchorY: 780
+        )
+        let detail = SideNotchPanelLayout.presentationFrame(
+            in: visibleFrame,
+            providers: providers,
+            mode: .detail(.claude),
+            anchorY: 780
+        )
+
+        for (index, usage) in providers.enumerated() {
+            let rowMidY = SideNotchPanelLayout.verticalPadding / 2
+                + CGFloat(index) * SideNotchPanelLayout.providerRowHeight
+                + SideNotchPanelLayout.providerRowHeight / 2
+            let alignedTop = rowMidY
+                - (SideNotchPanelLayout.detailContentPadding + 10)
+            #expect(
+                alignedTop
+                    + SideNotchPanelLayout.requiredPanelHeight(for: usage)
+                    <= detail.height
+            )
+        }
+        #expect(detail.maxY == revealed.maxY)
+
+        let lowRevealed = SideNotchPanelLayout.presentationFrame(
+            in: visibleFrame,
+            providers: providers,
+            mode: .revealed,
+            anchorY: 120
+        )
+        let lowDetail = SideNotchPanelLayout.presentationFrame(
+            in: visibleFrame,
+            providers: providers,
+            mode: .detail(.claude),
+            anchorY: 120
+        )
+        #expect(lowDetail.maxX == lowRevealed.maxX)
+        #expect(
+            lowDetail.height
+                >= providers
+                .map { SideNotchPanelLayout.requiredPanelHeight(for: $0) }
+                .max() ?? 0
+        )
+        #expect(lowDetail.minY >= visibleFrame.minY + 20)
     }
 
     @Test

@@ -24,6 +24,26 @@ enum SideNotchPanelLayout {
     static let railCornerRadius: CGFloat = 20
     static let ringDiameter: CGFloat = 36
     static let providerIconSize: CGFloat = 22
+    static let detailHeaderCenterOffset: CGFloat = detailContentPadding + 10
+    static let coordinateSpaceName = "SideNotchPanel"
+
+    static func providerRowMidY(at index: Int) -> CGFloat {
+        verticalPadding / 2
+            + CGFloat(index) * providerRowHeight
+            + providerRowHeight / 2
+    }
+
+    static func detailTop(
+        rowMidY: CGFloat,
+        detailHeight: CGFloat,
+        containerHeight: CGFloat
+    ) -> CGFloat {
+        let maximumTop = max(
+            0,
+            containerHeight - detailHeight - detailCardMargin
+        )
+        return min(max(0, rowMidY - detailHeaderCenterOffset), maximumTop)
+    }
 
     static func detailHeight(
         for usage: ProviderUsage,
@@ -115,9 +135,9 @@ enum SideNotchPanelLayout {
         // Only provider detail reserves card height. The revealed rail keeps
         // its natural provider-row height, so it never opens with a blank
         // material band between the last row and the footer.
-        let presentedContentMinimumHeight: CGFloat = switch mode {
+        let requiredHeights: [CGFloat] = switch mode {
         case .hidden, .revealed:
-            0
+            []
         case .detail:
             providers.map {
                 requiredPanelHeight(
@@ -132,7 +152,11 @@ enum SideNotchPanelLayout {
                         ),
                     language: language
                 )
-            }.max() ?? 0
+            }
+        }
+        let rowAlignedHeights = requiredHeights.enumerated().map {
+            max(0, providerRowMidY(at: $0.offset) - detailHeaderCenterOffset)
+                + $0.element
         }
         return frame(
             in: visibleFrame,
@@ -140,7 +164,9 @@ enum SideNotchPanelLayout {
             mode: mode,
             anchorY: anchorY,
             presentedContentMinimumHeight:
-                presentedContentMinimumHeight
+                requiredHeights.max() ?? 0,
+            presentedContentPreferredHeight:
+                rowAlignedHeights.max() ?? 0
         )
     }
 
@@ -161,7 +187,8 @@ enum SideNotchPanelLayout {
         providerCount: Int,
         mode: SideNotchPanelMode,
         anchorY: CGFloat? = nil,
-        presentedContentMinimumHeight: CGFloat = 0
+        presentedContentMinimumHeight: CGFloat = 0,
+        presentedContentPreferredHeight: CGFloat = 0
     ) -> NSRect {
         if mode == .hidden {
             return NSRect(
@@ -187,7 +214,7 @@ enum SideNotchPanelLayout {
                 visibleFrame.height - screenMargin * 2
             )
         )
-        let height = min(desiredHeight, maximumHeight)
+        var height = min(desiredHeight, maximumHeight)
         let width: CGFloat = switch mode {
         case .hidden:
             hiddenWidth
@@ -197,7 +224,6 @@ enum SideNotchPanelLayout {
             expandedWidth
         }
         let minimumY = visibleFrame.minY + screenMargin
-        let maximumY = visibleFrame.maxY - screenMargin - height
         let anchor = anchorY ?? visibleFrame.midY
         let proposedY: CGFloat
         switch mode {
@@ -212,9 +238,20 @@ enum SideNotchPanelLayout {
                 max(anchor - railHeight / 2, minimumY),
                 maximumRailY
             )
-            proposedY = railY + railHeight - height
+            let railTop = railY + railHeight
+            // Row-aligned cards take extra height only from the space
+            // below the rail, so the rail never moves to make room.
+            let preferredHeight = min(
+                max(desiredHeight, presentedContentPreferredHeight),
+                maximumHeight
+            )
+            height = max(height, min(preferredHeight, railTop - minimumY))
+            proposedY = railTop - height
         }
-        let y = min(max(proposedY, minimumY), maximumY)
+        let y = min(
+            max(proposedY, minimumY),
+            visibleFrame.maxY - screenMargin - height
+        )
 
         return NSRect(
             x: visibleFrame.maxX - width,
