@@ -17,7 +17,7 @@ struct SideNotchPanelView: View {
 
     @Environment(\.accessibilityReduceMotion)
     private var reduceMotion
-    @State private var rowTops: [AccountProviderID: CGFloat] = [:]
+    @State private var rowMidYs: [AccountProviderID: CGFloat] = [:]
 
     var body: some View {
         GeometryReader { geometry in
@@ -72,7 +72,7 @@ struct SideNotchPanelView: View {
                                         - SideNotchPanelLayout.detailSpacing
                                         - SideNotchPanelLayout.detailWidth / 2,
                                     y: SideNotchPanelLayout.detailTop(
-                                        rowTop: rowTop(for: usage),
+                                        rowMidY: rowMidY(for: usage),
                                         detailHeight: detailHeight,
                                         containerHeight: geometry.size.height
                                     ) + detailHeight / 2
@@ -91,8 +91,8 @@ struct SideNotchPanelView: View {
                             },
                             onKeyboardFocusTarget:
                                 onKeyboardFocusTarget,
-                            onRowTop: { target, top in
-                                rowTops[target] = top
+                            onRowMidY: { target, midY in
+                                rowMidYs[target] = midY
                             },
                             onRefresh: onRefresh,
                             onSettings: onSettings,
@@ -161,14 +161,14 @@ struct SideNotchPanelView: View {
         }
     }
 
-    private func rowTop(for usage: ProviderUsage) -> CGFloat {
-        if let measured = rowTops[usage.accountProviderID] {
+    private func rowMidY(for usage: ProviderUsage) -> CGFloat {
+        if let measured = rowMidYs[usage.accountProviderID] {
             return measured
         }
         let index = viewModel.snapshot.providers.firstIndex {
             $0.accountProviderID == usage.accountProviderID
         } ?? 0
-        return SideNotchPanelLayout.providerRowTop(at: index)
+        return SideNotchPanelLayout.providerRowMidY(at: index)
     }
 }
 
@@ -280,7 +280,7 @@ private struct SideNotchRailView: View {
     let onSelect: (AccountProviderID) -> Void
     let onHoverTarget: (AccountProviderID) -> Void
     let onKeyboardFocusTarget: (AccountProviderID) -> Void
-    let onRowTop: (AccountProviderID, CGFloat) -> Void
+    let onRowMidY: (AccountProviderID, CGFloat) -> Void
     let onRefresh: () -> Void
     let onSettings: () -> Void
     let onQuit: () -> Void
@@ -347,9 +347,9 @@ private struct SideNotchRailView: View {
                                         SideNotchPanelLayout
                                             .coordinateSpaceName
                                     )
-                                ).minY
-                            } action: { top in
-                                onRowTop(usage.accountProviderID, top)
+                                ).midY
+                            } action: { midY in
+                                onRowMidY(usage.accountProviderID, midY)
                             }
                         }
                     }

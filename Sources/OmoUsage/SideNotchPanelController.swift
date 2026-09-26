@@ -26,12 +26,14 @@ enum SideNotchPanelLayout {
     static let providerIconSize: CGFloat = 22
     static let coordinateSpaceName = "SideNotchPanel"
 
-    static func providerRowTop(at index: Int) -> CGFloat {
-        verticalPadding / 2 + CGFloat(index) * providerRowHeight
+    static func providerRowMidY(at index: Int) -> CGFloat {
+        verticalPadding / 2
+            + CGFloat(index) * providerRowHeight
+            + providerRowHeight / 2
     }
 
     static func detailTop(
-        rowTop: CGFloat,
+        rowMidY: CGFloat,
         detailHeight: CGFloat,
         containerHeight: CGFloat
     ) -> CGFloat {
@@ -39,7 +41,7 @@ enum SideNotchPanelLayout {
             0,
             containerHeight - detailHeight - detailCardMargin
         )
-        return min(max(0, rowTop), maximumTop)
+        return min(max(0, rowMidY - detailHeight / 2), maximumTop)
     }
 
     static func detailHeight(
@@ -153,7 +155,9 @@ enum SideNotchPanelLayout {
             }
         }
         let rowAlignedHeights = requiredHeights.enumerated().map {
-            providerRowTop(at: $0.offset) + $0.element
+            let cardHeight = $0.element - detailCardMargin
+            return max(0, providerRowMidY(at: $0.offset) - cardHeight / 2)
+                + $0.element
         }
         return frame(
             in: visibleFrame,

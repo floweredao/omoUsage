@@ -381,10 +381,9 @@ struct SideNotchPanelLayoutTests {
         )
         #expect(
             detail.height
-                == SideNotchPanelLayout.verticalPadding / 2
-                    + SideNotchPanelLayout.requiredPanelHeight(
-                        for: usage
-                    )
+                == SideNotchPanelLayout.requiredPanelHeight(
+                    for: usage
+                )
         )
         #expect(detail.height > revealed.height)
         #expect(detail.maxY == revealed.maxY)
@@ -637,16 +636,16 @@ struct SideNotchPanelLayoutTests {
         )
 
         for (index, usage) in providers.enumerated() {
-            let rowTop = SideNotchPanelLayout.verticalPadding / 2
+            let rowMidY = SideNotchPanelLayout.verticalPadding / 2
                 + CGFloat(index) * SideNotchPanelLayout.providerRowHeight
+                + SideNotchPanelLayout.providerRowHeight / 2
+            let cardHeight = SideNotchPanelLayout.detailHeight(for: usage)
             #expect(
                 SideNotchPanelLayout.detailTop(
-                    rowTop: rowTop,
-                    detailHeight: SideNotchPanelLayout.detailHeight(
-                        for: usage
-                    ),
+                    rowMidY: rowMidY,
+                    detailHeight: cardHeight,
                     containerHeight: detail.height
-                ) == rowTop
+                ) == max(0, rowMidY - cardHeight / 2)
             )
         }
         #expect(detail.maxY == revealed.maxY)
@@ -708,18 +707,20 @@ struct SideNotchPanelLayoutTests {
             mode: .detail(.claude),
             anchorY: 780
         )
-        let lastRowTop = SideNotchPanelLayout.verticalPadding / 2
+        let lastRowMidY = SideNotchPanelLayout.verticalPadding / 2
             + CGFloat(providers.count - 1)
                 * SideNotchPanelLayout.providerRowHeight
+            + SideNotchPanelLayout.providerRowHeight / 2
+        let tallHeight = SideNotchPanelLayout.detailHeight(for: tall)
 
         #expect(revealed.height == SideNotchPanelLayout.maximumPanelHeight)
         #expect(detail.maxY == revealed.maxY)
         #expect(
             SideNotchPanelLayout.detailTop(
-                rowTop: lastRowTop,
-                detailHeight: SideNotchPanelLayout.detailHeight(for: tall),
+                rowMidY: lastRowMidY,
+                detailHeight: tallHeight,
                 containerHeight: detail.height
-            ) == lastRowTop
+            ) == lastRowMidY - tallHeight / 2
         )
         #expect(
             SideNotchPanelLayout.railContentHeight(
