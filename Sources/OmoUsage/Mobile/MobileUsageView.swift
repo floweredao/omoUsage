@@ -424,21 +424,7 @@ private struct MobileUsageMeter: View {
         guard let resetsAt = meter.resetsAt else {
             return localization.text(.noResetInfo)
         }
-        let seconds = max(0, Int(resetsAt.timeIntervalSinceNow))
-        if seconds < 3_600 {
-            return localization.format(
-                .resetMinutes,
-                max(1, seconds / 60)
-            )
-        }
-        if seconds < 86_400 {
-            return localization.format(
-                .resetHoursMinutes,
-                seconds / 3_600,
-                seconds % 3_600 / 60
-            )
-        }
-        return localization.format(.resetDays, seconds / 86_400)
+        return localization.resetDescription(until: resetsAt)
     }
 }
 #endif

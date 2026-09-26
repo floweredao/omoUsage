@@ -5,6 +5,61 @@ extension LocalizationResolving {
         ProviderTextLocalization.text(value, language: language)
     }
 
+    public func resetDescription(
+        until resetsAt: Date,
+        now: Date = Date(),
+        timeZone: TimeZone = .current
+    ) -> String {
+        let seconds = max(0, Int(resetsAt.timeIntervalSince(now)))
+        if seconds < 3_600 {
+            return format(.resetMinutes, max(1, seconds / 60))
+        }
+        let interval = if seconds < 86_400 {
+            format(
+                .resetHoursMinutes,
+                seconds / 3_600,
+                seconds % 3_600 / 60
+            )
+        } else {
+            resetDaysText(
+                days: seconds / 86_400,
+                hours: seconds % 86_400 / 3_600
+            )
+        }
+        return "\(interval) · "
+            + resetClock(resetsAt, now: now, timeZone: timeZone)
+    }
+
+    private func resetDaysText(days: Int, hours: Int) -> String {
+        switch (days, hours) {
+        case (1, 0): text(.resetOneDay)
+        case (1, _): format(.resetOneDayHours, hours)
+        case (_, 0): format(.resetDays, days)
+        default: format(.resetDaysHours, days, hours)
+        }
+    }
+
+    private func resetClock(
+        _ resetsAt: Date,
+        now: Date,
+        timeZone: TimeZone
+    ) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+        let template = if calendar.isDate(resetsAt, inSameDayAs: now) {
+            "jmm"
+        } else if resetsAt.timeIntervalSince(now) < 6 * 86_400 {
+            "EEEjmm"
+        } else {
+            "MMMdjmm"
+        }
+        let formatter = DateFormatter()
+        formatter.locale = language.locale
+        formatter.timeZone = timeZone
+        formatter.setLocalizedDateFormatFromTemplate(template)
+        return formatter.string(from: resetsAt)
+    }
+
     public func metricValue(_ metric: UsageMetric) -> String {
         switch metric {
         case .quotaRemaining(let percent):
@@ -204,7 +259,9 @@ public enum ProviderTextLocalization {
             value.hasSuffix("일 후 리셋"),
             let days = Int(value.dropLast("일 후 리셋".count))
         {
-            return format(.resetDays, language: language, days)
+            return days == 1
+                ? AppStrings(language: language).text(.resetOneDay)
+                : format(.resetDays, language: language, days)
         }
         if
             value.hasSuffix("분 후 만료"),
@@ -238,7 +295,9 @@ public enum ProviderTextLocalization {
             value.hasSuffix("일 후 만료"),
             let days = Int(value.dropLast("일 후 만료".count))
         {
-            return format(.expiryDays, language: language, days)
+            return days == 1
+                ? AppStrings(language: language).text(.expiryOneDay)
+                : format(.expiryDays, language: language, days)
         }
         if
             value.hasSuffix("분 전 기준"),

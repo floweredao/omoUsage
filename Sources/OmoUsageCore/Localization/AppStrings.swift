@@ -145,10 +145,14 @@ public enum AppStringKey: String, CaseIterable, Sendable {
     case resetHours
     case resetHoursMinutes
     case resetDays
+    case resetOneDay
+    case resetOneDayHours
+    case resetDaysHours
     case expiryMinutes
     case expiryHours
     case expiryHoursMinutes
     case expiryDays
+    case expiryOneDay
     case usageSession
     case usageWeek
     case usageExtra
@@ -354,10 +358,14 @@ public struct AppStrings: Sendable {
         .resetHours: "%d시간 후 리셋",
         .resetHoursMinutes: "%d시간 %d분 후 리셋",
         .resetDays: "%d일 후 리셋",
+        .resetOneDay: "1일 후 리셋",
+        .resetOneDayHours: "1일 %d시간 후 리셋",
+        .resetDaysHours: "%d일 %d시간 후 리셋",
         .expiryMinutes: "%d분 후 만료",
         .expiryHours: "%d시간 후 만료",
         .expiryHoursMinutes: "%d시간 %d분 후 만료",
         .expiryDays: "%d일 후 만료",
+        .expiryOneDay: "1일 후 만료",
         .usageSession: "세션",
         .usageWeek: "주간",
         .usageExtra: "추가 사용량",
@@ -550,10 +558,14 @@ public struct AppStrings: Sendable {
         .resetHours: "Resets in %d hr",
         .resetHoursMinutes: "Resets in %d hr %d min",
         .resetDays: "Resets in %d days",
+        .resetOneDay: "Resets in 1 day",
+        .resetOneDayHours: "Resets in 1 day %d hr",
+        .resetDaysHours: "Resets in %d days %d hr",
         .expiryMinutes: "Expires in %d min",
         .expiryHours: "Expires in %d hr",
         .expiryHoursMinutes: "Expires in %d hr %d min",
         .expiryDays: "Expires in %d days",
+        .expiryOneDay: "Expires in 1 day",
         .usageSession: "Session",
         .usageWeek: "Weekly",
         .usageExtra: "Extra usage",
