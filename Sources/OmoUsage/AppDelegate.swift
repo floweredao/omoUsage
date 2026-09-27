@@ -780,7 +780,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                         rawValue:
                             webDashboardSettingsStore.state().webLanguage
                     ) ?? .english
-                    return try UsageSnapshotCodec.encode(
+                    return try UsageSnapshotCodec.encodeForLocalDashboard(
                         webDashboardSnapshotStore.snapshot().localized(
                             using: LocalizationContext(language: language)
                         )

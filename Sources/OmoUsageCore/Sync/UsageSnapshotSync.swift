@@ -28,6 +28,10 @@ private struct CloudSnapshot: Codable {
 private struct CloudProviderUsage: Codable {
     let provider: ProviderID
     let accountOrdinal: Int
+    /// Present only in the loopback web dashboard payload; the iCloud
+    /// payload omits stable account metadata.
+    let accountID: AccountID?
+    let accountLabel: String?
     let planName: String
     let groups: [CloudUsageGroup]
     let availability: ProviderAvailability
@@ -35,9 +39,15 @@ private struct CloudProviderUsage: Codable {
     let lastRefreshAttemptAt: Date?
     let refreshFailure: ProviderRefreshFailure?
 
-    init(_ usage: ProviderUsage, accountOrdinal: Int) {
+    init(
+        _ usage: ProviderUsage,
+        accountOrdinal: Int,
+        includesAccountIdentity: Bool
+    ) {
         provider = usage.provider
         self.accountOrdinal = accountOrdinal
+        accountID = includesAccountIdentity ? usage.accountID : nil
+        accountLabel = includesAccountIdentity ? usage.accountLabel : nil
         planName = usage.planName
         groups = usage.groups.map(CloudUsageGroup.init)
         availability = usage.availability
@@ -166,12 +176,33 @@ public enum UsageSnapshotCodec {
     private static let maximumTimestamp = 4_102_444_800.0
 
     public static func encode(_ snapshot: DashboardSnapshot) throws -> Data {
+        try encode(snapshot, includesAccountIdentity: false)
+    }
+
+    /// Payload for the loopback web dashboard. It additionally carries each
+    /// provider's account ID and sanitized account label, which the same
+    /// surface already exposes through its settings endpoint, so the client
+    /// can tell accounts of one provider apart. Never publish it to iCloud.
+    public static func encodeForLocalDashboard(
+        _ snapshot: DashboardSnapshot
+    ) throws -> Data {
+        try encode(snapshot, includesAccountIdentity: true)
+    }
+
+    private static func encode(
+        _ snapshot: DashboardSnapshot,
+        includesAccountIdentity: Bool
+    ) throws -> Data {
         try validate(snapshot)
         var ordinals: [ProviderID: Int] = [:]
         let providers = snapshot.providers.map { usage in
             let ordinal = ordinals[usage.provider, default: 0] + 1
             ordinals[usage.provider] = ordinal
-            return CloudProviderUsage(usage, accountOrdinal: ordinal)
+            return CloudProviderUsage(
+                usage,
+                accountOrdinal: ordinal,
+                includesAccountIdentity: includesAccountIdentity
+            )
         }
         let payload = CloudSnapshot(
             version: currentVersion,

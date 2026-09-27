@@ -19,6 +19,7 @@ Cross-platform models, localization, and explicit privacy-minimized iCloud seria
 
 - `Package.swift` explicitly lists Core Swift sources; `project.yml` defines the shared framework. New source files need both target definitions checked.
 - Local `AccountProviderID` uses a UUID plus provider ID. Cloud DTOs replace account UUIDs and aliases with sequential per-provider ordinals; do not conflate local and wire identities.
+- `encodeForLocalDashboard` is the only encoder that fills the DTO's optional account ID and sanitized label, for the loopback web dashboard. iCloud publishing must use `encode`.
 - Encode through `CloudSnapshot` and `CloudProviderUsage`, never directly through a widened local model.
 - Schema v4 decodes versions 1–3; unknown versions fail. Preserve sorted-key JSON, millisecond dates, and the 256 KiB limit.
 - Codec validation checks account ordinals, duplicates, metric bounds, string/collection limits, and timestamp ordering. `oldestDisplayedSuccessAt` must agree with provider success times.
