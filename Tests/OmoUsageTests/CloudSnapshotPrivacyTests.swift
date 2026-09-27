@@ -54,6 +54,42 @@ struct CloudSnapshotPrivacyTests {
     }
 
     @Test
+    func localDashboardPayloadKeepsAccountIdentityThatCloudOmits() throws {
+        let secondID = try #require(AccountID(
+            rawValue: "22222222-2222-2222-2222-222222222222"
+        ))
+        let snapshot = DashboardSnapshot(
+            providers: [
+                usage(accountID: .legacy, accountLabel: "Personal"),
+                usage(accountID: secondID, accountLabel: "Work")
+            ],
+            refreshedAt: generatedAt
+        )
+
+        let data = try UsageSnapshotCodec.encodeForLocalDashboard(snapshot)
+        let object = try #require(
+            JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
+        let providers = try #require(
+            object["providers"] as? [[String: Any]]
+        )
+
+        #expect(providers.map { $0["accountID"] as? String } == [
+            AccountID.legacy.rawValue, secondID.rawValue
+        ])
+        #expect(providers.map { $0["accountLabel"] as? String } == [
+            "Personal", "Work"
+        ])
+        #expect(providers.map { $0["accountOrdinal"] as? Int } == [1, 2])
+        let cloudText = String(
+            decoding: try UsageSnapshotCodec.encode(snapshot),
+            as: UTF8.self
+        )
+        #expect(!cloudText.contains("Personal"))
+        #expect(!cloudText.contains(secondID.rawValue))
+    }
+
+    @Test
     func ordinalsRestartForEachProvider() throws {
         let snapshot = DashboardSnapshot(
             providers: [

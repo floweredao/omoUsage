@@ -23,7 +23,7 @@ A distinct HTTP, access, and concurrency boundary serving sanitized usage plus n
 - `WebDashboardAccessGateway` validates exact Host and POST Origin for local or validated lowercase `*.ts.net` access before `WebDashboardRouter` applies its explicit route allowlist. Unknown paths return 404; wrong methods return 405 and `Allow`.
 - POST mutations require the per-launch nonce in `X-Omo-CSRF`. The nonce is substituted into the bundled template at load time.
 - Settings payloads accept exact key sets only. The bundled client sends composite account/provider IDs: order must match the configured roster exactly and visibility must target a member. Provider-level commands remain compatibility paths. Web language uses its separate `WebDashboardLanguageStore`.
-- Serve usage through `UsageSnapshotCodec` output and settings through `WebDashboardSettingsState`; both surfaces remain free of credentials, cookies, local paths, and diagnostics.
+- Serve usage through `UsageSnapshotCodec.encodeForLocalDashboard` output (the cloud payload plus account ID and sanitized label, so same-provider accounts stay distinct) and settings through `WebDashboardSettingsState`; both surfaces remain free of credentials, cookies, local paths, and diagnostics.
 - Web commands cross `WebDashboardCommandBridge` to the existing `@MainActor` dashboard owner. Refresh completion increments `refreshRevision`; the web layer never fetches providers itself.
 - Shared mutable server state uses `NSLock` and `@unchecked Sendable` only around audited lock-protected storage. Network callbacks stay off the main actor.
 - Serialized requests are capped at 16 KiB, active connections at 32, and incomplete connections at 10 seconds. Stop/failure finishes all tracked connections.
