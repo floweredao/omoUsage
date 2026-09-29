@@ -8,6 +8,29 @@ import Security
 /// entry (one prompt per signing identity) for every provider/account.
 /// Layout: {"v":1,"services":{"<service>":{"<account>":"<secret>"}}}
 ///
+/// Process-wide memory of the consolidated item, keyed by its exact
+/// (service, account) so QA/test items never share state. Every Keychain
+/// data read of an item whose ACL does not trust this build can open
+/// SecurityAgent, so the item is read at most once until a write replaces
+/// the cached copy, and a denied read latches until an explicit user
+/// action calls `UnifiedProviderKeychain.resetAuthorization()`.
+/// All state is guarded by `UnifiedProviderKeychain`'s process-wide lock.
+final class UnifiedKeychainCache: @unchecked Sendable {
+    static let shared = UnifiedKeychainCache()
+
+    fileprivate struct Entry {
+        var loaded = false
+        /// `nil` with `loaded` means the item is absent.
+        var services: [String: [String: String]]?
+        var denied: KeychainReadError?
+        var importAttempted = false
+    }
+
+    fileprivate var entries: [String: Entry] = [:]
+
+    init() {}
+}
+
 /// Every operation serializes through one process-wide lock: read-modify-
 /// write must not lose keys across instances (each `live()` call builds a
 /// new value of this type) or concurrent rotations in a fetch task group.
@@ -28,18 +51,46 @@ final class UnifiedProviderKeychain: ProviderKeychain, @unchecked Sendable {
     private let serviceName: String
     private let accountName: String
     private let legacyServices: [String]
-    private var didAttemptImport = false
+    private let cache: UnifiedKeychainCache
+    private let cacheKey: String
 
     init(
         api: any SecurityItemAPI = SecurityFrameworkItemAPI(),
         service: String = UnifiedProviderKeychain.service,
         account: String = UnifiedProviderKeychain.account,
-        legacyServices: [String] = UnifiedProviderKeychain.defaultLegacyServices
+        legacyServices: [String] = UnifiedProviderKeychain.defaultLegacyServices,
+        cache: UnifiedKeychainCache = .shared
     ) {
         self.api = api
         self.serviceName = service
         self.accountName = account
         self.legacyServices = legacyServices
+        self.cache = cache
+        self.cacheKey = service + "\u{0}" + account
+    }
+
+    /// Statuses meaning the user or the ACL refused this build; retrying
+    /// would only re-open SecurityAgent, so they latch until reset.
+    private static let denialStatuses: Set<OSStatus> = [
+        errSecAuthFailed,
+        errSecUserCanceled,
+        errSecInteractionNotAllowed,
+        errSecNoAccessForItem,
+    ]
+
+    private var entry: UnifiedKeychainCache.Entry {
+        get { cache.entries[cacheKey] ?? UnifiedKeychainCache.Entry() }
+        set { cache.entries[cacheKey] = newValue }
+    }
+
+    /// Clears a denial latch and the cached payload so the next access
+    /// re-reads the item exactly once. Call only from explicit user actions.
+    func resetAuthorization() {
+        Self.storeLock.withLock {
+            entry.denied = nil
+            entry.loaded = false
+            entry.services = nil
+        }
     }
 
     func value(service: String, account: String) throws -> String? {
@@ -82,13 +133,13 @@ final class UnifiedProviderKeychain: ProviderKeychain, @unchecked Sendable {
     }
 
     /// One lazy import of legacy per-item secrets. Retryable while nothing
-    /// merged yet: an enumeration failure leaves `didAttemptImport` false
+    /// merged yet: an enumeration failure leaves `importAttempted` false
     /// so a later access can converge. A consolidated item with data wins
-    /// over any legacy leftovers.
+    /// over any legacy leftovers. The attempt is recorded process-wide.
     private func ensureImported() throws {
-        guard !didAttemptImport else { return }
+        guard !entry.importAttempted else { return }
         if (try readPayload()) != nil {
-            didAttemptImport = true
+            entry.importAttempted = true
             return
         }
         var merged: [String: [String: String]] = [:]
@@ -136,7 +187,7 @@ final class UnifiedProviderKeychain: ProviderKeychain, @unchecked Sendable {
                 enumerationFailed = true
             }
         }
-        didAttemptImport = !enumerationFailed
+        entry.importAttempted = !enumerationFailed
         guard sawLegacyData else { return }
         try write(services: merged)
     }
@@ -175,8 +226,14 @@ final class UnifiedProviderKeychain: ProviderKeychain, @unchecked Sendable {
     }
 
     /// A malformed consolidated item is a typed failure, never silently
-    /// overwritten.
+    /// overwritten. Served from the process-wide cache once loaded; a
+    /// latched denial throws without touching the Keychain.
     private func readPayload() throws -> Payload? {
+        let cached = entry
+        if let denied = cached.denied { throw denied }
+        if cached.loaded {
+            return cached.services.map(Payload.init(services:))
+        }
         let query: [String: Any] = [
             key(kSecClass): key(kSecClassGenericPassword),
             key(kSecAttrService): serviceName,
@@ -188,7 +245,16 @@ final class UnifiedProviderKeychain: ProviderKeychain, @unchecked Sendable {
                 SecurityKeychainAuthenticationUIPolicy.failValue,
         ]
         let result = api.copyMatching(query)
-        if result.status == errSecItemNotFound { return nil }
+        if result.status == errSecItemNotFound {
+            entry.loaded = true
+            entry.services = nil
+            return nil
+        }
+        if Self.denialStatuses.contains(result.status) {
+            let denied = KeychainReadError(status: result.status)
+            entry.denied = denied
+            throw denied
+        }
         guard result.status == errSecSuccess,
               let data = result.value as? Data,
               let object = try? JSONSerialization.jsonObject(with: data)
@@ -202,9 +268,13 @@ final class UnifiedProviderKeychain: ProviderKeychain, @unchecked Sendable {
                     : result.status
             )
         }
+        entry.loaded = true
+        entry.services = services
         return Payload(services: services)
     }
 
+    /// Updates the cache only after the Keychain accepted the change, and
+    /// never reads the item back.
     private func write(services: [String: [String: String]]) throws {
         if services.isEmpty {
             let status = api.delete(matchQuery())
@@ -212,13 +282,18 @@ final class UnifiedProviderKeychain: ProviderKeychain, @unchecked Sendable {
             else {
                 throw KeychainReadError(status: status)
             }
+            entry.loaded = true
+            entry.services = nil
             return
         }
         let encoded = try JSONSerialization.data(
             withJSONObject: ["v": 1, "services": services],
             options: [.sortedKeys]
         )
-        let exists = try itemExists()
+        let cached = entry
+        let exists = cached.loaded
+            ? cached.services != nil
+            : try itemExists()
         let status: OSStatus
         if exists {
             status = api.update(
@@ -237,6 +312,8 @@ final class UnifiedProviderKeychain: ProviderKeychain, @unchecked Sendable {
         guard status == errSecSuccess else {
             throw KeychainReadError(status: status)
         }
+        entry.loaded = true
+        entry.services = services
     }
 
     private func itemExists() throws -> Bool {

@@ -8,14 +8,144 @@ struct UnifiedProviderKeychainTests {
     private static let unifiedService = "com.omo.usage.qa.unified"
     private static let legacyService = "com.omo.usage.qa.legacy"
 
+    /// One fresh cache per test models one process; stores sharing a fake
+    /// API in a test share it just as live instances share `.shared`.
+    private let cache = UnifiedKeychainCache()
+
     private func makeStore(
         api: UnifiedKeychainFakeAPI = UnifiedKeychainFakeAPI()
     ) -> UnifiedProviderKeychain {
         UnifiedProviderKeychain(
             api: api,
             service: Self.unifiedService,
-            legacyServices: [Self.legacyService]
+            legacyServices: [Self.legacyService],
+            cache: cache
         )
+    }
+
+    private func seedUnified(
+        _ api: UnifiedKeychainFakeAPI,
+        _ services: [String: [String: String]]
+    ) throws {
+        let data = try JSONSerialization.data(
+            withJSONObject: ["v": 1, "services": services],
+            options: [.sortedKeys]
+        )
+        api.seed(
+            service: Self.unifiedService,
+            account: "all",
+            value: String(decoding: data, as: UTF8.self)
+        )
+    }
+
+    @Test
+    func manyInstancesAndReadsIssueOneDataRead() throws {
+        let api = UnifiedKeychainFakeAPI()
+        try seedUnified(api, ["svc.a": ["one": "alpha"]])
+        let stores = (0..<3).map { _ in makeStore(api: api) }
+
+        for store in stores {
+            for _ in 0..<10 {
+                #expect(
+                    try store.value(service: "svc.a", account: "one")
+                        == "alpha"
+                )
+            }
+        }
+        #expect(api.dataReadCount == 1)
+    }
+
+    @Test
+    func absentItemIsCachedAfterOneRead() throws {
+        let api = UnifiedKeychainFakeAPI()
+        let first = makeStore(api: api)
+        let second = makeStore(api: api)
+
+        #expect(try first.value(service: "svc.a", account: "one") == nil)
+        #expect(try second.value(service: "svc.a", account: "one") == nil)
+        #expect(api.dataReadCount == 1)
+    }
+
+    @Test
+    func setAfterCachedReadUpdatesWithoutReadingBack() throws {
+        let api = UnifiedKeychainFakeAPI()
+        try seedUnified(api, ["svc.a": ["one": "alpha"]])
+        let store = makeStore(api: api)
+        #expect(try store.value(service: "svc.a", account: "one") == "alpha")
+        let readsBefore = api.copyCount
+
+        try store.set("beta", service: "svc.a", account: "one")
+
+        #expect(api.copyCount == readsBefore)
+        #expect(api.updateCount == 1)
+        #expect(api.addCount == 0)
+        #expect(try makeStore(api: api).value(service: "svc.a", account: "one")
+            == "beta")
+        #expect(api.copyCount == readsBefore)
+    }
+
+    @Test
+    func deniedReadLatchesUntilAuthorizationReset() throws {
+        let api = UnifiedKeychainFakeAPI()
+        try seedUnified(api, ["svc.a": ["one": "alpha"]])
+        api.dataReadStatus = errSecAuthFailed
+        let store = makeStore(api: api)
+
+        #expect(throws: KeychainReadError(status: errSecAuthFailed)) {
+            try store.value(service: "svc.a", account: "one")
+        }
+        let copiesAfterDenial = api.copyCount
+        #expect(throws: KeychainReadError(status: errSecAuthFailed)) {
+            try makeStore(api: api).value(service: "svc.a", account: "one")
+        }
+        #expect(throws: KeychainReadError(status: errSecAuthFailed)) {
+            try store.set("beta", service: "svc.a", account: "one")
+        }
+        #expect(throws: KeychainReadError(status: errSecAuthFailed)) {
+            try store.remove(service: "svc.a", account: "one")
+        }
+        #expect(api.copyCount == copiesAfterDenial)
+        #expect(api.updateCount + api.addCount + api.deleteCount == 0)
+
+        api.dataReadStatus = nil
+        store.resetAuthorization()
+        #expect(try store.value(service: "svc.a", account: "one") == "alpha")
+        #expect(try store.value(service: "svc.a", account: "one") == "alpha")
+        #expect(api.copyCount == copiesAfterDenial + 1)
+    }
+
+    @Test
+    func failedWriteKeepsTheCachedPayload() throws {
+        let api = UnifiedKeychainFakeAPI()
+        try seedUnified(api, ["svc.a": ["one": "alpha"]])
+        let store = makeStore(api: api)
+        #expect(try store.value(service: "svc.a", account: "one") == "alpha")
+
+        api.writeStatus = errSecIO
+        #expect(throws: KeychainReadError(status: errSecIO)) {
+            try store.set("beta", service: "svc.a", account: "one")
+        }
+        api.writeStatus = nil
+        let readsBefore = api.copyCount
+
+        #expect(try store.value(service: "svc.a", account: "one") == "alpha")
+        #expect(api.copyCount == readsBefore)
+    }
+
+    @Test
+    func cachesAreKeyedByTheUnifiedItem() throws {
+        let api = UnifiedKeychainFakeAPI()
+        try seedUnified(api, ["svc.a": ["one": "alpha"]])
+        let other = UnifiedProviderKeychain(
+            api: api,
+            service: Self.unifiedService + ".other",
+            legacyServices: [],
+            cache: cache
+        )
+        #expect(try makeStore(api: api).value(service: "svc.a", account: "one")
+            == "alpha")
+        #expect(try other.value(service: "svc.a", account: "one") == nil)
+        #expect(api.dataReadCount == 2)
     }
 
     @Test
@@ -161,10 +291,21 @@ private final class UnifiedKeychainFakeAPI: SecurityItemAPI,
     private let lock = NSLock()
     private(set) var items: [String: Data] = [:]
     var failEnumerations = false
+    /// Forces every exact data read to return this status.
+    var dataReadStatus: OSStatus?
+    /// Forces every add/update/delete to return this status.
+    var writeStatus: OSStatus?
+    private var counts = (copy: 0, dataRead: 0, add: 0, update: 0, delete: 0)
 
     var itemCount: Int {
         lock.withLock { items.count }
     }
+
+    var copyCount: Int { lock.withLock { counts.copy } }
+    var dataReadCount: Int { lock.withLock { counts.dataRead } }
+    var addCount: Int { lock.withLock { counts.add } }
+    var updateCount: Int { lock.withLock { counts.update } }
+    var deleteCount: Int { lock.withLock { counts.delete } }
 
     func seed(service: String, account: String, value: String) {
         lock.withLock {
@@ -174,6 +315,18 @@ private final class UnifiedKeychainFakeAPI: SecurityItemAPI,
 
     func copyMatching(_ query: [String: Any]) -> SecurityItemCopyResult {
         lock.withLock {
+            counts.copy += 1
+            let wantsData =
+                (query[kSecReturnData as String] as? Bool) == true
+            if wantsData {
+                counts.dataRead += 1
+                if let dataReadStatus {
+                    return SecurityItemCopyResult(
+                        status: dataReadStatus,
+                        value: nil
+                    )
+                }
+            }
             guard let service =
                     query[kSecAttrService as String] as? String
             else {
@@ -191,8 +344,6 @@ private final class UnifiedKeychainFakeAPI: SecurityItemAPI,
                         value: nil
                     )
                 }
-                let wantsData =
-                    (query[kSecReturnData as String] as? Bool) == true
                 return SecurityItemCopyResult(
                     status: errSecSuccess,
                     value: wantsData ? data : [:]
@@ -232,6 +383,8 @@ private final class UnifiedKeychainFakeAPI: SecurityItemAPI,
 
     func add(_ attributes: [String: Any]) -> OSStatus {
         lock.withLock {
+            counts.add += 1
+            if let writeStatus { return writeStatus }
             guard let service =
                     attributes[kSecAttrService as String] as? String,
                   let account =
@@ -248,6 +401,8 @@ private final class UnifiedKeychainFakeAPI: SecurityItemAPI,
         attributes: [String: Any]
     ) -> OSStatus {
         lock.withLock {
+            counts.update += 1
+            if let writeStatus { return writeStatus }
             guard let service =
                     query[kSecAttrService as String] as? String,
                   let account =
@@ -261,6 +416,8 @@ private final class UnifiedKeychainFakeAPI: SecurityItemAPI,
 
     func delete(_ query: [String: Any]) -> OSStatus {
         lock.withLock {
+            counts.delete += 1
+            if let writeStatus { return writeStatus }
             guard let service =
                     query[kSecAttrService as String] as? String,
                   let account =
