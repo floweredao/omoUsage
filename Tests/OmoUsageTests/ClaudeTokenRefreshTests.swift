@@ -106,8 +106,10 @@ struct ClaudeTokenRefreshTests {
         )
     }
 
+    /// Claude Code's own refresh sends only the grant, client and token; a
+    /// requested scope the grant does not carry is answered with a 400.
     @Test
-    func refreshRequestIncludesPinnedClaudeCodeScope() async throws {
+    func refreshRequestSendsOnlyGrantClientAndRefreshToken() async throws {
         ClaudeRefreshExchange.shared.reset(
             tokenResponse: .success(
                 accessToken: "rotated-access-token",
@@ -125,12 +127,8 @@ struct ClaudeTokenRefreshTests {
             ClaudeRefreshExchange.shared.lastTokenRequest()
         )
         #expect(
-            tokenRequest.body["scope"] as? String
-                == """
-                user:profile user:inference \
-                user:sessions:claude_code user:mcp_servers \
-                user:file_upload
-                """
+            Set(tokenRequest.body.keys)
+                == ["client_id", "grant_type", "refresh_token"]
         )
     }
 
@@ -265,6 +263,150 @@ struct ClaudeTokenRefreshTests {
         #expect(ClaudeRefreshExchange.shared.usageAuthorizations() == [])
     }
 
+    /// Only `invalid_grant` says the login is gone. Any other 400 is a fault
+    /// in the request and must not drop the account's last-good usage.
+    @Test
+    func nonGrantRefreshRejectionRemainsRequestFailure() async throws {
+        ClaudeRefreshExchange.shared.reset(
+            tokenResponse: .failure(statusCode: 400, error: "invalid_scope")
+        )
+        let writer = RecordingClaudeKeychainWriter()
+        let provider = ClaudeRefreshFixtures.provider(writer: writer)
+
+        await #expect(
+            throws: ProviderTransportError.requestFailed(.claude, 400)
+        ) {
+            _ = try await provider.fetch(now: Self.now)
+        }
+
+        #expect(writer.lastWrite() == nil)
+        #expect(ClaudeRefreshExchange.shared.tokenRequestCount() == 1)
+    }
+
+    @Test
+    func throttledRefreshHonorsRetryAfter() async throws {
+        ClaudeRefreshExchange.shared.reset(
+            tokenResponse: .failure(statusCode: 429, retryAfter: "120")
+        )
+        let provider = ClaudeRefreshFixtures.provider(
+            writer: RecordingClaudeKeychainWriter()
+        )
+
+        await #expect(
+            throws: ProviderTransportError.requestFailed(.claude, 429)
+        ) {
+            _ = try await provider.fetch(now: Self.now)
+        }
+        await #expect(throws: (any Error).self) {
+            _ = try await provider.fetch(
+                now: Self.now.addingTimeInterval(119)
+            )
+        }
+        #expect(ClaudeRefreshExchange.shared.tokenRequestCount() == 1)
+
+        await #expect(throws: (any Error).self) {
+            _ = try await provider.fetch(
+                now: Self.now.addingTimeInterval(120)
+            )
+        }
+        #expect(ClaudeRefreshExchange.shared.tokenRequestCount() == 2)
+    }
+
+    /// A cooling refresh is a pause, not a lost login: the card must keep
+    /// its last-good usage instead of falling to Desktop and vanishing.
+    @Test
+    func coolingRefreshWithExpiredTokenStaysTransient() async throws {
+        ClaudeRefreshExchange.shared.reset(
+            tokenResponse: .success(
+                accessToken: "rotated-access-token",
+                refreshToken: "rotated-refresh-token",
+                expiresIn: 3_600
+            )
+        )
+        let cooldown = ClaudeRefreshCooldown()
+        let provider = ClaudeRefreshFixtures.provider(
+            writer: RecordingClaudeKeychainWriter(),
+            refreshCooldown: cooldown,
+            desktopSessionDiscovery: ClaudeRefreshFixtures.desktopSession
+        )
+        await cooldown.recordFailure(
+            for: provider.accountProviderID,
+            at: Self.now
+        )
+
+        await #expect(
+            throws: ProviderTransportError.requestFailed(.claude, 429)
+        ) {
+            _ = try await provider.fetch(
+                now: Self.now.addingTimeInterval(60)
+            )
+        }
+
+        #expect(ClaudeRefreshExchange.shared.tokenRequestCount() == 0)
+        #expect(ClaudeRefreshExchange.shared.desktopRequestCount() == 0)
+    }
+
+    @Test
+    func coolingRefreshReadsWithStillValidToken() async throws {
+        ClaudeRefreshExchange.shared.reset(
+            tokenResponse: .success(
+                accessToken: "rotated-access-token",
+                refreshToken: "rotated-refresh-token",
+                expiresIn: 3_600
+            ),
+            storedCredential: ClaudeRefreshFixtures.storedCredential(
+                accessToken: "stored-access-token",
+                expiresAtMilliseconds: 1_785_675_240_000
+            ),
+            acceptedUsageTokens: ["stored-access-token"]
+        )
+        let cooldown = ClaudeRefreshCooldown()
+        let provider = ClaudeRefreshFixtures.provider(
+            writer: RecordingClaudeKeychainWriter(),
+            refreshCooldown: cooldown
+        )
+        await cooldown.recordFailure(
+            for: provider.accountProviderID,
+            at: Self.now
+        )
+
+        let usage = try await provider.fetch(now: Self.now)
+
+        #expect(usage.availability == .available)
+        #expect(ClaudeRefreshExchange.shared.tokenRequestCount() == 0)
+        #expect(
+            ClaudeRefreshExchange.shared.usageAuthorizations()
+                == ["Bearer stored-access-token"]
+        )
+    }
+
+    /// Refresh tokens are single-use: a manual refresh racing the timer must
+    /// not spend the same grant twice.
+    @Test
+    func concurrentFetchesShareOneTokenExchange() async throws {
+        ClaudeRefreshExchange.shared.reset(
+            tokenResponse: .success(
+                accessToken: "rotated-access-token",
+                refreshToken: "rotated-refresh-token",
+                expiresIn: 3_600
+            )
+        )
+        let provider = ClaudeRefreshFixtures.provider(
+            writer: RecordingClaudeKeychainWriter()
+        )
+
+        async let first = provider.fetch(now: Self.now)
+        async let second = provider.fetch(now: Self.now)
+        let usages = try await [first, second]
+
+        #expect(usages.allSatisfy { $0.availability == .available })
+        #expect(ClaudeRefreshExchange.shared.tokenRequestCount() == 1)
+        #expect(
+            ClaudeRefreshExchange.shared.usageAuthorizations()
+                == ["Bearer rotated-access-token", "Bearer rotated-access-token"]
+        )
+    }
+
     @Test
     func refreshServerFailureRemainsRequestFailure() async throws {
         ClaudeRefreshExchange.shared.reset(
@@ -385,8 +527,17 @@ private enum ClaudeRefreshFixtures {
         """
     }
 
+    static let desktopSession = ClaudeDesktopSessionDiscovery {
+        ClaudeDesktopSession(
+            organizationID: "refresh-test-organization",
+            cookieHeader: "sessionKey=<redacted>"
+        )
+    }
+
     static func provider(
-        writer: any KeychainWriting
+        writer: any KeychainWriting,
+        refreshCooldown: ClaudeRefreshCooldown = ClaudeRefreshCooldown(),
+        desktopSessionDiscovery: ClaudeDesktopSessionDiscovery = .unavailable
     ) -> ClaudeUsageProvider {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [ClaudeRefreshURLProtocol.self]
@@ -402,8 +553,8 @@ private enum ClaudeRefreshFixtures {
                 session: URLSession(configuration: configuration)
             ),
             desktopUsageURL: missing,
-            desktopSessionDiscovery: .unavailable,
-            refreshCooldown: ClaudeRefreshCooldown()
+            desktopSessionDiscovery: desktopSessionDiscovery,
+            refreshCooldown: refreshCooldown
         )
     }
 }
@@ -458,7 +609,11 @@ private final class ClaudeRefreshExchange: @unchecked Sendable {
             refreshToken: String,
             expiresIn: Double
         )
-        case failure(statusCode: Int)
+        case failure(
+            statusCode: Int,
+            error: String = "invalid_grant",
+            retryAfter: String? = nil
+        )
         case malformedSuccess
     }
 
@@ -475,6 +630,7 @@ private final class ClaudeRefreshExchange: @unchecked Sendable {
     private var response: TokenResponse = .failure(statusCode: 400)
     private var tokenRequests: [TokenRequest] = []
     private var authorizations: [String] = []
+    private var desktopRequests = 0
     private var storedService = "Claude Code-credentials"
     private var stored = ClaudeRefreshFixtures.storedCredential
     private var acceptedTokens: Set<String> = ["rotated-access-token"]
@@ -489,6 +645,7 @@ private final class ClaudeRefreshExchange: @unchecked Sendable {
             response = tokenResponse
             tokenRequests = []
             authorizations = []
+            desktopRequests = 0
             self.storedService = storedService
             stored = storedCredential
             acceptedTokens = acceptedUsageTokens
@@ -524,6 +681,14 @@ private final class ClaudeRefreshExchange: @unchecked Sendable {
         lock.withLock { authorizations.append(authorization ?? "") }
     }
 
+    func recordDesktop() {
+        lock.withLock { desktopRequests += 1 }
+    }
+
+    func desktopRequestCount() -> Int {
+        lock.withLock { desktopRequests }
+    }
+
     func tokenRequestCount() -> Int {
         lock.withLock { tokenRequests.count }
     }
@@ -553,6 +718,11 @@ private final class ClaudeRefreshURLProtocol: URLProtocol, @unchecked Sendable {
         }
         if url.path.hasSuffix("/oauth/token") {
             handleToken(url: url)
+            return
+        }
+        if url.path.hasPrefix("/api/organizations/") {
+            ClaudeRefreshExchange.shared.recordDesktop()
+            respond(statusCode: 200, body: ClaudeRefreshFixtures.usageBody)
             return
         }
         let authorization = request.value(
@@ -603,22 +773,29 @@ private final class ClaudeRefreshURLProtocol: URLProtocol, @unchecked Sendable {
                     try? JSONSerialization.data(withJSONObject: payload)
                 ) ?? Data()
             )
-        case let .failure(statusCode):
+        case let .failure(statusCode, error, retryAfter):
             respond(
                 statusCode: statusCode,
-                body: Data(#"{"error":"invalid_grant"}"#.utf8)
+                retryAfter: retryAfter,
+                body: Data(#"{"error":"\#(error)"}"#.utf8)
             )
         case .malformedSuccess:
             respond(statusCode: 200, body: Data("{}".utf8))
         }
     }
 
-    private func respond(statusCode: Int, body: Data) {
+    private func respond(
+        statusCode: Int,
+        retryAfter: String? = nil,
+        body: Data
+    ) {
+        var headers = ["Content-Type": "application/json"]
+        headers["Retry-After"] = retryAfter
         let response = HTTPURLResponse(
             url: request.url!,
             statusCode: statusCode,
             httpVersion: nil,
-            headerFields: ["Content-Type": "application/json"]
+            headerFields: headers
         )!
         client?.urlProtocol(
             self,

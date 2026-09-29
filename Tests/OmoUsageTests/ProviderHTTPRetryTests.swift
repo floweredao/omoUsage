@@ -454,6 +454,75 @@ struct ProviderHTTPRetryTests {
         #expect(fixture.requestCount == 4)
         #expect(fixture.sleeps == [0.5, 0.5])
     }
+
+    @Test
+    func detailedStatusFailureCarriesOAuthErrorCode() async {
+        let fixture = ProviderHTTPRetryFixture(
+            steps: [.json(400, #"{"error":"invalid_scope"}"#)],
+            method: "POST",
+            body: Data("{}".utf8)
+        )
+
+        await #expect(
+            throws: ProviderHTTPStatusFailure(
+                transportError: .requestFailed(.codex, 400),
+                oauthErrorCode: "invalid_scope",
+                retryAfter: nil
+            )
+        ) {
+            try await fixture.http.data(
+                for: fixture.request,
+                provider: .codex,
+                operation: .unsafe,
+                detailingStatusFailures: true
+            )
+        }
+        #expect(fixture.requestCount == 1)
+    }
+
+    @Test
+    func detailedStatusFailureCarriesRetryAfter() async {
+        let fixture = ProviderHTTPRetryFixture(
+            steps: [.response(429, headers: ["Retry-After": "120"])],
+            method: "POST",
+            body: Data("{}".utf8)
+        )
+
+        await #expect(
+            throws: ProviderHTTPStatusFailure(
+                transportError: .requestFailed(.codex, 429),
+                oauthErrorCode: nil,
+                retryAfter: 120
+            )
+        ) {
+            try await fixture.http.data(
+                for: fixture.request,
+                provider: .codex,
+                operation: .unsafe,
+                detailingStatusFailures: true
+            )
+        }
+        #expect(fixture.sleeps.isEmpty)
+    }
+
+    @Test
+    func statusFailureStaysTransportErrorWithoutOptIn() async {
+        let fixture = ProviderHTTPRetryFixture(
+            steps: [.json(400, #"{"error":"invalid_grant"}"#)],
+            method: "POST",
+            body: Data("{}".utf8)
+        )
+
+        await #expect(
+            throws: ProviderTransportError.requestFailed(.codex, 400)
+        ) {
+            try await fixture.http.data(
+                for: fixture.request,
+                provider: .codex,
+                operation: .unsafe
+            )
+        }
+    }
 }
 
 private final class ProviderHTTPRetryFixture: @unchecked Sendable {

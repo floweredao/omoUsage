@@ -12,6 +12,18 @@ enum ProviderTransportError: Error, Equatable, Sendable {
     case operationTimedOut(ProviderID)
 }
 
+/// A non-2xx status plus the response details a caller needs to classify it.
+/// Thrown only by `data(for:endpoint:detailingStatusFailures:)` with the
+/// flag set, so callers that do not opt in keep receiving
+/// `ProviderTransportError` unchanged.
+struct ProviderHTTPStatusFailure: Error, Equatable, Sendable {
+    let transportError: ProviderTransportError
+    /// RFC 6749 `error` code from a JSON body, e.g. `invalid_grant`.
+    let oauthErrorCode: String?
+    /// `Retry-After` in seconds from now, when the server sent one.
+    let retryAfter: TimeInterval?
+}
+
 enum ProviderHTTPOperation: Sendable {
     case safe
     case unsafe
@@ -52,14 +64,16 @@ struct ProviderHTTP: Sendable {
 
     func data(
         for request: URLRequest,
-        endpoint: ProviderEndpointDescriptor
+        endpoint: ProviderEndpointDescriptor,
+        detailingStatusFailures: Bool = false
     ) async throws -> Data {
         try endpoint.validate(request)
         return try await data(
             for: request,
             provider: endpoint.provider,
             operation: endpoint.safety == .safe ? .safe : .unsafe,
-            retriesRateLimit: endpoint.retriesRateLimit
+            retriesRateLimit: endpoint.retriesRateLimit,
+            detailingStatusFailures: detailingStatusFailures
         )
     }
 
@@ -67,7 +81,8 @@ struct ProviderHTTP: Sendable {
         for request: URLRequest,
         provider: ProviderID,
         operation: ProviderHTTPOperation? = nil,
-        retriesRateLimit: Bool = true
+        retriesRateLimit: Bool = true,
+        detailingStatusFailures: Bool = false
     ) async throws -> Data {
         let retrySafe: Bool
         switch operation {
@@ -127,7 +142,12 @@ struct ProviderHTTP: Sendable {
                         response.statusCode != 429 || retriesRateLimit,
                         attempt < retryPolicy.maximumAttempts
                     else {
-                        throw error
+                        throw statusFailure(
+                            error,
+                            response: response,
+                            data: data,
+                            detailed: detailingStatusFailures
+                        )
                     }
                     let serverDelay = retryPolicy.retryAfterDelay(
                         from: response,
@@ -137,7 +157,12 @@ struct ProviderHTTP: Sendable {
                         let serverDelay,
                         serverDelay > deadline - monotonicNow()
                     {
-                        throw error
+                        throw statusFailure(
+                            error,
+                            response: response,
+                            data: data,
+                            detailed: detailingStatusFailures
+                        )
                     }
                     let delay = serverDelay ?? retryPolicy.backoffDelay(
                         afterAttempt: attempt,
@@ -190,6 +215,24 @@ struct ProviderHTTP: Sendable {
                 attempt += 1
             }
         }
+    }
+
+    private func statusFailure(
+        _ error: ProviderTransportError,
+        response: HTTPURLResponse,
+        data: Data,
+        detailed: Bool
+    ) -> any Error {
+        guard detailed else { return error }
+        let body = try? JSONSerialization.jsonObject(with: data)
+        return ProviderHTTPStatusFailure(
+            transportError: error,
+            oauthErrorCode: (body as? [String: Any])?["error"] as? String,
+            retryAfter: retryPolicy.retryAfterDelay(
+                from: response,
+                now: wallNow()
+            )
+        )
     }
 
     private func waitBeforeRetry(

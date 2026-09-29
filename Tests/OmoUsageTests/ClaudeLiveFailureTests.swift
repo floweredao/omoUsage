@@ -204,6 +204,36 @@ struct ClaudeUsageCooldownTests {
         #expect(ClaudeUsageCooldownExchange.shared.usageRequests() == 1)
     }
 
+    /// A server asking for a longer pause than the default must be obeyed;
+    /// reading again at the default deadline extends the ban.
+    @Test
+    func longerRetryAfterExtendsUsageCooldown() async throws {
+        ClaudeUsageCooldownExchange.shared.reset(
+            usageStatus: 429,
+            retryAfter: "900"
+        )
+        let provider = ClaudeUsageCooldownFixtures.provider()
+
+        await #expect(throws: (any Error).self) {
+            _ = try await provider.fetch(now: Self.now)
+        }
+        await #expect(
+            throws: ProviderTransportError.requestFailed(.claude, 429)
+        ) {
+            _ = try await provider.fetch(
+                now: Self.now.addingTimeInterval(600)
+            )
+        }
+        #expect(ClaudeUsageCooldownExchange.shared.usageRequests() == 1)
+
+        await #expect(throws: (any Error).self) {
+            _ = try await provider.fetch(
+                now: Self.now.addingTimeInterval(900)
+            )
+        }
+        #expect(ClaudeUsageCooldownExchange.shared.usageRequests() == 2)
+    }
+
     @Test
     func successfulUsageDoesNotSuppressSubsequentFetch() async throws {
         ClaudeUsageCooldownExchange.shared.reset(usageStatus: 200)
