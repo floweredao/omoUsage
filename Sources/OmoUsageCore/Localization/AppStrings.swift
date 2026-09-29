@@ -76,7 +76,20 @@ public enum AppStringKey: String, CaseIterable, Sendable {
     case companionRequired
     case waitingForCompanionCredentials
     case waitingForBrowserLogin
+    case waitingForSignIn
     case browserLoginFailed
+    case claudeSignInTimedOut
+    case claudeSignInCancelled
+    case claudeSignInFailed
+    case claudeSignInSaveFailed
+    case browserSignInTimedOut
+    case browserSignInDenied
+    case browserUsageUnavailable
+    case browserCredentialSaveFailed
+    case kiroAccountMismatch
+    case kiroAccountAlreadyConnected
+    case kiroUnsupportedOrganization
+    case connectionVerificationFailed
     case moveUp
     case moveDown
     case setupHelp
@@ -128,6 +141,7 @@ public enum AppStringKey: String, CaseIterable, Sendable {
     case removedKey
     case saveKeyFailed
     case removeKeyFailed
+    case removeKeyTitle
     case refresh
     case settings
     case quit
@@ -283,7 +297,20 @@ public struct AppStrings: Sendable {
         .companionRequired: "컴패니언 필요",
         .waitingForCompanionCredentials: "컴패니언 인증 대기 중",
         .waitingForBrowserLogin: "브라우저 로그인을 완료하면 사용량을 자동으로 확인합니다.",
-        .browserLoginFailed: "로그인, 사용량 확인 또는 인증 저장에 실패했습니다. 다시 연결해 주세요.",
+        .waitingForSignIn: "로그인 대기 중",
+        .browserLoginFailed: "브라우저 로그인에 실패했습니다. 다시 연결해 주세요.",
+        .claudeSignInTimedOut: "Claude 로그인 시간이 초과되었습니다. 다시 연결해 주세요.",
+        .claudeSignInCancelled: "Claude 로그인이 취소되었습니다.",
+        .claudeSignInFailed: "Claude 로그인에 실패했습니다. 다시 연결해 주세요.",
+        .claudeSignInSaveFailed: "Claude 인증을 저장하지 못했습니다. 다시 연결해 주세요.",
+        .browserSignInTimedOut: "브라우저 로그인 시간이 초과되었습니다. 다시 연결해 주세요.",
+        .browserSignInDenied: "브라우저에서 로그인이 거부되었습니다.",
+        .browserUsageUnavailable: "로그인했지만 사용량을 확인하지 못했습니다. 잠시 후 다시 연결해 주세요.",
+        .browserCredentialSaveFailed: "인증을 저장하지 못했습니다. 다시 연결해 주세요.",
+        .kiroAccountMismatch: "연결하려던 계정과 다른 Kiro 계정으로 로그인했습니다. 해당 계정으로 다시 로그인해 주세요.",
+        .kiroAccountAlreadyConnected: "이미 추가된 Kiro 계정입니다. 다른 계정으로 로그인해 주세요.",
+        .kiroUnsupportedOrganization: "지원하지 않는 Kiro 조직 계정입니다.",
+        .connectionVerificationFailed: "로그인 후 사용량을 확인하지 못했습니다. 새로고침으로 다시 확인해 주세요.",
         .moveUp: "%@ 위로 이동",
         .moveDown: "%@ 아래로 이동",
         .setupHelp: "설정 도움말",
@@ -342,6 +369,7 @@ public struct AppStrings: Sendable {
         .removedKey: "%@ 키를 삭제했습니다.",
         .saveKeyFailed: "키를 저장하지 못했습니다.",
         .removeKeyFailed: "키를 삭제하지 못했습니다.",
+        .removeKeyTitle: "%@ 키 삭제",
         .refresh: "새로고침",
         .settings: "설정",
         .quit: "종료",
@@ -484,7 +512,20 @@ public struct AppStrings: Sendable {
         .companionRequired: "Companion required",
         .waitingForCompanionCredentials: "Waiting for companion credentials",
         .waitingForBrowserLogin: "Complete browser sign-in to verify usage automatically.",
-        .browserLoginFailed: "Sign-in, usage verification, or credential storage failed. Please reconnect.",
+        .waitingForSignIn: "Waiting for sign-in",
+        .browserLoginFailed: "Browser sign-in failed. Please connect again.",
+        .claudeSignInTimedOut: "Claude sign-in timed out. Please connect again.",
+        .claudeSignInCancelled: "Claude sign-in was cancelled.",
+        .claudeSignInFailed: "Claude sign-in failed. Please connect again.",
+        .claudeSignInSaveFailed: "Couldn't save the Claude credential. Please connect again.",
+        .browserSignInTimedOut: "Browser sign-in timed out. Please connect again.",
+        .browserSignInDenied: "Sign-in was declined in the browser.",
+        .browserUsageUnavailable: "Signed in, but usage couldn't be verified. Try connecting again later.",
+        .browserCredentialSaveFailed: "Couldn't save the credential. Please connect again.",
+        .kiroAccountMismatch: "You signed in to a different Kiro account than the one being connected. Sign in with that account.",
+        .kiroAccountAlreadyConnected: "That Kiro account is already added. Sign in with a different account.",
+        .kiroUnsupportedOrganization: "This Kiro organization account isn't supported.",
+        .connectionVerificationFailed: "Couldn't verify usage after sign-in. Use Refresh to try again.",
         .moveUp: "Move %@ up",
         .moveDown: "Move %@ down",
         .setupHelp: "Setup Help",
@@ -543,6 +584,7 @@ public struct AppStrings: Sendable {
         .removedKey: "Removed the %@ key.",
         .saveKeyFailed: "Could not save the key.",
         .removeKeyFailed: "Could not remove the key.",
+        .removeKeyTitle: "Remove %@ key",
         .refresh: "Refresh",
         .settings: "Settings",
         .quit: "Quit",

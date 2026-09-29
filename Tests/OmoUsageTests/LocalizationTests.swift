@@ -146,6 +146,23 @@ struct LocalizationTests {
 
     @Test
     @MainActor
+    func destructiveConfirmationTitlesNameTheirTarget() {
+        for language in AppLanguage.allCases {
+            let localization = LocalizationContext(language: language)
+
+            #expect(
+                localization.format(.removeAccount, "QA Team")
+                    .contains("QA Team")
+            )
+            #expect(
+                localization.format(.removeKeyTitle, "OpenRouter")
+                    .contains("OpenRouter")
+            )
+        }
+    }
+
+    @Test
+    @MainActor
     func switchingLanguageImmediatelyChangesExistingSemanticText() {
         let suiteName = "LocalizationTests.switching.\(UUID())"
         let defaults = UserDefaults(suiteName: suiteName)!

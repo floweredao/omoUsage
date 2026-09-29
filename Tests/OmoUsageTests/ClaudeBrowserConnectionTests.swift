@@ -150,6 +150,22 @@ struct ClaudeBrowserConnectionTests {
         #expect(try await first.value == .legacy)
     }
 
+    @Test
+    func settingsFeedbackDistinguishesEachFailureKind() {
+        let message = ClaudeBrowserConnectionFeedback.message(for:)
+        #expect(message(ClaudeBrowserConnectionError.timedOut) == .claudeSignInTimedOut)
+        #expect(message(ClaudeBrowserConnectionError.cancelled) == .claudeSignInCancelled)
+        #expect(message(CancellationError()) == .claudeSignInCancelled)
+        #expect(message(ClaudeBrowserConnectionError.storageFailed) == .claudeSignInSaveFailed)
+        for failure in [
+            ClaudeBrowserConnectionError.stateMismatch, .authorizationFailed, .exchangeFailed
+        ] {
+            #expect(message(failure) == .claudeSignInFailed)
+        }
+        #expect(message(ProviderAccountRegistryControllerError.invalidLabel) == .accountAdditionFailed)
+        #expect(message(ClaudeBrowserConnectionError.alreadyConnecting) == nil)
+    }
+
     private func snapshot(_ access: String) -> CredentialSnapshot {
         CredentialSnapshot(
             provider: .claude, accessToken: access, refreshToken: "browser-refresh",

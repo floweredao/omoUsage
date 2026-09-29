@@ -6,28 +6,6 @@ import Testing
 @Suite("Provider setup truthfulness")
 struct ProviderSetupTruthfulnessTests {
     @Test
-    func ClaudeConnectRoutesAuthorizationOutcomesTruthfully() {
-        #expect(
-            ClaudeConnectionAuthorizationPolicy.decision(
-                for: .authorized(
-                    service:
-                        CredentialDiscovery.claudeKeychainService
-                )
-            ) == .refresh
-        )
-        #expect(
-            ClaudeConnectionAuthorizationPolicy.decision(
-                for: .notFound
-            ) == .launchCompanion
-        )
-        #expect(
-            ClaudeConnectionAuthorizationPolicy.decision(
-                for: .cancelled
-            ) == .stop
-        )
-    }
-
-    @Test
     func authBindingMatchesAllProviders() throws {
         let apiKeyProviders = ProviderID.allCases.filter {
             ProviderSetup.descriptor(for: $0)?.acceptsAPIKey == true
@@ -209,69 +187,6 @@ struct ProviderSetupTruthfulnessTests {
         )
     }
 
-    @Test(.timeLimit(.minutes(1)), arguments: [0, 7])
-    @MainActor
-    func officialClaudeTerminalCommandDeliversActualCompletion(exitCode: Int) async throws {
-        let home = FileManager.default.temporaryDirectory.appending(
-            path: "ClaudeLoginFixture-'quoted space'-\(UUID().uuidString)"
-        )
-        defer { try? FileManager.default.removeItem(at: home) }
-        let executable = home.appending(path: ".local/bin/claude")
-        try FileManager.default.createDirectory(
-            at: executable.deletingLastPathComponent(),
-            withIntermediateDirectories: true
-        )
-        try """
-        #!/bin/zsh
-        [ "$#" -eq 2 ] && [ "$1" = auth ] && [ "$2" = login ] || exit 9
-        exit \(exitCode)
-        """.write(to: executable, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executable.path)
-        let completion = AsyncStream<Bool>.makeStream()
-        let receipt = try OfficialLoginReceipt { completion.continuation.yield($0) }
-        defer { receipt.cancel() }
-        let attributes = try FileManager.default.attributesOfItem(atPath: receipt.url.path)
-        let directoryAttributes = try FileManager.default.attributesOfItem(
-            atPath: receipt.url.deletingLastPathComponent().path
-        )
-        #expect(attributes[.posixPermissions] as? Int == 0o600)
-        #expect(directoryAttributes[.posixPermissions] as? Int == 0o700)
-        let commandFile = home.appending(path: "login.command")
-        let process = Process()
-        process.executableURL = URL(filePath: "/bin/zsh")
-        let termination = AsyncStream<Int32>.makeStream()
-        process.terminationHandler = { termination.continuation.yield($0.terminationStatus) }
-        let result = ProviderSetup.performClaudeLogin(
-            receipt: receipt,
-            environment: ["PATH": ""],
-            homeDirectory: home,
-            isExecutable: { $0 == executable.path },
-            launchTerminal: { command in
-                do {
-                    try ProviderSetup.terminalCommandFile(command: command, at: commandFile)
-                        .write(to: commandFile, atomically: true, encoding: .utf8)
-                    process.arguments = ["-f", commandFile.path]
-                    try process.run()
-                    return true
-                } catch {
-                    Issue.record(error)
-                    return false
-                }
-            }
-        )
-        #expect(result == .success(.launched))
-        for await succeeded in completion.stream {
-            #expect(succeeded == (exitCode == 0))
-            break
-        }
-        for await status in termination.stream {
-            #expect(status == Int32(exitCode))
-            break
-        }
-        #expect(!FileManager.default.fileExists(atPath: commandFile.path))
-        #expect(!FileManager.default.fileExists(atPath: receipt.url.deletingLastPathComponent().path))
-    }
-
     @Test(arguments: [ProviderID.claude, .codex])
     @MainActor
     func companionAdditionActivationNeverCapturesProtectedClaudeCredential(provider: ProviderID) throws {
@@ -324,7 +239,88 @@ struct ProviderSetupTruthfulnessTests {
             for: .codex
         )
 
-        #expect(coordinator.state(for: .codex) == .failed)
+        // Opening the official page is neither authenticated nor a failure.
+        #expect(coordinator.state(for: .codex) == nil)
+    }
+
+    @Test
+    @MainActor
+    func activationReportsResolvedStatesAndReplacesStaleWaitingFeedback() async {
+        let cursor = AccountProviderID(accountID: .legacy, providerID: .cursor)
+        let grok = AccountProviderID(accountID: .legacy, providerID: .grok)
+        let coordinator = ProviderConnectionCoordinator()
+        coordinator.record(.success(.launched), for: .cursor)
+        coordinator.record(.success(.launched), for: .grok)
+
+        let resolved = await coordinator.applicationDidBecomeActive(
+            refresh: {},
+            availability: { (identity: AccountProviderID) in
+                identity == cursor ? .available : .authenticationRequired
+            }
+        )
+
+        #expect(resolved == [cursor: .authenticated, grok: .waitingForCredential])
+        let waiting = LocalizedText.key(.waitingForCompanionCredentials)
+        // Grok still waits, so the waiting text stays.
+        #expect(PendingConnectionFeedback.afterActivation(resolved, current: waiting) == waiting)
+        #expect(PendingConnectionFeedback.afterActivation([cursor: .authenticated], current: waiting) == nil)
+        #expect(
+            PendingConnectionFeedback.afterActivation([cursor: .failed], current: waiting)
+                == .key(.connectionVerificationFailed)
+        )
+        let unrelated = LocalizedText.key(.registryResetSucceeded)
+        #expect(PendingConnectionFeedback.afterActivation([cursor: .authenticated], current: unrelated) == unrelated)
+        #expect(PendingConnectionFeedback.afterActivation([:], current: waiting) == waiting)
+    }
+
+    @Test
+    @MainActor
+    func codexReconnectOpeningOfficialPageIsNotALaunchFailure() {
+        let url = URL(string: "https://chatgpt.com/codex")!
+        let coordinator = CodexLegacyReconnectCoordinator(
+            captureCredential: { throw CredentialDiscoveryError.notFound(.codex) },
+            persistLegacySnapshot: { _ in },
+            launchCompanion: { .success(.openedFallback(url)) },
+            reenable: {}
+        )
+
+        let outcome = coordinator.start()
+
+        #expect(outcome == .openedOfficialGuide(url))
+        #expect(!coordinator.isWaiting)
+        #expect(
+            CodexReconnectFeedback.update(for: outcome, userInitiated: true)
+                == .show(.formatted(.openedOfficialAuthentication, ProviderID.codex.displayName))
+        )
+    }
+
+    @Test
+    func codexActivationCheckClearsWaitingOnlyWhenReconnected() {
+        #expect(CodexReconnectFeedback.update(for: .reconnected, userInitiated: false) == .clear)
+        #expect(CodexReconnectFeedback.update(for: .credentialUnchanged, userInitiated: false) == .keep)
+        #expect(CodexReconnectFeedback.update(for: .credentialMissing, userInitiated: false) == .keep)
+        #expect(
+            CodexReconnectFeedback.update(for: .credentialUnavailable, userInitiated: false)
+                == .show(.key(.companionCredentialUnavailable))
+        )
+        #expect(
+            CodexReconnectFeedback.update(for: .credentialUnchanged, userInitiated: true)
+                == .show(.key(.companionCredentialUnchanged))
+        )
+    }
+
+    @Test
+    func failedTerminalLaunchNamesTheProviderNotItsExecutable() {
+        let result = ProviderSetup.performTerminalAlternatives(
+            [TerminalLaunchSpecification(executable: "gh", arguments: ["auth", "login"])],
+            fallbackURL: nil,
+            companionProvider: .copilot,
+            environment: ["PATH": "/opt/homebrew/bin"],
+            isExecutable: { $0 == "/opt/homebrew/bin/gh" },
+            launchTerminal: { _ in false },
+            openURL: { _ in true }
+        )
+        #expect(result == .failure(.unableToLaunch(ProviderID.copilot.displayName)))
     }
 
     @Test
@@ -446,6 +442,9 @@ struct ProviderSetupTruthfulnessTests {
             startConnection: { events.append("start-\($0.rawValue)") },
             startGuardedCodexConnection: {
                 events.append("guarded-\($0.rawValue)")
+            },
+            startBrowserConnection: {
+                events.append("browser-\($0.rawValue)")
             }
         )
 
@@ -457,9 +456,12 @@ struct ProviderSetupTruthfulnessTests {
             startConnection: { events.append("start-\($0.rawValue)") },
             startGuardedCodexConnection: {
                 events.append("guarded-\($0.rawValue)")
+            },
+            startBrowserConnection: {
+                events.append("browser-\($0.rawValue)")
             }
         )
-        #expect(events == ["start-claude"])
+        #expect(events == ["browser-claude"])
     }
 
     @Test
@@ -655,17 +657,17 @@ struct ProviderSetupTruthfulnessTests {
 
     @Test
     @MainActor
-    func claudeReconnectStartsOfficialLoginWithoutRefreshing() {
+    func claudeReconnectStartsBrowserSignInWithoutReenablingFirst() {
         var events: [String] = []
 
         ProviderConnectionControl.performReconnect(
             provider: .claude,
             reenable: { events.append("reenable-\($0.rawValue)") },
             startConnection: { events.append("start-\($0.rawValue)") },
-            launchOfficialLogin: { events.append("login-\($0.rawValue)") }
+            startBrowserConnection: { events.append("browser-\($0.rawValue)") }
         )
 
-        #expect(events == ["reenable-claude", "login-claude"])
+        #expect(events == ["browser-claude"])
     }
 
     @Test

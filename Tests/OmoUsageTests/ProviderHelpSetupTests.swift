@@ -25,16 +25,7 @@ struct ProviderHelpSetupTests {
 
     @Test
     func companionProvidersExposeDirectConnectionActions() throws {
-        #expect(
-            try descriptor(.claude).action
-                == .terminal(
-                    TerminalLaunchSpecification(
-                        executable: "claude",
-                        arguments: ["auth", "login"]
-                    ),
-                    fallbackURL: nil
-                )
-        )
+        #expect(try descriptor(.claude).action == .browserOAuth)
         #expect(
             try descriptor(.codex).action
                 == .terminal(
@@ -119,83 +110,12 @@ struct ProviderHelpSetupTests {
     }
 
     @Test
-    func missingClaudeCLIReportsInstallationRequirementWithoutOpeningWeb() throws {
-        guard
-            case .terminal(let specification, let fallbackURL) =
-                try descriptor(.claude).action
-        else {
-            Issue.record("Claude must use a terminal authentication action")
-            return
-        }
-        var launchedCommands: [String] = []
-        var openedURLs: [URL] = []
-
-        let result = ProviderSetup.performTerminal(
-            specification,
-            fallbackURL: fallbackURL,
-            environment: ["PATH": ""],
-            homeDirectory: URL(filePath: "/Users/test"),
-            isExecutable: { _ in false },
-            launchTerminal: {
-                launchedCommands.append($0)
-                return true
-            },
-            openURL: {
-                openedURLs.append($0)
-                return true
-            }
-        )
-
-        #expect(
-            result
-                == .failure(
-                    .requiredExecutableMissing(["claude"])
-                )
-        )
-        #expect(launchedCommands.isEmpty)
-        #expect(openedURLs.isEmpty)
-    }
-
-    @Test
-    func resolvesBundledClaudeDesktopExecutable() throws {
-        let home = FileManager.default.temporaryDirectory
-            .appending(path: "OmoUsageClaudeCLI-\(UUID().uuidString)")
-        let executable = home.appending(
-            components: "Library",
-            "Application Support",
-            "Claude",
-            "claude-code",
-            "2.1.229",
-            "claude.app",
-            "Contents",
-            "MacOS",
-            "claude"
-        )
-        try FileManager.default.createDirectory(
-            at: executable.deletingLastPathComponent(),
-            withIntermediateDirectories: true
-        )
-        try Data().write(to: executable)
-        defer {
-            try? FileManager.default.removeItem(at: home)
-        }
-        let expectedPath = executable.resolvingSymlinksInPath().path
-
-        let resolved = ProviderSetup.resolvedExecutablePath(
-            "claude",
-            environment: ["PATH": ""],
-            homeDirectory: home,
-            isExecutable: {
-                URL(filePath: $0).resolvingSymlinksInPath().path
-                    == expectedPath
-            }
-        )
-
-        #expect(
-            resolved.map {
-                URL(filePath: $0).resolvingSymlinksInPath().path
-            } == expectedPath
-        )
+    @MainActor
+    func claudeSetupNeverLaunchesTerminalOrOpensHelp() throws {
+        // Claude connects through the in-app browser sign-in owned by
+        // Settings; the generic setup path has nothing to launch.
+        #expect(try descriptor(.claude).action == .browserOAuth)
+        #expect(ProviderSetup.perform(for: .claude) == .failure(.unavailable(.claude)))
     }
 
     @Test

@@ -101,6 +101,43 @@ struct DevinBrowserConnectionTests {
     }
 
     @Test
+    @MainActor
+    func registryWriteFailureIsReportedAsStorageFailure() async {
+        let usage = ProviderUsage(provider: .devin, planName: "Pro", groups: [], availability: .available, updatedAt: .distantPast)
+        await #expect(throws: DevinBrowserConnectionError.storageFailed) {
+            try await DevinBrowserConnectionCoordinator().connect(
+                target: .existing(AccountProviderID(accountID: .legacy, providerID: .devin)),
+                authenticate: {
+                    CredentialSnapshot(
+                        provider: .devin, accessToken: "browser", refreshToken: nil,
+                        accountReference: nil, planName: nil, expiresAt: nil, source: .keychain
+                    )
+                },
+                validate: { _ in usage },
+                persist: { _, _ in throw ProviderAccountRegistryControllerError.keyStoreUnavailable }
+            )
+        }
+    }
+
+    @Test
+    func eachFailureMapsToItsOwnMessage() {
+        let cases: [(any Error, AppStringKey?)] = [
+            (DevinBrowserConnectionError.usageUnavailable, .browserUsageUnavailable),
+            (DevinBrowserConnectionError.storageFailed, .browserCredentialSaveFailed),
+            (DevinBrowserConnectionError.alreadyConnecting, nil),
+            (ProviderAccountRegistryControllerError.invalidLabel, .accountAdditionFailed),
+            (DevinBrowserAuthenticationError.timedOut, .browserSignInTimedOut),
+            (DevinBrowserAuthenticationError.authorizationDenied, .browserSignInDenied),
+            (DevinBrowserAuthenticationError.browserOpenFailed, .unableToOpenOfficialAuthentication),
+            (DevinBrowserAuthenticationError.invalidToken, .browserLoginFailed),
+            (CancellationError(), nil)
+        ]
+        for (error, key) in cases {
+            #expect(DevinBrowserConnectionFeedback.message(for: error) == key)
+        }
+    }
+
+    @Test
     func primaryBrowserCredentialWinsOverCompanionFile() throws {
         let fixture = try DevinCredentialFixture()
         defer { fixture.remove() }

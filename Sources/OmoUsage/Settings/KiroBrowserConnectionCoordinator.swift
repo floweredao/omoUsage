@@ -10,7 +10,13 @@ enum KiroBrowserConnectionTarget: Equatable {
 enum KiroBrowserConnectionError: Error, Equatable {
     case alreadyConnecting
     case usageUnavailable
+    /// The browser signed in to a different Kiro profile than the account
+    /// being reconnected.
     case accountMismatch
+    /// The browser signed in to a profile another account already holds.
+    case accountAlreadyConnected
+    /// The verified credential could not be written to the registry.
+    case storageFailed
 }
 
 @MainActor
@@ -28,6 +34,11 @@ final class KiroBrowserConnectionCoordinator {
         persist: (KiroBrowserConnectionTarget, CredentialSnapshot) throws -> AccountProviderID
     ) async throws -> AccountProviderID {
         guard pending == nil else { throw KiroBrowserConnectionError.alreadyConnecting }
+        // An unusable alias must fail before the browser opens, not after
+        // a completed login.
+        if case .newAccount(let label) = target {
+            _ = try ProviderAccountRegistryController.validatedAccountLabel(label)
+        }
         pending = target
         defer { pending = nil }
         try Task.checkCancellation()
@@ -65,7 +76,13 @@ final class KiroBrowserConnectionCoordinator {
             try Task.checkCancellation()
             let authenticated = try await authenticate()
             try Task.checkCancellation()
-            guard matches(authenticated) else { throw KiroBrowserConnectionError.accountMismatch }
+            guard matches(authenticated) else {
+                if let profile = authenticated.accountReference,
+                   excludedProfiles.contains(profile) {
+                    throw KiroBrowserConnectionError.accountAlreadyConnected
+                }
+                throw KiroBrowserConnectionError.accountMismatch
+            }
             let usage = try await validate(authenticated)
             try Task.checkCancellation()
             guard usage.provider == .kiro, usage.availability == .available else {
@@ -75,6 +92,12 @@ final class KiroBrowserConnectionCoordinator {
         }
         guard let candidate else { throw KiroBrowserConnectionError.usageUnavailable }
         try Task.checkCancellation()
-        return try persist(target, candidate)
+        do {
+            return try persist(target, candidate)
+        } catch ProviderAccountRegistryControllerError.invalidLabel {
+            throw ProviderAccountRegistryControllerError.invalidLabel
+        } catch {
+            throw KiroBrowserConnectionError.storageFailed
+        }
     }
 }

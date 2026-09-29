@@ -160,6 +160,71 @@ struct KiroBrowserConnectionTests {
         #expect(coordinator.pending == nil)
     }
 
+    @Test
+    func invalidNewAccountLabelFailsBeforeDiscoveryOrBrowser() async {
+        let coordinator = KiroBrowserConnectionCoordinator()
+        var events: [String] = []
+        await #expect(throws: ProviderAccountRegistryControllerError.invalidLabel) {
+            try await coordinator.connect(
+                target: .newAccount("   "),
+                discover: { events.append("discover"); return snapshot("existing") },
+                authenticate: { events.append("browser"); return snapshot("oauth") },
+                validate: { _ in events.append("validate"); return usage() },
+                persist: { _, _ in events.append("persist"); return identity }
+            )
+        }
+        #expect(events.isEmpty)
+        #expect(coordinator.pending == nil)
+    }
+
+    @Test
+    func alreadyAddedProfileIsReportedDistinctlyFromMismatch() async {
+        await #expect(throws: KiroBrowserConnectionError.accountAlreadyConnected) {
+            try await KiroBrowserConnectionCoordinator().connect(
+                target: .newAccount("Work"), excludedProfiles: ["profile/existing"],
+                discover: { throw CredentialDiscoveryError.notFound(.kiro) },
+                authenticate: { snapshot("oauth", profile: "profile/existing") },
+                validate: { _ in usage() },
+                persist: { _, _ in identity }
+            )
+        }
+    }
+
+    @Test
+    func registryWriteFailureIsReportedAsStorageFailure() async {
+        await #expect(throws: KiroBrowserConnectionError.storageFailed) {
+            try await KiroBrowserConnectionCoordinator().connect(
+                target: .existing(identity),
+                discover: { snapshot("existing") },
+                authenticate: { snapshot("oauth") },
+                validate: { _ in usage() },
+                persist: { _, _ in throw ProviderAccountRegistryControllerError.persistenceUnavailable }
+            )
+        }
+    }
+
+    @Test
+    func eachFailureMapsToItsOwnMessage() {
+        let cases: [(any Error, AppStringKey?)] = [
+            (KiroBrowserConnectionError.accountMismatch, .kiroAccountMismatch),
+            (KiroBrowserConnectionError.accountAlreadyConnected, .kiroAccountAlreadyConnected),
+            (KiroBrowserConnectionError.usageUnavailable, .browserUsageUnavailable),
+            (KiroBrowserConnectionError.storageFailed, .browserCredentialSaveFailed),
+            (KiroBrowserConnectionError.alreadyConnecting, nil),
+            (ProviderAccountRegistryControllerError.invalidLabel, .accountAdditionFailed),
+            (KiroBrowserAuthenticationError.timedOut, .browserSignInTimedOut),
+            (KiroBrowserAuthenticationError.authorizationDenied, .browserSignInDenied),
+            (KiroBrowserAuthenticationError.unsupportedOrganization, .kiroUnsupportedOrganization),
+            (KiroBrowserAuthenticationError.browserOpenFailed, .unableToOpenOfficialAuthentication),
+            (KiroBrowserAuthenticationError.exchangeFailed, .browserLoginFailed),
+            (ProviderTransportError.requestFailed(.kiro, 500), .browserUsageUnavailable),
+            (CancellationError(), nil)
+        ]
+        for (error, key) in cases {
+            #expect(KiroBrowserConnectionFeedback.message(for: error) == key)
+        }
+    }
+
     private func snapshot(_ token: String, profile: String = "profile/selected") -> CredentialSnapshot {
         CredentialSnapshot(
             provider: .kiro, accessToken: token, refreshToken: nil,

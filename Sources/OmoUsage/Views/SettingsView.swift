@@ -34,17 +34,6 @@ struct WebDashboardLinkPresentationState {
     }
 }
 
-/// Raised when the user declines the Claude Keychain prompt during an
-/// account addition, so the addition fails instead of falling back to
-/// whatever credential is already cached.
-struct ClaudeCredentialAuthorizationDeclined: Error {}
-
-enum ClaudeConnectionAuthorizationDecision: Equatable {
-    case refresh
-    case launchCompanion
-    case stop
-}
-
 enum ProviderConnectionMutationPolicy {
     static func allows(
         provider: ProviderID,
@@ -54,19 +43,161 @@ enum ProviderConnectionMutationPolicy {
     }
 }
 
-enum ClaudeConnectionAuthorizationPolicy {
-    static func decision(
-        for outcome: ClaudeKeychainAuthorizationOutcome
-    ) -> ClaudeConnectionAuthorizationDecision {
-        switch outcome {
-        case .authorized:
-            .refresh
-        case .notFound:
-            .launchCompanion
-        case .cancelled:
-            .stop
+/// Settings copy for a failed Claude browser sign-in. `nil` means the
+/// attempt needs no message (a second tap while one is already running).
+enum ClaudeBrowserConnectionFeedback {
+    static func message(for error: Error) -> AppStringKey? {
+        if error is CancellationError { return .claudeSignInCancelled }
+        if case ProviderAccountRegistryControllerError.invalidLabel? =
+            error as? ProviderAccountRegistryControllerError
+        {
+            return .accountAdditionFailed
+        }
+        switch error as? ClaudeBrowserConnectionError {
+        case .alreadyConnecting: return nil
+        case .timedOut: return .claudeSignInTimedOut
+        case .cancelled: return .claudeSignInCancelled
+        case .storageFailed: return .claudeSignInSaveFailed
+        case .stateMismatch, .authorizationFailed, .exchangeFailed, nil:
+            return .claudeSignInFailed
         }
     }
+}
+
+/// Settings copy for a failed Kiro browser connection. `nil` means the
+/// attempt needs no message (cancelled, or a second tap while one runs).
+enum KiroBrowserConnectionFeedback {
+    static func message(for error: Error) -> AppStringKey? {
+        if error is CancellationError { return nil }
+        if case ProviderAccountRegistryControllerError.invalidLabel? =
+            error as? ProviderAccountRegistryControllerError
+        {
+            return .accountAdditionFailed
+        }
+        if let error = error as? KiroBrowserConnectionError {
+            switch error {
+            case .alreadyConnecting: return nil
+            case .usageUnavailable: return .browserUsageUnavailable
+            case .accountMismatch: return .kiroAccountMismatch
+            case .accountAlreadyConnected: return .kiroAccountAlreadyConnected
+            case .storageFailed: return .browserCredentialSaveFailed
+            }
+        }
+        if let error = error as? KiroBrowserAuthenticationError {
+            switch error {
+            case .browserOpenFailed: return .unableToOpenOfficialAuthentication
+            case .timedOut: return .browserSignInTimedOut
+            case .authorizationDenied: return .browserSignInDenied
+            case .unsupportedOrganization: return .kiroUnsupportedOrganization
+            case .listenerFailed, .exchangeFailed, .invalidToken,
+                 .randomGenerationFailed:
+                return .browserLoginFailed
+            }
+        }
+        if error is ProviderTransportError { return .browserUsageUnavailable }
+        return .browserLoginFailed
+    }
+}
+
+/// Settings copy for a failed Devin browser connection. `nil` means the
+/// attempt needs no message (cancelled, or a second tap while one runs).
+enum DevinBrowserConnectionFeedback {
+    static func message(for error: Error) -> AppStringKey? {
+        if error is CancellationError { return nil }
+        if case ProviderAccountRegistryControllerError.invalidLabel? =
+            error as? ProviderAccountRegistryControllerError
+        {
+            return .accountAdditionFailed
+        }
+        if let error = error as? DevinBrowserConnectionError {
+            switch error {
+            case .alreadyConnecting: return nil
+            case .usageUnavailable: return .browserUsageUnavailable
+            case .storageFailed: return .browserCredentialSaveFailed
+            }
+        }
+        if let error = error as? DevinBrowserAuthenticationError {
+            switch error {
+            case .browserOpenFailed: return .unableToOpenOfficialAuthentication
+            case .timedOut: return .browserSignInTimedOut
+            case .authorizationDenied: return .browserSignInDenied
+            case .listenerFailed, .exchangeFailed, .invalidToken,
+                 .randomGenerationFailed:
+                return .browserLoginFailed
+            }
+        }
+        if error is ProviderTransportError { return .browserUsageUnavailable }
+        return .browserLoginFailed
+    }
+}
+
+/// How a guarded Codex reconnect outcome changes the Settings feedback line.
+enum CodexReconnectFeedback: Equatable {
+    case keep
+    case clear
+    case show(LocalizedText)
+    case setupError(ProviderSetupError)
+
+    /// The automatic check on app activation keeps the waiting text for
+    /// "not yet" results instead of repeating them on every activation;
+    /// Check Again and Connect report every result.
+    static func update(
+        for outcome: CodexLegacyReconnectOutcome,
+        userInitiated: Bool
+    ) -> CodexReconnectFeedback {
+        switch outcome {
+        case .reconnected:
+            return .clear
+        case .waitingForCredential:
+            return .show(.key(.waitingForCompanionCredentials))
+        case .credentialUnavailable:
+            return .show(.key(.companionCredentialUnavailable))
+        case .credentialUnchanged:
+            return userInitiated
+                ? .show(.key(.companionCredentialUnchanged)) : .keep
+        case .credentialMissing:
+            return userInitiated
+                ? .show(.key(.companionCredentialMissing)) : .keep
+        case .openedOfficialGuide:
+            return .show(.formatted(
+                .openedOfficialAuthentication,
+                ProviderID.codex.displayName
+            ))
+        case .launchFailed(let error):
+            return .setupError(error)
+        case .ignored:
+            return .keep
+        }
+    }
+}
+
+/// Resolves the Settings feedback line after an app activation checked the
+/// pending companion connections: a failure replaces it, and the waiting
+/// text disappears once nothing is still waiting.
+enum PendingConnectionFeedback {
+    static func afterActivation(
+        _ resolved: [AccountProviderID: ProviderConnectionPresentationState],
+        current: LocalizedText?
+    ) -> LocalizedText? {
+        guard !resolved.isEmpty else { return current }
+        if resolved.values.contains(.failed) {
+            return .key(.connectionVerificationFailed)
+        }
+        guard
+            current == .key(.waitingForCompanionCredentials),
+            !resolved.values.contains(.waitingForCredential)
+        else {
+            return current
+        }
+        return nil
+    }
+}
+
+/// Explicit user actions (Refresh, Check Again, Connect, Reconnect) may retry
+/// a Keychain read the user denied earlier. Timer refreshes never call this.
+@MainActor
+func resetKeychainAuthorizationForUserAction() {
+    UnifiedProviderKeychain().resetAuthorization()
 }
 
 struct SettingsView: View {
@@ -85,14 +216,12 @@ struct SettingsView: View {
     let onShareWebDashboardURL: (URL, NSView) -> Bool
     let onRetryWebDashboard: () -> Void
     let appUpdateController: AppUpdateController
-    private let authorizeClaude: () throws -> ClaudeKeychainAuthorizationOutcome
-    private let launchClaudeLogin: (OfficialLoginReceipt) -> Result<
-        ProviderSetupOutcome, ProviderSetupError
-    >
     private let authenticateDevin: @MainActor () async throws -> CredentialSnapshot
     private let authenticateKiro: @MainActor () async throws -> CredentialSnapshot
     private let discoverKiro: (KiroBrowserConnectionTarget) throws -> CredentialSnapshot
     private let validateKiro: @MainActor (CredentialSnapshot) async throws -> ProviderUsage
+    @State private var claudeConnection: ClaudeBrowserConnectionCoordinator
+    @State private var claudeLoginTask: Task<Void, Never>?
     @State private var devinConnection = DevinBrowserConnectionCoordinator()
     @State private var devinLoginTask: Task<Void, Never>?
     @State private var kiroConnection = KiroBrowserConnectionCoordinator()
@@ -130,12 +259,9 @@ struct SettingsView: View {
             ProviderSetupOutcome,
             ProviderSetupError
         > = { ProviderSetup.perform(for: $0) },
-        authorizeClaude: @escaping () throws -> ClaudeKeychainAuthorizationOutcome = {
-            try ClaudeKeychainAccessSession.shared.authorizeClaude()
-        },
-        launchClaudeLogin: @escaping (OfficialLoginReceipt) -> Result<
-            ProviderSetupOutcome, ProviderSetupError
-        > = { ProviderSetup.performClaudeLogin(receipt: $0) },
+        claudeSnapshotStore: ProviderCredentialSnapshotStore =
+            CredentialDiscovery.live().snapshotStore,
+        authenticateClaude: ClaudeBrowserConnectionCoordinator.Authenticate? = nil,
         authenticateDevin: @escaping @MainActor () async throws -> CredentialSnapshot = {
             try await DevinBrowserAuthenticationClient().authenticate {
                 NSWorkspace.shared.open($0)
@@ -197,12 +323,21 @@ struct SettingsView: View {
         self.onShareWebDashboardURL = onShareWebDashboardURL
         self.onRetryWebDashboard = onRetryWebDashboard
         self.appUpdateController = appUpdateController
-        self.authorizeClaude = authorizeClaude
-        self.launchClaudeLogin = launchClaudeLogin
         self.authenticateDevin = authenticateDevin
         self.authenticateKiro = authenticateKiro
         self.discoverKiro = discoverKiro
         self.validateKiro = validateKiro
+        _claudeConnection = State(
+            initialValue: ClaudeBrowserConnectionCoordinator(
+                snapshotStore: claudeSnapshotStore,
+                authenticate: authenticateClaude,
+                registerAccount: { label, secret in
+                    try accountRegistryController.addCapturedCompanionAccount(
+                        provider: .claude, label: label, encodedSecret: secret
+                    ).accountID
+                }
+            )
+        )
         _presentationStyle = State(initialValue: presentationStyle)
         _sideNotchHideDelay = State(initialValue: sideNotchHideDelay)
         _additionCoordinator = State(
@@ -233,21 +368,12 @@ struct SettingsView: View {
         )
     }
 
-    /// Production capture for companion additions. Claude keeps its
-    /// explicit authorization step: an unauthorized read must fail the
-    /// addition rather than silently reuse a cached credential.
+    /// Production capture for companion additions. Claude accounts are
+    /// added through the in-app browser sign-in instead.
     nonisolated static func captureCompanionCredential(
         for provider: ProviderID
     ) throws -> String {
-        if provider == .claude {
-            switch try ClaudeKeychainAccessSession.shared.authorizeClaude() {
-            case .authorized, .notFound:
-                break
-            case .cancelled:
-                throw ClaudeCredentialAuthorizationDeclined()
-            }
-        }
-        return try CredentialDiscovery.live().captureCredential(
+        try CredentialDiscovery.live().captureCredential(
             for: provider,
             now: Date()
         )
@@ -524,12 +650,24 @@ struct SettingsView: View {
                                 onCancelConnection: {
                                     if provider == .kiro { cancelKiroConnection() }
                                     else if provider == .devin { cancelDevinConnection() }
+                                    else if provider == .claude { cancelClaudeConnection() }
                                     else { cancelCodexReconnect() }
                                 },
                                 browserConnectionTarget: devinConnection.pending,
                                 kiroConnectionTarget: kiroConnection.pending,
-                                onBrowserConnect: { startDevinConnection(.existing($0)) },
-                                onKiroConnect: { startKiroConnection(.existing($0)) },
+                                claudeConnectionTarget: claudeConnection.pending,
+                                onBrowserConnect: {
+                                    resetKeychainAuthorizationForUserAction()
+                                    startDevinConnection(.existing($0))
+                                },
+                                onKiroConnect: {
+                                    resetKeychainAuthorizationForUserAction()
+                                    startKiroConnection(.existing($0))
+                                },
+                                onClaudeConnect: {
+                                    resetKeychainAuthorizationForUserAction()
+                                    startClaudeConnection(.existing($0.accountID))
+                                },
                                 codexPlanMultiplier:
                                     codexPlanMultiplierBinding(
                                         for: provider
@@ -544,15 +682,17 @@ struct SettingsView: View {
             HStack {
                 if let feedback {
                     Text(localization.resolve(feedback))
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.primary)
+                        .lineLimit(2)
                         .accessibilityIdentifier("settings-feedback")
                 }
                 Spacer()
                 Button(localization.text(.refresh)) {
+                    resetKeychainAuthorizationForUserAction()
                     Task { await viewModel.refresh() }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.bordered)
                 .controlSize(.small)
                 .disabled(viewModel.isRefreshing)
             }
@@ -583,7 +723,10 @@ struct SettingsView: View {
                 for: pendingProvider
             )
             if codexReconnectCoordinator.isWaiting {
-                _ = codexReconnectCoordinator.checkAgain()
+                applyCodexReconnect(
+                    codexReconnectCoordinator.checkAgain(),
+                    userInitiated: false
+                )
             }
             Task {
                 await refreshPendingConnectionsAfterActivation()
@@ -615,9 +758,22 @@ struct SettingsView: View {
             )
         }
         .onDisappear {
-            connectionCoordinator.cancelClaudeLogin()
+            cancelClaudeConnection()
             cancelDevinConnection()
             cancelKiroConnection()
+        }
+        .onChange(of: feedback) { _, newFeedback in
+            // The footer line is a status message: announce each new one
+            // without moving VoiceOver focus away from the control used.
+            guard let newFeedback else { return }
+            NSAccessibility.post(
+                element: NSApp as Any,
+                notification: .announcementRequested,
+                userInfo: [
+                    .announcement: localization.resolve(newFeedback),
+                    .priority: NSAccessibilityPriorityLevel.high.rawValue
+                ]
+            )
         }
     }
 
@@ -631,19 +787,16 @@ struct SettingsView: View {
     }
 
     private func refreshPendingConnectionsAfterActivation() async {
-        await connectionCoordinator.applicationDidBecomeActive(
+        let resolved = await connectionCoordinator.applicationDidBecomeActive(
             refresh: { await viewModel.refresh() },
-            availability: { (provider: ProviderID) in
-                viewModel.accountConnectionStates[
-                    AccountProviderID(accountID: .legacy, providerID: provider)
-                ]
+            availability: { (identity: AccountProviderID) in
+                viewModel.accountConnectionStates[identity]
             }
         )
-        if !Task.isCancelled,
-           connectionCoordinator.state(for: .claude) == .authenticated
-        {
-            feedback = nil
-        }
+        feedback = PendingConnectionFeedback.afterActivation(
+            resolved,
+            current: feedback
+        )
     }
 
     private func restoreRegistryBackup() {
@@ -696,8 +849,10 @@ struct SettingsView: View {
     private func connectionControlsDisabled(
         for provider: ProviderID
     ) -> Bool {
+        if provider == .claude, claudeLoginTask != nil { return true }
         if provider == .devin, devinLoginTask != nil { return true }
         if provider == .kiro, kiroLoginTask != nil { return true }
+        if provider == .codex, codexReconnectCoordinator.isWaiting { return true }
         return !ProviderConnectionMutationPolicy.allows(
             provider: provider,
             pendingAddition: additionCoordinator.pending?.provider
@@ -705,54 +860,45 @@ struct SettingsView: View {
     }
 
     private func connectProvider(_ provider: ProviderID) {
-        if provider == .kiro {
-            startKiroConnection(.existing(AccountProviderID(accountID: .legacy, providerID: .kiro)))
-            return
-        }
+        resetKeychainAuthorizationForUserAction()
         guard !connectionControlsDisabled(for: provider) else { return }
         ProviderConnectionControl.performConnect(
             provider: provider,
             startConnection: startConnection,
-            startGuardedCodexConnection: startGuardedCodexConnection
+            startGuardedCodexConnection: startGuardedCodexConnection,
+            startBrowserConnection: startBrowserConnection
         )
     }
 
-    private func startConnection(for provider: ProviderID) {
-        if provider == .devin {
+    /// Primary-account browser sign-in for Claude, Kiro, and Devin.
+    private func startBrowserConnection(for provider: ProviderID) {
+        switch provider {
+        case .claude:
+            startClaudeConnection(.existing(.legacy))
+        case .kiro:
+            startKiroConnection(.existing(
+                AccountProviderID(accountID: .legacy, providerID: .kiro)
+            ))
+        case .devin:
             startDevinConnection(.existing(
                 AccountProviderID(accountID: .legacy, providerID: .devin)
             ))
-            return
+        default:
+            startConnection(for: provider)
         }
-        let result: Result<ProviderSetupOutcome, ProviderSetupError>
-        if provider == .claude {
-            result = connectionCoordinator.startClaudeLogin(
-                launch: launchClaudeLogin,
-                authorize: authorizeClaude,
-                refresh: {
-                    await viewModel.retryAccountProvider(
-                        AccountProviderID(accountID: .legacy, providerID: .claude)
-                    )
-                },
-                availability: {
-                    viewModel.accountConnectionStates[
-                        AccountProviderID(accountID: .legacy, providerID: .claude)
-                    ]
-                },
-                didComplete: {
-                    feedback = connectionCoordinator.state(for: .claude) == .authenticated
-                        ? nil : .key(.authenticationRequired)
-                }
-            )
-        } else {
-            result = ProviderSetup.perform(for: provider)
-            connectionCoordinator.record(result, for: provider)
-        }
+    }
+
+    private func startConnection(for provider: ProviderID) {
+        let result = ProviderSetup.perform(for: provider)
+        connectionCoordinator.record(result, for: provider)
         switch result {
         case .success(.launched):
             feedback = .key(.waitingForCompanionCredentials)
         case .success(.openedFallback):
-            feedback = .key(.companionRequired)
+            feedback = .formatted(
+                .openedOfficialAuthentication,
+                provider.displayName
+            )
         case .failure(let error):
             if case .companionRequired = error {
                 feedback = .key(.companionRequired)
@@ -762,10 +908,19 @@ struct SettingsView: View {
     }
 
     private func disconnectProvider(_ provider: ProviderID) {
-        guard !connectionControlsDisabled(for: provider) else { return }
-        if provider == .claude { connectionCoordinator.cancelClaudeLogin() }
-        viewModel.disconnectAccountProvider(
-            AccountProviderID(accountID: .legacy, providerID: provider)
+        let awaitingReconnect = provider == .codex
+            && codexReconnectCoordinator.isWaiting
+        guard awaitingReconnect || !connectionControlsDisabled(for: provider)
+        else { return }
+        ProviderConnectionControl.performDisconnect(
+            provider: provider,
+            isAwaitingReconnect: awaitingReconnect,
+            cancelReconnect: { codexReconnectCoordinator.cancel() },
+            disconnect: { provider in
+                viewModel.disconnectAccountProvider(
+                    AccountProviderID(accountID: .legacy, providerID: provider)
+                )
+            }
         )
         feedback = .formatted(
             .disconnectedProvider,
@@ -774,8 +929,10 @@ struct SettingsView: View {
     }
 
     private func retryProvider(_ provider: ProviderID) {
+        resetKeychainAuthorizationForUserAction()
         ProviderConnectionControl.performRetry(
             provider: provider,
+            isInFlight: viewModel.isRefreshing,
             refresh: { provider in
                 Task {
                     let primary = AccountProviderID(
@@ -794,25 +951,38 @@ struct SettingsView: View {
 
     private func startGuardedCodexConnection(_ provider: ProviderID) {
         precondition(provider == .codex)
-        let outcome = codexReconnectCoordinator.start()
-        switch outcome {
-        case .waitingForCredential:
-            feedback = .key(.waitingForCompanionCredentials)
-        case .launchFailed(let error):
-            setupError = error
-        case .credentialUnavailable:
-            feedback = .key(.authenticationRequired)
-        default:
+        applyCodexReconnect(
+            codexReconnectCoordinator.start(),
+            userInitiated: true
+        )
+    }
+
+    private func applyCodexReconnect(
+        _ outcome: CodexLegacyReconnectOutcome,
+        userInitiated: Bool
+    ) {
+        switch CodexReconnectFeedback.update(
+            for: outcome,
+            userInitiated: userInitiated
+        ) {
+        case .keep:
             break
+        case .clear:
+            feedback = nil
+        case .show(let text):
+            feedback = text
+        case .setupError(let error):
+            setupError = error
         }
     }
 
     private func reconnectProvider(_ provider: ProviderID) {
         guard !connectionControlsDisabled(for: provider) else { return }
-        if provider == .codex || provider == .devin {
+        if provider == .codex {
             connectProvider(provider)
             return
         }
+        resetKeychainAuthorizationForUserAction()
         ProviderConnectionControl.performReconnect(
             provider: provider,
             reenable: { provider in
@@ -821,7 +991,7 @@ struct SettingsView: View {
                 )
             },
             startConnection: startConnection,
-            launchOfficialLogin: startConnection
+            startBrowserConnection: startBrowserConnection
         )
     }
 
@@ -868,6 +1038,11 @@ struct SettingsView: View {
     }
 
     private func addAccount(for provider: ProviderID) {
+        resetKeychainAuthorizationForUserAction()
+        if provider == .claude {
+            startClaudeConnection(.newAccount(label: newAccountLabels[provider, default: ""]))
+            return
+        }
         if provider == .kiro {
             startKiroConnection(.newAccount(newAccountLabels[provider, default: ""]))
             return
@@ -887,6 +1062,7 @@ struct SettingsView: View {
     }
 
     private func checkForCompanionCredential() {
+        resetKeychainAuthorizationForUserAction()
         let provider = additionCoordinator.pending?.provider
         apply(additionCoordinator.checkAgain(), for: provider)
     }
@@ -894,6 +1070,7 @@ struct SettingsView: View {
     /// Cancelling drops the pending addition but keeps the alias the user
     /// typed, so retrying does not start from an empty field.
     private func cancelAddition() {
+        if case .newAccount = claudeConnection.pending { cancelClaudeConnection() }
         if case .newAccount = devinConnection.pending { cancelDevinConnection() }
         if case .newAccount = kiroConnection.pending { cancelKiroConnection() }
         additionCoordinator.cancel()
@@ -904,17 +1081,51 @@ struct SettingsView: View {
         for provider: ProviderID
     ) -> ProviderAccountAdditionRowState {
         let browserAddition: ProviderID?
-        if case .newAccount = devinConnection.pending { browserAddition = .devin }
+        if case .newAccount = claudeConnection.pending { browserAddition = .claude }
+        else if case .newAccount = devinConnection.pending { browserAddition = .devin }
         else if case .newAccount = kiroConnection.pending { browserAddition = .kiro }
         else { browserAddition = nil }
+        let guardedReconnect: ProviderID?
+        if devinLoginTask != nil && browserAddition == nil { guardedReconnect = .devin }
+        else if case .existing = claudeConnection.pending { guardedReconnect = .claude }
+        else if codexReconnectCoordinator.isWaiting { guardedReconnect = .codex }
+        else { guardedReconnect = nil }
         return ProviderAccountAdditionRowState.resolve(
             provider: provider,
             pendingAddition: browserAddition ?? additionCoordinator.pending?.provider,
-            guardedReconnectProvider: devinLoginTask != nil && browserAddition == nil
-                ? .devin : codexReconnectCoordinator.isWaiting
-                ? .codex
-                : nil
+            guardedReconnectProvider: guardedReconnect
         )
+    }
+
+    /// Signs Claude in through the in-app browser flow. The alias is
+    /// validated before the browser opens; success rebuilds providers and
+    /// refreshes the account so the dashboard updates immediately.
+    private func startClaudeConnection(_ target: ClaudeBrowserConnectionTarget) {
+        guard claudeLoginTask == nil, additionCoordinator.pending == nil else { return }
+        if case .newAccount(let label) = target,
+           (try? ProviderAccountRegistryController.validatedAccountLabel(label)) == nil {
+            feedback = .key(.accountAdditionFailed)
+            return
+        }
+        feedback = .key(.waitingForBrowserLogin)
+        claudeLoginTask = Task { @MainActor in
+            defer { claudeLoginTask = nil }
+            do {
+                let accountID = try await claudeConnection.connect(target: target)
+                let identity = AccountProviderID(accountID: accountID, providerID: .claude)
+                viewModel.reconnectAccountProvider(identity)
+                onRegistryChange()
+                if case .newAccount = target { newAccountLabels[.claude] = "" }
+                await viewModel.retryAccountProvider(identity)
+                if !Task.isCancelled { feedback = nil }
+            } catch {
+                feedback = ClaudeBrowserConnectionFeedback.message(for: error).map { .key($0) }
+            }
+        }
+    }
+
+    private func cancelClaudeConnection() {
+        claudeLoginTask?.cancel()
     }
 
     private func startDevinConnection(_ target: DevinBrowserConnectionTarget) {
@@ -955,20 +1166,27 @@ struct SettingsView: View {
                         }
                     }
                 )
+                // Re-enabled only now, after the sign-in succeeded.
+                viewModel.reconnectAccountProvider(identity)
                 onRegistryChange()
                 if case .newAccount = target { newAccountLabels[.devin] = "" }
                 await viewModel.retryAccountProvider(identity)
                 if !Task.isCancelled { feedback = nil }
-            } catch is CancellationError {
-                feedback = nil
             } catch {
-                feedback = .key(.browserLoginFailed)
+                feedback = DevinBrowserConnectionFeedback.message(for: error)
+                    .map { .key($0) }
             }
         }
     }
 
     private func startKiroConnection(_ target: KiroBrowserConnectionTarget) {
-        guard kiroLoginTask == nil else { return }
+        guard kiroLoginTask == nil, additionCoordinator.pending == nil else { return }
+        if case .newAccount(let label) = target,
+           (try? ProviderAccountRegistryController.validatedAccountLabel(label)) == nil {
+            feedback = .key(.accountAdditionFailed)
+            return
+        }
+        feedback = .key(.waitingForBrowserLogin)
         kiroLoginTask = Task { @MainActor in
             defer { kiroLoginTask = nil }
             do {
@@ -1018,14 +1236,15 @@ struct SettingsView: View {
                         }
                     }
                 )
+                // Re-enabled only now, after the sign-in succeeded.
+                viewModel.reconnectAccountProvider(identity)
                 onRegistryChange()
                 await viewModel.retryAccountProvider(identity)
                 if !Task.isCancelled { feedback = nil }
                 if case .newAccount = target { newAccountLabels[.kiro] = "" }
-            } catch is CancellationError {
-                feedback = nil
             } catch {
-                feedback = .key(.authenticationRequired)
+                feedback = KiroBrowserConnectionFeedback.message(for: error)
+                    .map { .key($0) }
             }
         }
     }
@@ -1043,20 +1262,11 @@ struct SettingsView: View {
     /// state: an unchanged, missing, or unwritable credential keeps the
     /// legacy Codex account pinned and the provider disconnected.
     private func checkForCodexReconnectCredential() {
-        switch codexReconnectCoordinator.checkAgain() {
-        case .credentialUnchanged:
-            feedback = .key(.companionCredentialUnchanged)
-        case .credentialMissing:
-            feedback = .key(.companionCredentialMissing)
-        case .credentialUnavailable:
-            feedback = .key(.companionCredentialUnavailable)
-        case .launchFailed(let error):
-            setupError = error
-        case .reconnected:
-            feedback = nil
-        case .waitingForCredential, .ignored:
-            break
-        }
+        resetKeychainAuthorizationForUserAction()
+        applyCodexReconnect(
+            codexReconnectCoordinator.checkAgain(),
+            userInitiated: true
+        )
     }
 
     /// Cancelling stops the guarded reconnect only: the provider stays
@@ -1452,6 +1662,7 @@ private struct ProviderAccountsSection<
     @ViewBuilder let primaryCredentials: () -> PrimaryCredentials
     @State private var isAddingAccount = false
     @State private var aliasEdit: AccountAliasEdit?
+    @State private var pendingRemoval: ProviderAccountRowPresentation?
     @FocusState private var isAliasFocused: Bool
     @FocusState private var focusedAliasEdit: AccountProviderID?
     @Environment(\.appLocalization) private var localization
@@ -1473,7 +1684,7 @@ private struct ProviderAccountsSection<
                     .accessibilityIdentifier(
                         "account-waiting-\(provider.rawValue)"
                     )
-                    Text(localization.text(provider == .devin || provider == .kiro
+                    Text(localization.text(provider.usesBrowserSignIn
                         ? .waitingForBrowserLogin : .companionCredentialMissing))
                         .font(.system(size: 11.5))
                         .foregroundStyle(.secondary)
@@ -1488,7 +1699,7 @@ private struct ProviderAccountsSection<
                         .accessibilityIdentifier(
                             "cancel-addition-\(provider.rawValue)"
                         )
-                        if provider != .devin && provider != .kiro { Button(
+                        if !provider.usesBrowserSignIn { Button(
                             localization.text(
                                 .checkAgainForCompanionCredentials
                             ),
@@ -1594,11 +1805,29 @@ private struct ProviderAccountsSection<
             if let aliasEdit, !identities.contains(aliasEdit.identity) {
                 self.aliasEdit = nil
             }
+            if let pendingRemoval,
+               !identities.contains(pendingRemoval.identity) {
+                self.pendingRemoval = nil
+            }
         }
         .onChange(of: additionAvailability) { _, availability in
             if availability == .hidden {
                 isAddingAccount = false
             }
+        }
+        .confirmationDialog(
+            localization.format(.removeAccount, pendingRemoval?.label ?? ""),
+            isPresented: Binding(
+                get: { pendingRemoval != nil },
+                set: { if !$0 { pendingRemoval = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: pendingRemoval
+        ) { row in
+            Button(localization.text(.delete), role: .destructive) {
+                onRemove(row.identity)
+            }
+            Button(localization.text(.cancel), role: .cancel) {}
         }
     }
 
@@ -1708,14 +1937,13 @@ private struct ProviderAccountsSection<
                         )
                     )
                     if row.canRemove {
-                        Button {
-                            onRemove(row.identity)
+                        Button(role: .destructive) {
+                            pendingRemoval = row
                         } label: {
                             Text(localization.text(.delete))
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
-                        .tint(.red)
                         .accessibilityLabel(
                             localization.format(.removeAccount, row.label)
                         )
@@ -2358,11 +2586,14 @@ enum ProviderConnectionControl: Equatable, Hashable {
     case checkAgainConnection
     case cancelConnection
 
+    /// A retry already in flight ignores further taps.
     @MainActor
     static func performRetry(
         provider: ProviderID,
+        isInFlight: Bool = false,
         refresh: (ProviderID) -> Void
     ) {
+        guard !isInFlight else { return }
         refresh(provider)
     }
 
@@ -2370,28 +2601,47 @@ enum ProviderConnectionControl: Equatable, Hashable {
     static func performConnect(
         provider: ProviderID,
         startConnection: (ProviderID) -> Void,
-        startGuardedCodexConnection: (ProviderID) -> Void
+        startGuardedCodexConnection: (ProviderID) -> Void,
+        startBrowserConnection: (ProviderID) -> Void
     ) {
         if provider == .codex {
             startGuardedCodexConnection(provider)
+        } else if provider.usesBrowserSignIn {
+            startBrowserConnection(provider)
         } else {
             startConnection(provider)
         }
     }
 
+    /// Browser sign-in providers (Claude, Kiro, Devin) are re-enabled only
+    /// after their sign-in succeeds, so a cancelled or failed sign-in leaves
+    /// the account disconnected.
     @MainActor
     static func performReconnect(
         provider: ProviderID,
         reenable: (ProviderID) -> Void,
         startConnection: (ProviderID) -> Void,
-        launchOfficialLogin: (ProviderID) -> Void
+        startBrowserConnection: (ProviderID) -> Void
     ) {
-        reenable(provider)
-        if provider == .claude {
-            launchOfficialLogin(provider)
+        if provider.usesBrowserSignIn {
+            startBrowserConnection(provider)
         } else {
+            reenable(provider)
             startConnection(provider)
         }
+    }
+
+    /// A waiting guarded reconnect is cancelled before disconnecting, so a
+    /// later app activation cannot re-enable the account just disconnected.
+    @MainActor
+    static func performDisconnect(
+        provider: ProviderID,
+        isAwaitingReconnect: Bool,
+        cancelReconnect: () -> Void,
+        disconnect: (ProviderID) -> Void
+    ) {
+        if isAwaitingReconnect { cancelReconnect() }
+        disconnect(provider)
     }
 
     /// A guarded companion login stays on screen until the credential
@@ -2449,12 +2699,15 @@ private struct ProviderSettingsRow: View {
     let onCancelConnection: () -> Void
     let browserConnectionTarget: DevinBrowserConnectionTarget?
     let kiroConnectionTarget: KiroBrowserConnectionTarget?
+    let claudeConnectionTarget: ClaudeBrowserConnectionTarget?
     let onBrowserConnect: (AccountProviderID) -> Void
     let onKiroConnect: (AccountProviderID) -> Void
+    let onClaudeConnect: (AccountProviderID) -> Void
     let codexPlanMultiplier:
         ((AccountProviderID) -> Binding<CodexPlanMultiplier>)?
 
     @State private var isHelpPresented = false
+    @State private var isKeyRemovalConfirmationPresented = false
     @Environment(\.appLocalization)
     private var localization
 
@@ -2472,10 +2725,8 @@ private struct ProviderSettingsRow: View {
                     Image(systemName: "questionmark.circle")
                 }
                 .buttonStyle(.borderless)
-                .help(localization.text(.setupHelp))
-                .accessibilityLabel(
-                    localization.text(.setupHelp)
-                )
+                .help(helpName)
+                .accessibilityLabel(helpName)
                 .popover(isPresented: $isHelpPresented, arrowEdge: .trailing) {
                     ProviderHelpPopover(
                         provider: provider,
@@ -2528,7 +2779,9 @@ private struct ProviderSettingsRow: View {
         let primary = row.role == .primary
         let availability = viewModel.accountConnectionStates[row.identity]
         let disconnected = viewModel.isDisconnected(row.identity)
-        let waiting = provider == .kiro
+        let waiting = provider == .claude
+            ? claudeConnectionTarget == .existing(row.identity.accountID)
+            : provider == .kiro
             ? kiroConnectionTarget == .existing(row.identity)
             : provider == .devin
             ? browserConnectionTarget == .existing(row.identity)
@@ -2538,7 +2791,7 @@ private struct ProviderSettingsRow: View {
             ConnectionBadge(
                 availability: disconnected ? .authenticationRequired : availability,
                 presentation: waiting ? .waitingForCredential : primary ? connectionPresentation : nil,
-                waitingForBrowser: provider == .kiro
+                waitingForBrowser: provider == .kiro || provider == .claude
             )
             .accessibilityIdentifier("account-connection-status-\(suffix)")
             Spacer(minLength: 8)
@@ -2552,7 +2805,11 @@ private struct ProviderSettingsRow: View {
             ) { control in
                 switch control {
                 case .connect:
-                    if provider == .kiro {
+                    if provider == .claude {
+                        Button(localization.text(.startConnection)) { onClaudeConnect(row.identity) }
+                            .buttonStyle(.bordered)
+                            .accessibilityIdentifier("account-connect-\(suffix)")
+                    } else if provider == .kiro {
                         Button(localization.text(.startConnection)) { onKiroConnect(row.identity) }
                             .buttonStyle(.bordered)
                             .accessibilityIdentifier("account-connect-\(suffix)")
@@ -2562,9 +2819,11 @@ private struct ProviderSettingsRow: View {
                             .accessibilityIdentifier("account-connect-\(suffix)")
                     } else if !primary {
                         Button(localization.text(.refresh)) {
+                            resetKeychainAuthorizationForUserAction()
                             Task { await viewModel.retryAccountProvider(row.identity) }
                         }
                         .buttonStyle(.bordered)
+                        .disabled(viewModel.isRefreshing)
                         .accessibilityIdentifier("account-retry-connection-\(suffix)")
                     } else if !descriptor.acceptsAPIKey {
                         Button(localization.text(.startConnection), action: onSetup)
@@ -2581,27 +2840,31 @@ private struct ProviderSettingsRow: View {
                     .accessibilityIdentifier("account-disconnect-\(suffix)")
                 case .reconnect:
                     Button(localization.text(.reconnectProvider)) {
-                        if provider == .kiro { onKiroConnect(row.identity) }
+                        if provider == .claude { onClaudeConnect(row.identity) }
+                        else if provider == .kiro { onKiroConnect(row.identity) }
                         else if provider == .devin { onBrowserConnect(row.identity) }
                         else if primary && !descriptor.acceptsAPIKey { onReconnect() }
                         else {
+                            resetKeychainAuthorizationForUserAction()
                             viewModel.reconnectAccountProvider(row.identity)
                             Task { await viewModel.retryAccountProvider(row.identity) }
                         }
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.bordered)
                     .accessibilityIdentifier("account-reconnect-\(suffix)")
                 case .retry:
                     Button(localization.text(.refresh)) {
                         if primary { onRetry() }
                         else {
+                            resetKeychainAuthorizationForUserAction()
                             Task { await viewModel.retryAccountProvider(row.identity) }
                         }
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.bordered)
+                    .disabled(viewModel.isRefreshing)
                     .accessibilityIdentifier("account-retry-connection-\(suffix)")
                 case .checkAgainConnection:
-                    if provider != .devin && provider != .kiro { Button(
+                    if !provider.usesBrowserSignIn { Button(
                         localization.text(.checkAgainForCompanionCredentials),
                         action: onCheckAgainConnection
                     )
@@ -2618,7 +2881,7 @@ private struct ProviderSettingsRow: View {
             .disabled(connectionControlsDisabled && !waiting)
         }
         if waiting {
-            Text(localization.text(provider == .devin || provider == .kiro
+            Text(localization.text(provider.usesBrowserSignIn
                 ? .waitingForBrowserLogin : .waitingForCompanionCredentials))
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
@@ -2652,15 +2915,35 @@ private struct ProviderSettingsRow: View {
                     .disabled(
                         keyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     )
-                Button(localization.text(.delete), action: onRemove)
-                    .buttonStyle(.bordered)
+                Button(localization.text(.delete), role: .destructive) {
+                    isKeyRemovalConfirmationPresented = true
+                }
+                .buttonStyle(.bordered)
+                .disabled(keySource == nil)
             }
             .controlSize(.small)
+            .confirmationDialog(
+                localization.format(.removeKeyTitle, provider.displayName),
+                isPresented: $isKeyRemovalConfirmationPresented,
+                titleVisibility: .visible
+            ) {
+                Button(
+                    localization.text(.delete),
+                    role: .destructive,
+                    action: onRemove
+                )
+                Button(localization.text(.cancel), role: .cancel) {}
+            }
         }
     }
 
     private var descriptor: ProviderSetupDescriptor {
         ProviderSetup.descriptor(for: provider)!
+    }
+
+    /// Names the provider, so each row's help button is distinguishable.
+    private var helpName: String {
+        "\(localization.text(.setupHelp)), \(provider.displayName)"
     }
 
 }
@@ -2727,6 +3010,60 @@ private struct ProviderHelpPopover: View {
     }
 }
 
+/// What one account's connection badge shows. Every state pairs its text
+/// with a symbol shape, so color is never the only signal.
+enum ConnectionBadgeState: Equatable, Sendable {
+    case connected
+    case checkFailed
+    case notConnected
+    case companionRequired
+    case checking
+    case waitingForSignIn
+    case waitingForCompanion
+
+    /// A pending login outranks the last known availability.
+    static func resolve(
+        availability: ProviderAvailability?,
+        presentation: ProviderConnectionPresentationState?,
+        waitingForBrowser: Bool
+    ) -> ConnectionBadgeState {
+        switch presentation {
+        case .companionRequired:
+            .companionRequired
+        case .waitingForCredential:
+            waitingForBrowser ? .waitingForSignIn : .waitingForCompanion
+        case .authenticated, .failed, nil:
+            switch availability {
+            case .available: .connected
+            case .failed, .schemaChanged: .checkFailed
+            case .authenticationRequired, .unavailable: .notConnected
+            case nil: .checking
+            }
+        }
+    }
+
+    var labelKey: AppStringKey {
+        switch self {
+        case .connected: .connected
+        case .checkFailed: .checkFailed
+        case .notConnected: .notConnected
+        case .companionRequired: .companionRequired
+        case .checking: .checking
+        case .waitingForSignIn: .waitingForSignIn
+        case .waitingForCompanion: .waitingForCompanionCredentials
+        }
+    }
+
+    var symbolName: String {
+        switch self {
+        case .connected: "checkmark.circle.fill"
+        case .checkFailed: "exclamationmark.triangle.fill"
+        case .notConnected, .companionRequired: "minus.circle"
+        case .checking, .waitingForSignIn, .waitingForCompanion: "clock"
+        }
+    }
+}
+
 private struct ConnectionBadge: View {
     let availability: ProviderAvailability?
     let presentation: ProviderConnectionPresentationState?
@@ -2735,50 +3072,41 @@ private struct ConnectionBadge: View {
     private var localization
 
     var body: some View {
+        let state = ConnectionBadgeState.resolve(
+            availability: availability,
+            presentation: presentation,
+            waitingForBrowser: waitingForBrowser
+        )
+        let label = localization.text(state.labelKey)
         HStack(spacing: 4) {
-            Circle()
-                .fill(color)
-                .frame(width: 6, height: 6)
+            Image(systemName: state.symbolName)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(color(for: state))
             Text(label)
                 .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(
+                    state == .checkFailed
+                        ? HierarchicalShapeStyle.primary : .secondary
+                )
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
-        .accessibilityValue(label)
     }
 
-    private var label: String {
-        switch presentation {
-        case .companionRequired:
-            localization.text(.companionRequired)
-        case .waitingForCredential:
-            waitingForBrowser
-                ? localization.providerText("로그인 대기 중")
-                : localization.text(.waitingForCompanionCredentials)
-        case .authenticated, .failed, nil:
-            switch availability {
-            case .available: localization.text(.connected)
-            case .failed, .schemaChanged:
-                localization.text(.checkFailed)
-            case .authenticationRequired, .unavailable:
-                localization.text(.notConnected)
-            case nil: localization.text(.checking)
-            }
-        }
-    }
-
-    private var color: Color {
-        switch presentation {
-        case .companionRequired, .waitingForCredential:
+    private func color(for state: ConnectionBadgeState) -> Color {
+        switch state {
+        case .connected: .green
+        case .checkFailed: .orange
+        case .notConnected, .companionRequired, .checking,
+             .waitingForSignIn, .waitingForCompanion:
             .secondary
-        case .authenticated, .failed, nil:
-            switch availability {
-            case .available: .green
-            case .failed, .schemaChanged: .orange
-            case .authenticationRequired, .unavailable: .secondary
-            case nil: .secondary.opacity(0.6)
-            }
         }
+    }
+}
+
+private extension ProviderID {
+    /// Providers whose Settings connection runs an in-app browser sign-in.
+    var usesBrowserSignIn: Bool {
+        ProviderSetup.descriptor(for: self)?.action == .browserOAuth
     }
 }

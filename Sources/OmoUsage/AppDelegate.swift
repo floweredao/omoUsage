@@ -61,11 +61,8 @@ struct CompanionAccountFixture {
     var accountRegistryRefreshCountURL: URL {
         root.appending(path: "account-registry-refresh-count")
     }
-    var claudeAuthorizationCountURL: URL {
-        root.appending(path: "claude-authorization-count")
-    }
-    var claudeLoginCommandURL: URL {
-        root.appending(path: "claude-login.command")
+    var claudeBrowserAuthenticationCountURL: URL {
+        root.appending(path: "claude-browser-authentication-count")
     }
 
     func credentialURL(for provider: ProviderID) -> URL {
@@ -173,6 +170,36 @@ struct CompanionAccountFixture {
         return .success(.launched)
     }
 
+    /// Stands in for the in-app Claude browser sign-in: no browser, network,
+    /// or real Keychain. Each call is counted inside the fixture root, and the
+    /// returned snapshot is saved to the fixture's file Keychain by the
+    /// coordinator, so Connect reaches Connected in packaged fixture QA.
+    @MainActor
+    static func authenticateClaudeInBrowser(
+        countURL: URL
+    ) throws -> CredentialSnapshot {
+        let current = Int(
+            (try? String(
+                contentsOf: countURL,
+                encoding: .utf8
+            ))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "0"
+        ) ?? 0
+        try ProviderFileDurability.atomicWrite(
+            Data("\(current + 1)\n".utf8),
+            to: countURL,
+            permissions: 0o600
+        )
+        return CredentialSnapshot(
+            provider: .claude,
+            accessToken: "fixture-claude-browser-token",
+            refreshToken: "fixture-claude-browser-refresh",
+            accountReference: nil,
+            planName: "Pro",
+            expiresAt: Date().addingTimeInterval(8 * 3_600),
+            source: .keychain
+        )
+    }
+
     /// This narrower fixture is available only after the companion fixture
     /// root has passed its isolation checks. It shares the fixture's file
     /// Keychain but never opens the user's Keychain or a real login command.
@@ -194,30 +221,6 @@ struct CompanionAccountFixture {
             session = ClaudeKeychainAccessSession(
                 providerKeychain: fixture.keychain
             )
-        }
-
-        func authorizeClaude() throws -> ClaudeKeychainAuthorizationOutcome {
-            try recordAuthorization()
-            return try session.authorizeClaude(
-                api: CompanionClaudeCredentialFileSecurityItemAPI(
-                    credentialURL: fixture.credentialURL(for: .claude)
-                )
-            )
-        }
-
-        func launchClaudeLogin(
-            receipt: OfficialLoginReceipt
-        ) -> Result<ProviderSetupOutcome, ProviderSetupError> {
-            do {
-                try ProviderFileDurability.atomicWrite(
-                    Data("#!/bin/zsh\n\(receipt.wrapping(":"))\n".utf8),
-                    to: fixture.claudeLoginCommandURL,
-                    permissions: 0o700
-                )
-                return .success(.launched)
-            } catch {
-                return .failure(.unableToLaunch("claude"))
-            }
         }
 
         func fixtureUsageProviders(
@@ -266,20 +269,6 @@ struct CompanionAccountFixture {
                     directoryHint: .isDirectory
                 ),
                 commandPaths: []
-            )
-        }
-
-        private func recordAuthorization() throws {
-            let current = Int(
-                (try? String(
-                    contentsOf: fixture.claudeAuthorizationCountURL,
-                    encoding: .utf8
-                ))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "0"
-            ) ?? 0
-            try ProviderFileDurability.atomicWrite(
-                Data("\(current + 1)\n".utf8),
-                to: fixture.claudeAuthorizationCountURL,
-                permissions: 0o600
             )
         }
     }
@@ -1046,28 +1035,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         }
 
 #if OMO_USAGE_FIXTURES
-        let fixture = claudeAuthenticationFixture
-        let authorizeClaude: () throws -> ClaudeKeychainAuthorizationOutcome = {
-            guard let fixture else {
-                return try ClaudeKeychainAccessSession.shared.authorizeClaude()
+        // A companion fixture root confines Claude sign-in to its file
+        // Keychain and a fixture grant; nothing opens a browser.
+        let claudeSnapshotStore = companionFixture.map {
+            ProviderCredentialSnapshotStore(keychain: $0.keychain)
+        } ?? CredentialDiscovery.live().snapshotStore
+        let authenticateClaude: ClaudeBrowserConnectionCoordinator.Authenticate?
+        if let countURL = companionFixture?.claudeBrowserAuthenticationCountURL {
+            authenticateClaude = {
+                try CompanionAccountFixture.authenticateClaudeInBrowser(countURL: countURL)
             }
-            return try fixture.authorizeClaude()
-        }
-        let launchClaudeLogin: (OfficialLoginReceipt) -> Result<
-            ProviderSetupOutcome, ProviderSetupError
-        > = { receipt in
-            guard let fixture else {
-                return ProviderSetup.performClaudeLogin(receipt: receipt)
-            }
-            return fixture.launchClaudeLogin(receipt: receipt)
+        } else {
+            authenticateClaude = nil
         }
 #else
-        let authorizeClaude: () throws -> ClaudeKeychainAuthorizationOutcome = {
-            try ClaudeKeychainAccessSession.shared.authorizeClaude()
-        }
-        let launchClaudeLogin: (OfficialLoginReceipt) -> Result<
-            ProviderSetupOutcome, ProviderSetupError
-        > = { ProviderSetup.performClaudeLogin(receipt: $0) }
+        let claudeSnapshotStore = CredentialDiscovery.live().snapshotStore
+        let authenticateClaude: ClaudeBrowserConnectionCoordinator.Authenticate? = nil
 #endif
         let controller = NSHostingController(
             rootView: SettingsView(
@@ -1079,8 +1062,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 codexPlanDefaults: accountDefaults,
                 captureCompanionCredential: companionCapture,
                 launchCompanion: companionLaunch,
-                authorizeClaude: authorizeClaude,
-                launchClaudeLogin: launchClaudeLogin,
+                claudeSnapshotStore: claudeSnapshotStore,
+                authenticateClaude: authenticateClaude,
                 authenticateKiro: {
                     try await KiroBrowserAuthenticationClient().authenticate { url in
                         #if OMO_USAGE_FIXTURES
