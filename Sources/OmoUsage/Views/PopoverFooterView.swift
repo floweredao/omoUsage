@@ -1,3 +1,4 @@
+import OmoUsageCore
 import SwiftUI
 
 struct PopoverFooterView: View {
@@ -8,6 +9,8 @@ struct PopoverFooterView: View {
     let onQuit: () -> Void
     @Environment(\.appLocalization)
     private var localization
+    @Environment(\.accessibilityReduceMotion)
+    private var reduceMotion
 
     var body: some View {
         HStack(spacing: 10) {
@@ -20,23 +23,7 @@ struct PopoverFooterView: View {
 
             Spacer()
 
-            InteractiveIconButton(
-                symbol: "arrow.clockwise",
-                accessibilityLabel: localization.text(.refresh),
-                isActive: isRefreshing,
-                isDisabled: isRefreshing,
-                action: onRefresh
-            )
-            .rotationEffect(.degrees(isRefreshing ? 360 : 0))
-            .animation(
-                isRefreshing
-                    ? .linear(duration: 0.7).repeatForever(
-                        autoreverses: false
-                    )
-                    : .default,
-                value: isRefreshing
-            )
-            .keyboardShortcut("r", modifiers: .command)
+            refreshButton
 
             InteractiveIconButton(
                 symbol: "gearshape",
@@ -59,4 +46,26 @@ struct PopoverFooterView: View {
         }
     }
 
+    @ViewBuilder
+    private var refreshButton: some View {
+        if SideNotchRefreshAnimationPolicy.shouldSpin(
+            isRefreshing: isRefreshing,
+            reduceMotion: reduceMotion
+        ) {
+            SpinningRefreshButton(
+                accessibilityLabel: localization.text(.refresh),
+                hitTargetSize: 32
+            )
+        } else {
+            InteractiveIconButton(
+                symbol: "arrow.clockwise",
+                accessibilityLabel: localization.text(.refresh),
+                isActive: isRefreshing,
+                isDisabled: isRefreshing,
+                dimsWhenDisabled: false,
+                action: onRefresh
+            )
+            .keyboardShortcut("r", modifiers: .command)
+        }
+    }
 }
