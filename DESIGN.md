@@ -149,7 +149,7 @@ other privileged controls remain native-only.
   Identity takes priority over the plan pill when horizontal space is tight.
 - Plan pills: 10.5 pt semibold.
 - Meter labels: 11.5–12 pt medium.
-- Metadata and reset labels: 10.5 pt regular/medium.
+- Metadata and reset labels: 11 pt regular/medium.
 - Mobile title: native large navigation title.
 - Mobile provider names: 17 pt semibold; meter labels and values: 13 pt
   medium/semibold; metadata: 12 pt regular.
@@ -166,7 +166,10 @@ other privileged controls remain native-only.
 - An empty popover reserves 190 pt including its existing footer. Its body
   explains that no usage is displayed and offers Open Settings. During an
   initial refresh the same region shows a checking message, not a connection
-  failure. The settings action stays reachable in both states.
+  failure. The settings action stays reachable in both states. An empty
+  Side Notch rail likewise shows its checking state only while a refresh
+  runs, and otherwise fills its provider area with one Open Settings button
+  in full semantic primary.
 - Popover height calculation uses the same account-alias visibility rule as
   provider headers, including a lone non-default account and repeated providers.
 - Settings groups general controls, presentation, and web access under native
@@ -187,7 +190,7 @@ other privileged controls remain native-only.
   mode: `SideNotchPanelLayout.railContentHeight` is the smaller of that
   natural height and the container, top-aligned, so a populated rail keeps
   its own height inside the taller detail container. Only the zero-provider
-  checking state and a rail too crowded for the panel take the full
+  state and a rail too crowded for the panel take the full
   container and scroll inside it. Only provider detail reserves the largest
   visible provider detail height plus 12 pt bottom clearance. Each detail
   card is vertically centered on its own rail row: the card's center sits on

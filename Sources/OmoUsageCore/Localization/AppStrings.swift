@@ -131,6 +131,7 @@ public enum AppStringKey: String, CaseIterable, Sendable {
     case refresh
     case settings
     case quit
+    case moreActions
     case inProgress
     case authenticationRequired
     case unavailable
@@ -344,6 +345,7 @@ public struct AppStrings: Sendable {
         .refresh: "새로고침",
         .settings: "설정",
         .quit: "종료",
+        .moreActions: "더 보기",
         .inProgress: "진행 중",
         .authenticationRequired: "인증 필요",
         .unavailable: "사용할 수 없음",
@@ -544,6 +546,7 @@ public struct AppStrings: Sendable {
         .refresh: "Refresh",
         .settings: "Settings",
         .quit: "Quit",
+        .moreActions: "More",
         .inProgress: "In Progress",
         .authenticationRequired: "Authentication Required",
         .unavailable: "Unavailable",

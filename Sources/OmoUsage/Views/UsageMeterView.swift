@@ -29,12 +29,22 @@ struct UsageMeterView: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
                 Text(localization.providerText(meter.title))
-                    .font(.system(size: 12.5, weight: .medium))
+                    .font(
+                        .system(
+                            size: DashboardTypographyTokens.meterLabel,
+                            weight: .medium
+                        )
+                    )
 
                 Spacer(minLength: 8)
 
                 Text(localization.metricValue(meter.metric))
-                    .font(.system(size: 12.5, weight: .semibold))
+                    .font(
+                        .system(
+                            size: DashboardTypographyTokens.meterValue,
+                            weight: .semibold
+                        )
+                    )
                     .monospacedDigit()
                     .foregroundStyle(.primary)
                     .multilineTextAlignment(.trailing)
@@ -68,7 +78,7 @@ struct UsageMeterView: View {
 
             if meter.resetText != nil || meter.resetsAt != nil {
                 Text(resetText)
-                    .font(.system(size: 11))
+                    .font(.system(size: DashboardTypographyTokens.metadata))
                     .foregroundStyle(
                         ProviderMetadataVisualTokens.foreground
                     )

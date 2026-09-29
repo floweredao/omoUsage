@@ -62,6 +62,26 @@ struct DashboardVisualContractTests {
     }
 
     @Test
+    func providerSectionsFollowTheDesignTypeScale() {
+        #expect(DashboardTypographyTokens.providerName == 15)
+        #expect(DashboardTypographyTokens.planPill == 10.5)
+        #expect(DashboardTypographyTokens.meterLabel == 12)
+        #expect(DashboardTypographyTokens.meterValue == 12.5)
+        #expect(DashboardTypographyTokens.metadata == 11)
+
+        // Values outrank their labels, and labels outrank the reset and
+        // freshness metadata beneath them.
+        #expect(
+            DashboardTypographyTokens.meterValue
+                > DashboardTypographyTokens.meterLabel
+        )
+        #expect(
+            DashboardTypographyTokens.meterLabel
+                > DashboardTypographyTokens.metadata
+        )
+    }
+
+    @Test
     func sideNotchDetailUsesRestrainedDownwardElevation() throws {
         // The captured recipe was black 0.16 / radius 10 / y 4: a blur two
         // and a half times the offset, so it read as an omnidirectional

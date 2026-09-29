@@ -34,6 +34,17 @@ enum ProviderMetadataVisualTokens {
     }
 }
 
+/// The provider section type scale from DESIGN.md §3, shared by the popover
+/// and the Side Notch detail card. The 12.5 pt value sets each meter row's
+/// height, so the label beside it can stay a half point smaller.
+enum DashboardTypographyTokens {
+    static let providerName: CGFloat = 15
+    static let planPill: CGFloat = 10.5
+    static let meterLabel: CGFloat = 12
+    static let meterValue: CGFloat = 12.5
+    static let metadata: CGFloat = 11
+}
+
 enum DashboardProviderSectionAccessibility {
     static func identifier(for usage: ProviderUsage) -> String {
         "dashboard-provider-\(usage.provider.rawValue)-\(AccountLabel.sanitized(usage.accountLabel))"
@@ -61,7 +72,12 @@ struct ProviderSectionView: View {
 
                 VStack(alignment: .leading, spacing: 1) {
                     Text(usage.provider.displayName)
-                        .font(.system(size: 15, weight: .bold))
+                        .font(
+                            .system(
+                                size: DashboardTypographyTokens.providerName,
+                                weight: .bold
+                            )
+                        )
                         .foregroundStyle(.primary)
                         .lineLimit(1)
                     if showsAccountLabel {
@@ -76,7 +92,12 @@ struct ProviderSectionView: View {
 
                 if !usage.planName.isEmpty {
                     Text(usage.planName)
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(
+                            .system(
+                                size: DashboardTypographyTokens.planPill,
+                                weight: .semibold
+                            )
+                        )
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .help(usage.planName)
@@ -120,7 +141,9 @@ struct ProviderSectionView: View {
                         updatedAt: successAt,
                         style: .provider
                     )
-                        .font(.system(size: 11))
+                        .font(
+                            .system(size: DashboardTypographyTokens.metadata)
+                        )
                         .foregroundStyle(
                             ProviderMetadataVisualTokens.foreground
                         )
@@ -131,7 +154,9 @@ struct ProviderSectionView: View {
                         updatedAt: attemptAt,
                         style: .footer
                     )
-                        .font(.system(size: 11))
+                        .font(
+                            .system(size: DashboardTypographyTokens.metadata)
+                        )
                         .foregroundStyle(
                             ProviderMetadataVisualTokens.foreground
                         )

@@ -289,6 +289,7 @@ private struct SideNotchRailView: View {
     private var localization
     @Environment(\.accessibilityReduceMotion)
     private var reduceMotion
+    @State private var isMenuHovered = false
 
     var body: some View {
         let providerCounts = Dictionary(
@@ -297,15 +298,37 @@ private struct SideNotchRailView: View {
         ).mapValues(\.count)
         VStack(spacing: 0) {
             if providers.isEmpty {
-                VStack(spacing: 8) {
-                    Image(systemName: "gauge.with.dots.needle.50percent")
-                        .font(.system(size: 22, weight: .medium))
-                    Text(localization.text(.checking))
-                        .font(.system(size: 10.5, weight: .medium))
-                        .foregroundStyle(.secondary)
+                if isRefreshing {
+                    VStack(spacing: 8) {
+                        Image(systemName: "gauge.with.dots.needle.50percent")
+                            .font(.system(size: 22, weight: .medium))
+                        Text(localization.text(.checking))
+                            .font(.system(size: 10.5, weight: .medium))
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxHeight: .infinity)
+                    .accessibilityElement(children: .combine)
+                } else {
+                    Button(action: onSettings) {
+                        VStack(spacing: 8) {
+                            Image(systemName: "gearshape")
+                                .font(.system(size: 18, weight: .medium))
+                            Text(localization.text(.openSettings))
+                                .font(.system(size: 10.5, weight: .medium))
+                                .multilineTextAlignment(.center)
+                                .lineLimit(2)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    // The nonactivating panel renders .secondary permanently
+                    // dimmed, so the only action on the rail stays primary.
+                    .foregroundStyle(.primary)
+                    .help(localization.text(.dashboardEmptyTitle))
+                    .accessibilityLabel(localization.text(.openSettings))
+                    .accessibilityIdentifier("side-notch-open-settings")
                 }
-                .frame(maxHeight: .infinity)
-                .accessibilityElement(children: .combine)
             } else {
                 ScrollView {
                     LazyVStack(spacing: 0) {
@@ -391,13 +414,38 @@ private struct SideNotchRailView: View {
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
                 .fixedSize()
+                // A borderless menu keeps only its label's image, so the
+                // hover tint Refresh gets from its button style is drawn on
+                // the same 28 pt slot around the menu instead.
+                .frame(
+                    width: SideNotchPanelLayout.footerControlHeight,
+                    height: SideNotchPanelLayout.footerControlHeight
+                )
+                .background(
+                    Color.primary.opacity(
+                        InteractiveControlVisualState(
+                            isHovered: isMenuHovered,
+                            isPressed: false,
+                            reduceMotion: reduceMotion
+                        ).backgroundOpacity
+                    ),
+                    in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+                )
+                .contentShape(Rectangle())
+                .onHover { hovering in
+                    withAnimation(
+                        reduceMotion ? nil : .easeOut(duration: 0.12)
+                    ) {
+                        isMenuHovered = hovering
+                    }
+                }
                 .frame(
                     width: SideNotchPanelLayout.collapsedWidth,
                     height: SideNotchPanelLayout.footerControlHeight,
                     alignment: .center
                 )
-                .help(localization.text(.settings))
-                .accessibilityLabel(localization.text(.settings))
+                .help(localization.text(.moreActions))
+                .accessibilityLabel(localization.text(.moreActions))
             }
             .frame(height: SideNotchPanelLayout.footerHeight)
             .padding(.top, SideNotchPanelLayout.footerClearance)
@@ -436,8 +484,9 @@ private struct SideNotchRailView: View {
             isRefreshing: isRefreshing,
             reduceMotion: reduceMotion
         ) {
-            SideNotchSpinningRefreshButton(
-                accessibilityLabel: localization.text(.refresh)
+            SpinningRefreshButton(
+                accessibilityLabel: localization.text(.refresh),
+                hitTargetSize: SideNotchPanelLayout.footerControlHeight
             )
         } else {
             InteractiveIconButton(
@@ -462,8 +511,13 @@ enum SideNotchRefreshAnimationPolicy {
     }
 }
 
-private struct SideNotchSpinningRefreshButton: View {
+/// The refresh control's dedicated active subtree, shared by the popover
+/// footer and the Side Notch rail. It exists only while a refresh spins, so
+/// returning to idle builds a fresh zero-rotation button and no
+/// repeat-forever transaction outlives the refresh.
+struct SpinningRefreshButton: View {
     let accessibilityLabel: String
+    let hitTargetSize: CGFloat
     @State private var rotation = 0.0
 
     var body: some View {
@@ -473,7 +527,7 @@ private struct SideNotchSpinningRefreshButton: View {
             isActive: true,
             isDisabled: true,
             dimsWhenDisabled: false,
-            hitTargetSize: SideNotchPanelLayout.footerControlHeight,
+            hitTargetSize: hitTargetSize,
             action: {}
         )
         .rotationEffect(.degrees(rotation))
@@ -669,8 +723,9 @@ private struct SideNotchProviderButton: View {
     }
 
     private var accessibilityValue: String {
-        let value = "\(usage.provider.displayName), "
-            + localization.metricValue(summaryMeter.metric)
+        // The label already names the provider, so the value starts with the
+        // usage itself.
+        let value = localization.metricValue(summaryMeter.metric)
         guard usage.freshness == .stale else { return value }
         return "\(value), \(localization.staleBadgeText())"
     }

@@ -64,7 +64,7 @@ struct DashboardView: View {
                     DashboardLayout.contentBottomPadding
                 )
             }
-            .scrollIndicators(.hidden)
+            .scrollIndicators(.automatic)
             .frame(
                 height: panelHeight - DashboardLayout.footerHeight
             )
