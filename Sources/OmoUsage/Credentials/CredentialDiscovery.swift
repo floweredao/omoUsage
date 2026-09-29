@@ -422,6 +422,12 @@ struct CredentialDiscovery: Sendable {
                 allowingExpired: allowingExpired
             )
         }
+        if let snapshot = legacyClaudeSnapshot() {
+            if !allowingExpired, let expiresAt = snapshot.expiresAt, expiresAt <= now {
+                throw CredentialDiscoveryError.expired(.claude)
+            }
+            return snapshot
+        }
         let resolution = resolveClaudeCandidates(
             now: now,
             allowingExpired: allowingExpired
@@ -454,10 +460,28 @@ struct CredentialDiscovery: Sendable {
                 allowingExpired: allowingExpired
             )).map { [$0] } ?? []
         }
+        if let snapshot = legacyClaudeSnapshot() {
+            if !allowingExpired, let expiresAt = snapshot.expiresAt, expiresAt <= now {
+                return []
+            }
+            return [snapshot]
+        }
         return resolveClaudeCandidates(
             now: now,
             allowingExpired: allowingExpired
         ).candidates
+    }
+
+    /// The primary account's in-app browser grant. When present it is the
+    /// only legacy Claude credential, so refreshes rotate the app-owned
+    /// snapshot; the companion mirror, file, and environment sources remain
+    /// a migration fallback for installs that have not signed in here yet.
+    private func legacyClaudeSnapshot() -> DiscoveredCredential? {
+        let identity = AccountProviderID(accountID: .legacy, providerID: .claude)
+        guard let snapshot = try? snapshotStore.snapshot(for: identity) else {
+            return nil
+        }
+        return snapshot.credential(storage: .accountSnapshot(identity))
     }
 
     private func resolveClaudeCandidates(
@@ -862,22 +886,30 @@ struct CredentialDiscovery: Sendable {
             )
             return
         }
-        let raw: Data
-        switch storage {
-        case let .file(url):
-            guard let data = try? Data(contentsOf: url) else {
+        if case .keychain = storage {
+            // The Codex Keychain item belongs to the companion CLI; updating it
+            // would change its ACL and lock the CLI out. The rotated grant
+            // becomes the primary account's app-owned snapshot instead, which
+            // discovery prefers from then on. A different existing pin means
+            // this in-flight credential was superseded and must not win.
+            let legacy = AccountProviderID(accountID: .legacy, providerID: .codex)
+            guard try snapshotStore.snapshot(for: legacy) == nil else {
                 throw CredentialDiscoveryError.malformed(.codex)
             }
-            raw = data
-        case let .keychain(service, account):
-            guard let text = try? keychain.value(
-                service: service,
-                account: account
-            ) else {
-                throw CredentialDiscoveryError.malformed(.codex)
-            }
-            raw = Data(text.utf8)
-        case .accountSnapshot:
+            try snapshotStore.save(
+                CredentialSnapshot(credential).rotated(
+                    accessToken: accessToken,
+                    refreshToken: refreshToken ?? credential.refreshToken,
+                    expiresAt: codexJWTExpiration(accessToken)
+                ),
+                for: legacy
+            )
+            return
+        }
+        guard
+            case let .file(url) = storage,
+            let raw = try? Data(contentsOf: url)
+        else {
             throw CredentialDiscoveryError.malformed(.codex)
         }
         guard
@@ -902,30 +934,9 @@ struct CredentialDiscovery: Sendable {
             withJSONObject: root,
             options: [.prettyPrinted, .sortedKeys]
         )
-        switch storage {
-        case let .file(url):
-            do {
-                try writeAtomically(encoded, to: url)
-            } catch {
-                throw CredentialDiscoveryError.malformed(.codex)
-            }
-        case let .keychain(service, account):
-            guard
-                let keychainWriter,
-                let text = String(data: encoded, encoding: .utf8)
-            else {
-                throw CredentialDiscoveryError.malformed(.codex)
-            }
-            do {
-                try keychainWriter.setValue(
-                    text,
-                    service: service,
-                    account: account
-                )
-            } catch {
-                throw CredentialDiscoveryError.malformed(.codex)
-            }
-        case .accountSnapshot:
+        do {
+            try writeAtomically(encoded, to: url)
+        } catch {
             throw CredentialDiscoveryError.malformed(.codex)
         }
     }

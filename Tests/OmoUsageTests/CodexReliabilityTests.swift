@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import OmoUsage
+import OmoUsageCore
 
 @Suite(.serialized)
 struct CodexReliabilityTests {
@@ -173,7 +174,7 @@ struct CodexReliabilityTests {
     }
 
     @Test
-    func rotatedCodexCredentialPersistsToOriginatingKeychain()
+    func rotatedKeychainCodexCredentialPersistsToAppSnapshot()
         async throws
     {
         try await hephaestusWithTemporaryDirectory { directory in
@@ -184,25 +185,28 @@ struct CodexReliabilityTests {
                 acceptedUsageTokens: [storedAccess, "rotated-codex-access"]
             )
             let writer = HephaestusCodexRecordingWriter()
+            let snapshots = HephaestusCodexSnapshotKeychain()
             let provider = try HephaestusCodexOAuthFixture.provider(
                 home: directory,
                 keychainCredential: HephaestusCodexOAuthFixture.credential(
                     accessToken: storedAccess,
                     refreshToken: "stored-codex-refresh"
                 ),
-                writer: writer
+                writer: writer,
+                snapshots: snapshots
             )
 
             _ = try await provider.fetch(now: hephaestusNow)
 
-            let write = writer.lastWrite()
-            #expect(write != nil)
-            guard let write else { return }
-            #expect(write.service == "Codex Auth")
-            #expect(write.account.isEmpty)
-            try expectRotatedCodexCredential(
-                Data(write.value.utf8)
+            #expect(writer.lastWrite() == nil)
+            let stored = try #require(
+                try ProviderCredentialSnapshotStore(keychain: snapshots).snapshot(
+                    for: AccountProviderID(accountID: .legacy, providerID: .codex)
+                )
             )
+            #expect(stored.accessToken == "rotated-codex-access")
+            #expect(stored.refreshToken == "rotated-codex-refresh")
+            #expect(stored.accountReference == "fixture-codex-account")
         }
     }
 
@@ -288,7 +292,8 @@ struct CodexReliabilityTests {
                     accessToken: storedAccess,
                     refreshToken: "stored-codex-refresh"
                 ),
-                writer: HephaestusCodexFailingWriter()
+                writer: HephaestusCodexFailingWriter(),
+                snapshots: nil
             )
 
             await #expect(throws: (any Error).self) {
@@ -574,7 +579,8 @@ private enum HephaestusCodexOAuthFixture {
         home: URL,
         codexFile: URL? = nil,
         keychainCredential: String? = nil,
-        writer: any KeychainWriting
+        writer: any KeychainWriting,
+        snapshots: (any ProviderKeychain)? = HephaestusCodexSnapshotKeychain()
     ) throws -> CodexUsageProvider {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [
@@ -591,6 +597,7 @@ private enum HephaestusCodexOAuthFixture {
                 keychain: HephaestusCodexOAuthKeychain(
                     credential: keychainCredential
                 ),
+                providerKeychain: snapshots,
                 keychainWriter: writer,
                 homeDirectory: home
             ),
@@ -726,6 +733,25 @@ private final class HephaestusCodexOAuthExchange: @unchecked Sendable {
 
     func usageTokens() -> [String] {
         lock.withLock { recordedUsageTokens }
+    }
+}
+
+private final class HephaestusCodexSnapshotKeychain: ProviderKeychain,
+    @unchecked Sendable
+{
+    private let lock = NSLock()
+    private var values: [String: String] = [:]
+
+    func value(service: String, account: String) throws -> String? {
+        lock.withLock { values[service + "/" + account] }
+    }
+
+    func set(_ value: String, service: String, account: String) throws {
+        lock.withLock { values[service + "/" + account] = value }
+    }
+
+    func remove(service: String, account: String) throws {
+        _ = lock.withLock { values.removeValue(forKey: service + "/" + account) }
     }
 }
 

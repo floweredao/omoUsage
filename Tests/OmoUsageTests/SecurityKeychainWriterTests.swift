@@ -3,6 +3,7 @@ import LocalAuthentication
 import Security
 import Testing
 @testable import OmoUsage
+import OmoUsageCore
 
 @Suite
 struct SecurityKeychainReaderTests {
@@ -501,6 +502,48 @@ struct ClaudeAuthorizedCredentialLifetimeTests {
         #expect(oauth["expiresAt"] as? Double == now.addingTimeInterval(3600).timeIntervalSince1970 * 1000)
         #expect(oauth["scopes"] as? [String] == ["user:inference"])
         #expect(root["unknown"] as? String == "preserved")
+        #expect(background.copyQueries().isEmpty)
+        #expect(background.updateCalls().isEmpty)
+    }
+
+    @Test
+    func legacyBrowserSnapshotWinsOverAuthorizedMirrorWithoutForeignAccess() throws {
+        let store = AuthorizedClaudeTestKeychain()
+        _ = try ClaudeKeychainAccessSession(providerKeychain: store)
+            .authorizeClaude(api: foreignAPI())
+        let legacy = AccountProviderID(accountID: .legacy, providerID: .claude)
+        try ProviderCredentialSnapshotStore(keychain: store).save(
+            CredentialSnapshot(
+                provider: .claude, accessToken: "fixture-browser-access",
+                refreshToken: "fixture-browser-refresh", accountReference: nil,
+                planName: nil, expiresAt: now.addingTimeInterval(3600), source: .keychain
+            ),
+            for: legacy
+        )
+        let background = foreignAPI(status: errSecInteractionNotAllowed)
+        let fresh = ClaudeKeychainAccessSession(providerKeychain: store)
+        let missing = URL(filePath: "/definitely/missing")
+        let discovery = CredentialDiscovery(
+            paths: CredentialPaths(claude: missing, codex: missing),
+            environment: [:],
+            keychain: SecurityKeychainReader(api: background, claudeSession: fresh),
+            providerKeychain: store,
+            keychainWriter: SecurityKeychainWriter(api: background, claudeSession: fresh)
+        )
+
+        let credential = try discovery.claude(now: now)
+        #expect(credential.accessToken == "fixture-browser-access")
+        #expect(credential.storage == .accountSnapshot(legacy))
+        try discovery.persistClaudeCredential(
+            accessToken: "fixture-browser-rotated", refreshToken: "fixture-browser-rotated-refresh",
+            expiresAt: now.addingTimeInterval(7200),
+            source: credential.source, storage: credential.storage
+        )
+        #expect(try discovery.claude(now: now).accessToken == "fixture-browser-rotated")
+        let mirror = try #require(
+            try SecurityKeychainReader(api: background, claudeSession: fresh).value(service: service, account: "")
+        )
+        #expect(mirror == raw)
         #expect(background.copyQueries().isEmpty)
         #expect(background.updateCalls().isEmpty)
     }

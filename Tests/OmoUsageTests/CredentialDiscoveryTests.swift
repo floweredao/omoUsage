@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import OmoUsage
+import OmoUsageCore
 
 @Suite
 struct CredentialDiscoveryTests {
@@ -885,6 +886,170 @@ struct CredentialDiscoveryTests {
         #expect(diagnostic.contains("<redacted>"))
     }
 
+    @Test
+    func legacyClaudeBrowserSnapshotOutranksMirrorFileAndEnvironment() throws {
+        try withFixtureDirectory { directory in
+            let claudeURL = directory.appending(path: "claude.json")
+            try Data(
+                claudeCredentialsJSON(
+                    accessToken: "fixture-file-access",
+                    expiresAtMilliseconds: 1_785_685_000_000
+                ).utf8
+            ).write(to: claudeURL)
+            let keychain = DiscoverySnapshotKeychain(values: [
+                "Claude Code-credentials\u{0}": claudeCredentialsJSON(
+                    accessToken: "fixture-mirror-access",
+                    expiresAtMilliseconds: 1_785_685_000_000
+                )
+            ])
+            let writer = RecordingKeychainWriter()
+            let discovery = CredentialDiscovery(
+                paths: CredentialPaths(claude: claudeURL, codex: directory.appending(path: "codex.json")),
+                environment: ["CLAUDE_CODE_OAUTH_TOKEN": "fixture-environment-token"],
+                keychain: keychain,
+                providerKeychain: keychain,
+                keychainWriter: writer
+            )
+            #expect(try discovery.claude(now: now).accessToken == "fixture-mirror-access")
+
+            let legacy = AccountProviderID(accountID: .legacy, providerID: .claude)
+            try discovery.snapshotStore.save(
+                CredentialSnapshot(
+                    provider: .claude, accessToken: "fixture-app-access",
+                    refreshToken: "fixture-app-refresh", accountReference: nil,
+                    planName: nil, expiresAt: now.addingTimeInterval(3_600), source: .keychain
+                ),
+                for: legacy
+            )
+
+            let credential = try discovery.claude(now: now)
+            #expect(credential.accessToken == "fixture-app-access")
+            #expect(credential.storage == .accountSnapshot(legacy))
+            #expect(discovery.claudeCandidates(now: now).map(\.accessToken) == ["fixture-app-access"])
+
+            try discovery.persistClaudeCredential(
+                accessToken: "fixture-rotated-access",
+                refreshToken: "fixture-rotated-refresh",
+                expiresAt: now.addingTimeInterval(7_200),
+                source: credential.source,
+                storage: credential.storage
+            )
+            #expect(writer.records.isEmpty)
+            #expect(try discovery.claude(now: now).accessToken == "fixture-rotated-access")
+            #expect(try keychain.value(service: "Claude Code-credentials", account: "")?
+                .contains("fixture-mirror-access") == true)
+        }
+    }
+
+    @Test
+    func expiredLegacyClaudeSnapshotDoesNotFallBackToMirror() throws {
+        let keychain = DiscoverySnapshotKeychain(values: [
+            "Claude Code-credentials\u{0}": claudeCredentialsJSON(
+                accessToken: "fixture-mirror-access",
+                expiresAtMilliseconds: 1_785_685_000_000
+            )
+        ])
+        let missing = URL(filePath: "/definitely/missing")
+        let discovery = CredentialDiscovery(
+            paths: CredentialPaths(claude: missing, codex: missing),
+            environment: [:],
+            keychain: keychain,
+            providerKeychain: keychain
+        )
+        try discovery.snapshotStore.save(
+            CredentialSnapshot(
+                provider: .claude, accessToken: "fixture-expired-app",
+                refreshToken: "fixture-app-refresh", accountReference: nil,
+                planName: nil, expiresAt: now.addingTimeInterval(-60), source: .keychain
+            ),
+            for: AccountProviderID(accountID: .legacy, providerID: .claude)
+        )
+
+        #expect(throws: CredentialDiscoveryError.expired(.claude)) {
+            try discovery.claude(now: now)
+        }
+        #expect(discovery.claudeCandidates(now: now).isEmpty)
+        #expect(try discovery.claude(now: now, allowingExpired: true).accessToken == "fixture-expired-app")
+        #expect(discovery.claudeCandidates(now: now, allowingExpired: true).map(\.accessToken) == ["fixture-expired-app"])
+    }
+
+    @Test
+    func keychainOriginCodexRotationSavesAppSnapshotWithoutKeychainWriter() throws {
+        let original = codexCredentialsJSON(
+            accessToken: "fixture-codex-access",
+            refreshToken: "fixture-codex-refresh"
+        )
+        let keychain = DiscoverySnapshotKeychain(values: ["Codex Auth\u{0}": original])
+        let writer = RecordingKeychainWriter()
+        let missing = URL(filePath: "/definitely/missing")
+        let discovery = CredentialDiscovery(
+            paths: CredentialPaths(claude: missing, codex: missing),
+            environment: [:],
+            keychain: keychain,
+            providerKeychain: keychain,
+            keychainWriter: writer
+        )
+        let credential = try discovery.codex(now: now)
+        #expect(credential.storage == .keychain(service: "Codex Auth", account: ""))
+        let rotatedAccess = codexJWT(expiresAt: 1_785_690_000)
+
+        try discovery.persistCodexCredential(
+            accessToken: rotatedAccess,
+            refreshToken: "fixture-rotated-refresh",
+            idToken: nil,
+            lastRefresh: now,
+            replacing: credential
+        )
+
+        #expect(writer.records.isEmpty)
+        #expect(try keychain.value(service: "Codex Auth", account: "") == original)
+        let legacy = AccountProviderID(accountID: .legacy, providerID: .codex)
+        let stored = try #require(try discovery.snapshotStore.snapshot(for: legacy))
+        #expect(stored.accessToken == rotatedAccess)
+        #expect(stored.refreshToken == "fixture-rotated-refresh")
+        #expect(stored.accountReference == "fixture-codex-account")
+        #expect(stored.expiresAt == Date(timeIntervalSince1970: 1_785_690_000))
+        let rediscovered = try discovery.codex(now: now)
+        #expect(rediscovered.accessToken == rotatedAccess)
+        #expect(rediscovered.storage == .accountSnapshot(legacy))
+    }
+
+    @Test
+    func supersededKeychainCodexRotationCannotReplaceDifferentPin() throws {
+        let keychain = DiscoverySnapshotKeychain(values: [
+            "Codex Auth\u{0}": codexCredentialsJSON(
+                accessToken: "fixture-codex-access",
+                refreshToken: "fixture-codex-refresh"
+            )
+        ])
+        let writer = RecordingKeychainWriter()
+        let missing = URL(filePath: "/definitely/missing")
+        let discovery = CredentialDiscovery(
+            paths: CredentialPaths(claude: missing, codex: missing),
+            environment: [:],
+            keychain: keychain,
+            providerKeychain: keychain,
+            keychainWriter: writer
+        )
+        let inFlight = try discovery.codex(now: now)
+        let legacy = AccountProviderID(accountID: .legacy, providerID: .codex)
+        let pin = CredentialSnapshot(
+            provider: .codex, accessToken: "fixture-pinned-access",
+            refreshToken: "fixture-pinned-refresh", accountReference: "fixture-codex-account",
+            planName: nil, expiresAt: nil, source: .keychain
+        )
+        try discovery.snapshotStore.save(pin, for: legacy)
+
+        #expect(throws: CredentialDiscoveryError.malformed(.codex)) {
+            try discovery.persistCodexCredential(
+                accessToken: "fixture-late-access", refreshToken: "fixture-late-refresh",
+                idToken: nil, lastRefresh: now, replacing: inFlight
+            )
+        }
+        #expect(writer.records.isEmpty)
+        #expect(try discovery.snapshotStore.snapshot(for: legacy) == pin)
+    }
+
     private func codexCredentialsJSON(
         accessToken: String,
         refreshToken: String
@@ -1013,6 +1178,29 @@ private final class RecordingKeychainWriter: KeychainWriting,
                 )
             )
         }
+    }
+}
+
+private final class DiscoverySnapshotKeychain: KeychainReading, ProviderKeychain,
+    @unchecked Sendable
+{
+    private let lock = NSLock()
+    private var values: [String: String]
+
+    init(values: [String: String]) {
+        self.values = values
+    }
+
+    func value(service: String, account: String) throws -> String? {
+        lock.withLock { values["\(service)\u{0}\(account)"] }
+    }
+
+    func set(_ value: String, service: String, account: String) throws {
+        lock.withLock { values["\(service)\u{0}\(account)"] = value }
+    }
+
+    func remove(service: String, account: String) throws {
+        _ = lock.withLock { values.removeValue(forKey: "\(service)\u{0}\(account)") }
     }
 }
 
