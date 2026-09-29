@@ -123,19 +123,24 @@ precondition(decoded.providers[0].freshness == .stale)
 precondition(freshness.age == .stale)
 print("schema=4 metric=spend providerFreshness=stale mobileFreshness=stale")
 SWIFT
-swiftc \
-    -I "$BIN_PATH/Modules" \
-    "$DRIVER_DIR/main.swift" \
-    "$BIN_PATH/OmoUsageCore.build/AppLanguage.swift.o" \
-    "$BIN_PATH/OmoUsageCore.build/AppStrings.swift.o" \
-    "$BIN_PATH/OmoUsageCore.build/ProviderTextLocalization.swift.o" \
-    "$BIN_PATH/OmoUsageCore.build/DashboardSnapshot.swift.o" \
-    "$BIN_PATH/OmoUsageCore.build/ProviderID.swift.o" \
-    "$BIN_PATH/OmoUsageCore.build/ProviderVisualStyle.swift.o" \
-    "$BIN_PATH/OmoUsageCore.build/UsageModels.swift.o" \
-    "$BIN_PATH/OmoUsageCore.build/ProviderDisplayOrder.swift.o" \
-    "$BIN_PATH/OmoUsageCore.build/UsageSnapshotSync.swift.o" \
-    -o "$DRIVER_DIR/core-import-driver"
+# The native build system emits the module and one prelinked Core object
+# beside the products; the legacy layout keeps per-file objects and a
+# Modules directory.
+if [ -f "$BIN_PATH/OmoUsageCore.o" ] && [ -d "$BIN_PATH/OmoUsageCore.swiftmodule" ]; then
+    set -- -I "$BIN_PATH" "$BIN_PATH/OmoUsageCore.o"
+else
+    set -- -I "$BIN_PATH/Modules" \
+        "$BIN_PATH/OmoUsageCore.build/AppLanguage.swift.o" \
+        "$BIN_PATH/OmoUsageCore.build/AppStrings.swift.o" \
+        "$BIN_PATH/OmoUsageCore.build/ProviderTextLocalization.swift.o" \
+        "$BIN_PATH/OmoUsageCore.build/DashboardSnapshot.swift.o" \
+        "$BIN_PATH/OmoUsageCore.build/ProviderID.swift.o" \
+        "$BIN_PATH/OmoUsageCore.build/ProviderVisualStyle.swift.o" \
+        "$BIN_PATH/OmoUsageCore.build/UsageModels.swift.o" \
+        "$BIN_PATH/OmoUsageCore.build/ProviderDisplayOrder.swift.o" \
+        "$BIN_PATH/OmoUsageCore.build/UsageSnapshotSync.swift.o"
+fi
+swiftc "$@" "$DRIVER_DIR/main.swift" -o "$DRIVER_DIR/core-import-driver"
 "$DRIVER_DIR/core-import-driver"
 
 printf 'core boundary: PASS\n'
