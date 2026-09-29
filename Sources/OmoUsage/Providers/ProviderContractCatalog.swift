@@ -5,7 +5,8 @@ enum ProviderContractCatalog {
             .claude: [
                 .get(.claudeOAuthUsage, ["Authorization", "Accept", "Content-Type", "anthropic-beta"], userAgent: .requiredStable, retriesRateLimit: false),
                 .post(.claudeTokenRefresh, ["Content-Type", "Accept"], userAgent: .requiredStable, safety: .unsafe),
-                .get(.claudeDesktopUsage, ["Accept", "Content-Type", "Cookie", "Origin", "Referer"], userAgent: .requiredStable, retriesRateLimit: false)
+                .get(.claudeDesktopUsage, ["Accept", "Content-Type", "Cookie", "Origin", "Referer"], userAgent: .requiredStable, retriesRateLimit: false),
+                .post(.claudeTokenExchange, ["Content-Type", "Accept"], userAgent: .requiredStable, safety: .unsafe)
             ],
             .codex: [
                 .get(.codexUsage, ["Authorization", "Accept"], userAgent: .requiredStable)

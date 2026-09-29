@@ -48,6 +48,27 @@ struct ProviderContractTests {
     }
 
     @Test
+    func claudeTokenExchangeIsUnsafeJSONPostWithStableUserAgent() throws {
+        let endpoint = ProviderContractCatalog.endpoint(.claudeTokenExchange, for: .claude)
+        #expect(endpoint.method == .post)
+        #expect(endpoint.safety == .unsafe)
+        #expect(endpoint.userAgentPolicy == .requiredStable)
+        #expect(endpoint.requiredHeaderNames == ["Content-Type", "Accept"])
+
+        var request = try ClaudeBrowserAuthenticationClient.tokenRequest(
+            code: "fixture-code", state: "fixture-state", verifier: "fixture-state",
+            redirectURI: "http://localhost:53692/callback"
+        )
+        try endpoint.validate(request)
+        #expect(request.value(forHTTPHeaderField: "Content-Type") == "application/json")
+
+        request.setValue(nil, forHTTPHeaderField: "User-Agent")
+        #expect(throws: ProviderContractError.self) {
+            try endpoint.validate(request)
+        }
+    }
+
+    @Test
     @MainActor
     func schemaMutationDisablesOnlyTargetAccountAndRecordsRevisionOnly() async throws {
         let target = AccountProviderID(
