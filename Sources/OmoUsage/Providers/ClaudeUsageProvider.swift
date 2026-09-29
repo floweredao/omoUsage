@@ -16,13 +16,10 @@ struct ClaudeDesktopSessionDiscovery: Sendable {
 }
 
 struct ClaudeUsageProvider: UsageProvider {
-    /// Claude Code's own grant. The endpoint issues a token scoped to what
-    /// it is asked for, so a narrower request silently loses capabilities.
-    static let oauthScope = """
-        user:profile user:inference \
-        user:sessions:claude_code user:mcp_servers \
-        user:file_upload
-        """
+    /// The refresh cooldown refused to spend the grant and the stored access
+    /// token has already expired, so this candidate cannot be read now.
+    private struct RefreshCoolingDown: Error {}
+
     /// Refresh inside a guard band instead of at the deadline: the dashboard
     /// polls on a timer, and a token that expires mid-flight reads as a
     /// revoked credential.
@@ -44,6 +41,7 @@ struct ClaudeUsageProvider: UsageProvider {
     let oauthClientID: String
     let refreshCooldown: ClaudeRefreshCooldown
     let usageCooldown: ClaudeUsageCooldown
+    let refreshCoordinator: ClaudeRefreshCoordinator
 
     init(
         accountID: AccountID = .legacy,
@@ -66,7 +64,9 @@ struct ClaudeUsageProvider: UsageProvider {
         )!,
         oauthClientID: String = "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
         refreshCooldown: ClaudeRefreshCooldown = .shared,
-        usageCooldown: ClaudeUsageCooldown = .shared
+        usageCooldown: ClaudeUsageCooldown = .shared,
+        refreshCoordinator: ClaudeRefreshCoordinator =
+            ClaudeRefreshCoordinator()
     ) {
         self.accountID = accountID
         self.accountLabel = accountLabel
@@ -78,6 +78,7 @@ struct ClaudeUsageProvider: UsageProvider {
         self.oauthClientID = oauthClientID
         self.refreshCooldown = refreshCooldown
         self.usageCooldown = usageCooldown
+        self.refreshCoordinator = refreshCoordinator
     }
 
     func fetch(now: Date) async throws -> ProviderUsage {
@@ -119,9 +120,12 @@ struct ClaudeUsageProvider: UsageProvider {
         }
         var authFailure: any Error = ProviderTransportError
             .authenticationRequired(id)
+        var coolingDown = false
         for candidate in candidates {
             do {
                 return try await oauthUsage(for: candidate, now: now)
+            } catch is RefreshCoolingDown {
+                coolingDown = true
             } catch is CancellationError {
                 throw CancellationError()
             } catch let contractError as ProviderContractError {
@@ -133,6 +137,12 @@ struct ClaudeUsageProvider: UsageProvider {
             } catch {
                 throw error
             }
+        }
+        // A cooling refresh is a pause, not a lost login: report it as a
+        // transient throttle so the dashboard keeps last-good usage instead
+        // of dropping the card behind the Desktop fallback.
+        if coolingDown {
+            throw ProviderTransportError.requestFailed(id, 429)
         }
         return try await fetchDesktopUsage(
             now: now,
@@ -154,17 +164,17 @@ struct ClaudeUsageProvider: UsageProvider {
             let expiresAt = credential.expiresAt,
             expiresAt.timeIntervalSince(now) <= Self.refreshLeadTime
         {
-            guard await refreshCooldown.allowsAttempt(
+            if await refreshCooldown.allowsAttempt(
                 for: accountProviderID,
                 at: now
-            ) else {
-                throw ProviderTransportError.authenticationRequired(id)
+            ) {
+                credential = try await sharedRefresh(credential, now: now)
+                didRefresh = true
+            } else if expiresAt <= now {
+                throw RefreshCoolingDown()
             }
-            credential = try await refreshedCredential(
-                credential,
-                now: now
-            )
-            didRefresh = true
+            // Otherwise the token is inside the guard band but still valid:
+            // read with it rather than refusing while the cooldown runs.
         }
         do {
             return try await fetchOAuthUsage(credential, now: now)
@@ -185,7 +195,7 @@ struct ClaudeUsageProvider: UsageProvider {
                     at: now
                 )
             {
-                let rotated = try await refreshedCredential(
+                let rotated = try await sharedRefresh(
                     credential,
                     now: now
                 )
@@ -226,18 +236,20 @@ struct ClaudeUsageProvider: UsageProvider {
         request.setValue(Self.cliUserAgent, forHTTPHeaderField: "User-Agent")
         let data: Data
         do {
-            data = try await http.data(for: request, endpoint: endpoint)
-        } catch {
-            if
-                error as? ProviderTransportError
-                    == .requestFailed(id, 429)
-            {
+            data = try await http.data(
+                for: request,
+                endpoint: endpoint,
+                detailingStatusFailures: true
+            )
+        } catch let failure as ProviderHTTPStatusFailure {
+            if failure.transportError == .requestFailed(id, 429) {
                 await usageCooldown.recordRateLimit(
                     for: accountProviderID,
-                    at: now
+                    at: now,
+                    retryAfter: failure.retryAfter
                 )
             }
-            throw error
+            throw failure.transportError
         }
         let usage = try endpoint.schemaChecked {
             try ClaudeUsageParser.parse(
@@ -248,6 +260,24 @@ struct ClaudeUsageProvider: UsageProvider {
         }
         await usageCooldown.recordSuccess(for: accountProviderID)
         return usage
+    }
+
+    /// Routes every exchange for this account through one in-flight refresh
+    /// so concurrent fetches never spend the same single-use grant twice.
+    private func sharedRefresh(
+        _ credential: DiscoveredCredential,
+        now: Date
+    ) async throws -> DiscoveredCredential {
+        guard let refreshToken = credential.refreshToken else {
+            throw ProviderTransportError.authenticationRequired(id)
+        }
+        return try await refreshCoordinator.refreshed(
+            for: accountProviderID,
+            refreshToken: refreshToken,
+            validAfter: now.addingTimeInterval(Self.refreshLeadTime)
+        ) {
+            try await refreshedCredential(credential, now: now)
+        }
     }
 
     /// Exchanges the stored refresh token and persists the rotated pair to its
@@ -271,8 +301,7 @@ struct ClaudeUsageProvider: UsageProvider {
             withJSONObject: [
                 "grant_type": "refresh_token",
                 "refresh_token": refreshToken,
-                "client_id": oauthClientID,
-                "scope": Self.oauthScope
+                "client_id": oauthClientID
             ],
             options: [.sortedKeys]
         )
@@ -284,7 +313,35 @@ struct ClaudeUsageProvider: UsageProvider {
         request.setValue(Self.cliUserAgent, forHTTPHeaderField: "User-Agent")
         let data: Data
         do {
-            data = try await http.data(for: request, endpoint: endpoint)
+            data = try await http.data(
+                for: request,
+                endpoint: endpoint,
+                detailingStatusFailures: true
+            )
+        } catch let failure as ProviderHTTPStatusFailure {
+            let error = failure.transportError
+            await refreshCooldown.recordFailure(
+                for: accountProviderID,
+                at: now,
+                retryAfter: error == .requestFailed(id, 429)
+                    ? failure.retryAfter
+                    : nil
+            )
+            DiagnosticStore.shared.record(
+                error: error,
+                provider: id,
+                category: .providerRefresh
+            )
+            // Only a spent or revoked grant means the login is gone; any
+            // other 400 (a rejected scope, a malformed request) is a fault
+            // in the request, not in the user's credential.
+            if
+                error == .requestFailed(id, 400),
+                failure.oauthErrorCode == "invalid_grant"
+            {
+                throw ProviderTransportError.authenticationRequired(id)
+            }
+            throw error
         } catch {
             await refreshCooldown.recordFailure(
                 for: accountProviderID,
@@ -295,12 +352,6 @@ struct ClaudeUsageProvider: UsageProvider {
                 provider: id,
                 category: .providerRefresh
             )
-            if
-                error as? ProviderTransportError
-                    == .requestFailed(id, 400)
-            {
-                throw ProviderTransportError.authenticationRequired(id)
-            }
             throw error
         }
         await refreshCooldown.recordSuccess(for: accountProviderID)

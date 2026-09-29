@@ -32,7 +32,7 @@ Ten live adapters and `FixtureUsageProvider` implement `UsageProvider` here. Liv
 ## CLAUDE AND OPENCODE EXCEPTIONS
 
 - Claude tries OAuth usage, then Desktop session cookies, then cached `plan-usage-history.json`. Cached history is allowed only when no credential was discovered, never after a failed refresh. Cancellation is rethrown before fallback.
-- Claude token refresh uses the required `claude-cli/...` User-Agent and persists rotated credentials through `CredentialDiscovery`. Every refresh failure records the affected account in `ClaudeRefreshCooldown` for its ten-minute interval.
+- Claude token refresh uses the required `claude-cli/...` User-Agent, sends only `grant_type`, `client_id`, and `refresh_token`, and persists rotated credentials through `CredentialDiscovery`. `ClaudeRefreshCoordinator` runs one exchange per account at a time. Every refresh failure records the account in `ClaudeRefreshCooldown` (ten minutes, or a clamped `Retry-After` for a token 429); while it blocks, a still-valid token is used and an expired one reports `requestFailed(429)` so last-good usage stays. Only a 400 `invalid_grant` means login is required.
 - OpenCode is constructed without an injected `http` at the factory boundary. The literal token `local` reads `opencode*.db` through `LocalDataAccess` and reports 30-day spend; other tokens call the Zen Go endpoint.
 
 ## TEST SURFACES
