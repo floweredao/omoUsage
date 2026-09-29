@@ -2,7 +2,7 @@
 set -eu
 
 usage() {
-    printf '%s\n' "usage: $0 --adhoc app | --developer-id app identity entitlements" >&2
+    printf '%s\n' "usage: $0 --adhoc app | --development app identity | --developer-id app identity entitlements" >&2
     exit 64
 }
 
@@ -12,6 +12,15 @@ case "$MODE" in
         [ "$#" -eq 2 ] || usage
         APP="$2"
         IDENTITY=-
+        ;;
+    # A stable Apple Development identity keeps one designated requirement
+    # across local builds, so Keychain "Always Allow" grants survive rebuilds.
+    # No entitlements file: the host gets no iCloud KVS entitlement.
+    --development)
+        [ "$#" -eq 3 ] || usage
+        APP="$2"
+        IDENTITY="$3"
+        [ -n "$IDENTITY" ] && [ "$IDENTITY" != "-" ] || usage
         ;;
     --developer-id)
         [ "$#" -eq 4 ] || usage
@@ -27,9 +36,9 @@ sign() {
     shift
     if [ "$MODE" = --developer-id ]; then
         set -- --options runtime --timestamp "$@"
-        if [ -n "${OMO_USAGE_SIGNING_KEYCHAIN:-}" ]; then
-            set -- --keychain "$OMO_USAGE_SIGNING_KEYCHAIN" "$@"
-        fi
+    fi
+    if [ "$MODE" != --adhoc ] && [ -n "${OMO_USAGE_SIGNING_KEYCHAIN:-}" ]; then
+        set -- --keychain "$OMO_USAGE_SIGNING_KEYCHAIN" "$@"
     fi
     codesign --force --sign "$IDENTITY" "$@" "$target"
 }

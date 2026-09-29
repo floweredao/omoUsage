@@ -27,7 +27,7 @@ version_setting() {
 }
 
 usage() {
-    printf '%s\n' "usage: $0 [--adhoc|--developer-id] [--qa-fixtures] [--print-signing-plan]" >&2
+    printf '%s\n' "usage: $0 [--adhoc|--development|--developer-id] [--qa-fixtures] [--print-signing-plan]" >&2
     exit 64
 }
 
@@ -39,6 +39,11 @@ while [ "$#" -gt 0 ]; do
         --adhoc)
             [ "$MODE_WAS_EXPLICIT" = no ] || usage
             SIGNING_MODE=adhoc
+            MODE_WAS_EXPLICIT=yes
+            ;;
+        --development)
+            [ "$MODE_WAS_EXPLICIT" = no ] || usage
+            SIGNING_MODE=development
             MODE_WAS_EXPLICIT=yes
             ;;
         --developer-id)
@@ -77,6 +82,18 @@ if [ "$SIGNING_MODE" = developer-id ]; then
     fi
     if [ -z "$TEAM_IDENTIFIER" ]; then
         printf '%s\n' "error: Developer ID packaging requires OMO_USAGE_TEAM_IDENTIFIER" >&2
+        exit 64
+    fi
+elif [ "$SIGNING_MODE" = development ]; then
+    # A stable Apple Development identity keeps Keychain grants across
+    # rebuilds; it carries no entitlements, so cloud KVS stays unavailable.
+    IDENTITY="$REQUESTED_IDENTITY"
+    if [ -z "$IDENTITY" ] || [ "$IDENTITY" = "-" ]; then
+        printf '%s\n' "error: development packaging requires OMO_USAGE_CODESIGN_IDENTITY (e.g. \"Apple Development: NAME (TEAMID)\")" >&2
+        exit 64
+    fi
+    if [ -n "$TEAM_IDENTIFIER" ]; then
+        printf '%s\n' "error: OMO_USAGE_TEAM_IDENTIFIER is not accepted for development packaging" >&2
         exit 64
     fi
 else
@@ -173,6 +190,10 @@ if [ "$SIGNING_MODE" = developer-id ]; then
         printf '%s\n' "error: signed cloud KVS entitlement did not match the requested team" >&2
         exit 1
     fi
+elif [ "$SIGNING_MODE" = development ]; then
+    printf '%s\n' "warning: development package has no entitlements; cloud KVS is unavailable" >&2
+    sh Scripts/sign-app.sh --development "$APP" "$IDENTITY"
+    codesign --verify --deep --strict --verbose=2 "$APP"
 else
     printf '%s\n' "warning: ad-hoc package has no team identifier; cloud KVS is unavailable" >&2
     sh Scripts/sign-app.sh --adhoc "$APP"

@@ -59,10 +59,13 @@ struct KeychainReadError: Error, Equatable {
     let status: OSStatus
 }
 
-/// Legacy macOS Keychain ACL items can ignore a noninteractive `LAContext`
-/// and still open SecurityAgent. These are the stable raw values of the
-/// deprecated `kSecUseAuthenticationUI` / `kSecUseAuthenticationUIFail`
-/// constants, retained only to force fail-closed behavior for those items.
+/// Stable raw values of the deprecated `kSecUseAuthenticationUI` /
+/// `kSecUseAuthenticationUIFail` constants, sent alongside a noninteractive
+/// `LAContext`. On current macOS both are best-effort only: a data read of a
+/// legacy (file-based) Keychain item whose ACL does not trust the caller's
+/// code signature still opens the SecurityAgent dialog instead of failing
+/// closed. Callers must therefore limit how often they read such items
+/// (see `UnifiedKeychainCache`) rather than rely on these flags.
 enum SecurityKeychainAuthenticationUIPolicy {
     static let queryKey = "u_AuthUI"
     static let failValue = "u_AuthUIF"
@@ -163,7 +166,10 @@ final class ClaudeKeychainAccessSession: @unchecked Sendable {
     func authorizeClaude(
         api: any SecurityItemAPI = SecurityFrameworkItemAPI()
     ) throws -> ClaudeKeychainAuthorizationOutcome {
-        try lock.withLock {
+        // Explicit login is a user action: allow one fresh read of the
+        // consolidated item even if an earlier read was denied.
+        (providerKeychain as? UnifiedProviderKeychain)?.resetAuthorization()
+        return try lock.withLock {
             // Explicit login replaces the old grant even when permission is
             // denied or saving the new grant fails. Never publish memory-only
             // authorization that would disappear on the next launch.
