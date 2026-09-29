@@ -85,7 +85,7 @@ enum ProviderSetupError: LocalizedError, Identifiable, Equatable {
         case .unavailable(let provider):
             "\(provider.displayName) 연결 방법을 찾지 못했습니다."
         case .unableToLaunch(let target):
-            "\(target)을(를) 열지 못했습니다."
+            "\(target) 열기에 실패했습니다."
         case .unableToOpen:
             "공식 인증 페이지를 열지 못했습니다."
         case .requiredExecutableMissing(let executables):
@@ -109,71 +109,6 @@ final class ProviderConnectionCoordinator {
     ] = [:]
     private var awaitingActivation: Set<AccountProviderID> = []
     private var isCheckingCompletion = false
-    @ObservationIgnored private var claudeReceipt: OfficialLoginReceipt?
-    private var claudeAttempt: UUID?
-
-    /// Installs the completion observer before handing the command to Terminal.
-    /// Neither foreground activation nor a still-valid old credential completes login.
-    func startClaudeLogin(
-        launch: (OfficialLoginReceipt) -> Result<ProviderSetupOutcome, ProviderSetupError> = {
-            ProviderSetup.performClaudeLogin(receipt: $0)
-        },
-        authorize: @escaping () throws -> ClaudeKeychainAuthorizationOutcome = {
-            try ClaudeKeychainAccessSession.shared.authorizeClaude()
-        },
-        refresh: @escaping () async -> Void,
-        availability: @escaping () -> ProviderAvailability?,
-        didComplete: @escaping () -> Void = {}
-    ) -> Result<ProviderSetupOutcome, ProviderSetupError> {
-        cancelClaudeLogin()
-        let attempt = UUID()
-        claudeAttempt = attempt
-        let receipt: OfficialLoginReceipt
-        do {
-            receipt = try OfficialLoginReceipt { [weak self] succeeded in
-                guard let self,
-                      self.claudeAttempt == attempt,
-                      self.claudeReceipt != nil else { return }
-                self.claudeReceipt = nil
-                var authorized = false
-                if succeeded {
-                    do {
-                        if case .authorized = try authorize() { authorized = true }
-                    } catch {
-                        self.record(.failure(.unableToLaunch("claude")), for: .claude)
-                    }
-                }
-                if authorized { await refresh() }
-                guard self.claudeAttempt == attempt else { return }
-                self.claudeAttempt = nil
-                self.states[AccountProviderID(accountID: .legacy, providerID: .claude)] =
-                    authorized && availability() == .available ? .authenticated : .failed
-                didComplete()
-            }
-        } catch {
-            let result: Result<ProviderSetupOutcome, ProviderSetupError> =
-                .failure(.unableToLaunch("claude"))
-            claudeAttempt = nil
-            record(result, for: .claude)
-            return result
-        }
-        claudeReceipt = receipt
-        let result = launch(receipt)
-        record(result, for: .claude)
-        if result != .success(.launched) {
-            claudeReceipt?.cancel()
-            claudeReceipt = nil
-            claudeAttempt = nil
-        }
-        return result
-    }
-
-    func cancelClaudeLogin() {
-        claudeReceipt?.cancel()
-        claudeReceipt = nil
-        claudeAttempt = nil
-        states.removeValue(forKey: AccountProviderID(accountID: .legacy, providerID: .claude))
-    }
 
     func record(
         _ result: Result<ProviderSetupOutcome, ProviderSetupError>,
@@ -186,7 +121,9 @@ final class ProviderConnectionCoordinator {
                 awaitingActivation.insert(accountProvider)
             }
         case .success(.openedFallback):
-            states[accountProvider] = .failed
+            // Opening the official page is neither a failure nor a
+            // connection; the provider keeps its own availability.
+            states[accountProvider] = nil
             awaitingActivation.remove(accountProvider)
         case .failure(.companionRequired):
             states[accountProvider] = .companionRequired
@@ -210,13 +147,16 @@ final class ProviderConnectionCoordinator {
         )
     }
 
+    /// Returns the state each pending account resolved to, so the caller
+    /// can replace stale waiting feedback.
+    @discardableResult
     func applicationDidBecomeActive(
         refresh: () async -> Void,
         availability: (AccountProviderID) -> ProviderAvailability?
-    ) async {
-        guard !isCheckingCompletion else { return }
+    ) async -> [AccountProviderID: ProviderConnectionPresentationState] {
+        guard !isCheckingCompletion else { return [:] }
         let accounts = awaitingActivation
-        guard !accounts.isEmpty else { return }
+        guard !accounts.isEmpty else { return [:] }
         isCheckingCompletion = true
         defer { isCheckingCompletion = false }
         await refresh()
@@ -232,6 +172,7 @@ final class ProviderConnectionCoordinator {
                 states[accountProvider] = .waitingForCredential
             }
         }
+        return accounts.reduce(into: [:]) { $0[$1] = states[$1] }
     }
 
     func applicationDidBecomeActive(
@@ -261,76 +202,6 @@ final class ProviderConnectionCoordinator {
                 providerID: provider
             )
         )
-    }
-}
-
-/// A private, pre-created receipt watched before Terminal starts. Only the
-/// wrapped command's exit status can produce a completion; no credential or
-/// activation polling is involved. The receipt contains no authentication data.
-final class OfficialLoginReceipt: @unchecked Sendable {
-    let url: URL
-    private let directory: URL
-    private let source: DispatchSourceFileSystemObject
-    @MainActor private var finished = false
-
-    @MainActor
-    init(completion: @escaping @MainActor (Bool) async -> Void) throws {
-        directory = FileManager.default.temporaryDirectory
-            .appending(path: "OmoUsage-login-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(
-            at: directory,
-            withIntermediateDirectories: false,
-            attributes: [.posixPermissions: 0o700]
-        )
-        url = directory.appending(path: "completion")
-        let descriptor = open(url.path, O_CREAT | O_EXCL | O_EVTONLY | O_NOFOLLOW, 0o600)
-        guard descriptor >= 0 else {
-            try? FileManager.default.removeItem(at: directory)
-            throw ProviderSetupError.unableToLaunch("claude")
-        }
-        source = DispatchSource.makeFileSystemObjectSource(
-            fileDescriptor: descriptor,
-            eventMask: [.write, .delete, .rename],
-            queue: .main
-        )
-        source.setCancelHandler { close(descriptor) }
-        source.setEventHandler { [weak self] in
-            Task { @MainActor in
-                guard let self, !self.finished else { return }
-                let value = try? String(contentsOf: self.url, encoding: .utf8)
-                guard value == "success\n" || value == "failed\n" || value == nil else { return }
-                self.cancel()
-                await completion(value == "success\n")
-            }
-        }
-        source.activate()
-    }
-
-    /// An inner shell is necessary because Terminal's .command wrapper uses exec.
-    /// EXIT also covers interrupted/failed commands; only exit zero emits success.
-    func wrapping(_ command: String) -> String {
-        let report = """
-        result=$?; trap - EXIT; if [ "$result" -eq 0 ]; then printf "success\\n"; else printf "failed\\n"; fi > \(ProviderSetup.shellQuote(url.path))
-        """
-        let script = """
-        trap \(ProviderSetup.shellQuote(report)) EXIT
-        trap 'exit 1' HUP INT TERM
-        \(command)
-        """
-        return "/bin/zsh -f -c \(ProviderSetup.shellQuote(script))"
-    }
-
-    @MainActor
-    func cancel() {
-        guard !finished else { return }
-        finished = true
-        source.cancel()
-        try? FileManager.default.removeItem(at: directory)
-    }
-
-    deinit {
-        source.cancel()
-        try? FileManager.default.removeItem(at: directory)
     }
 }
 
@@ -550,6 +421,8 @@ enum CodexLegacyReconnectOutcome: Equatable, Sendable {
     case credentialMissing
     case credentialUnavailable
     case reconnected
+    /// Only the official page opened; nothing is waiting for a credential.
+    case openedOfficialGuide(URL)
     case launchFailed(ProviderSetupError)
     case ignored
 }
@@ -608,7 +481,7 @@ final class CodexLegacyReconnectCoordinator {
             isWaiting = true
             return .waitingForCredential
         case .success(.openedFallback(let url)):
-            return .launchFailed(.unableToOpen(url))
+            return .openedOfficialGuide(url)
         case .failure(let error):
             return .launchFailed(error)
         }
@@ -660,16 +533,14 @@ enum ProviderSetup {
     ) -> ProviderSetupDescriptor? {
         switch provider {
         case .claude:
-            terminal(
-                instruction: "Claude Code OAuth 로그인",
-                executable: "claude",
-                arguments: ["auth", "login"],
-                opensFallback: false,
+            ProviderSetupDescriptor(
+                instruction: "브라우저에서 Claude 로그인",
+                action: .browserOAuth,
                 help: help(
                     provider,
                     [
-                        "Claude Code OAuth 로그인을 완료하세요.",
-                        "Claude Desktop 로그인만으로는 실시간 리셋 시각을 읽을 수 없습니다.",
+                        "연결 시작을 눌러 브라우저에서 Claude에 로그인하세요.",
+                        "연결한 계정의 인증은 이 Mac의 키체인에 안전하게 저장합니다.",
                         "인증이 끝나면 OmoUsage가 구독 사용량을 바로 새로고칩니다."
                     ],
                     "https://claude.ai/code"
@@ -885,25 +756,6 @@ enum ProviderSetup {
         }
     }
 
-    @MainActor
-    static func performClaudeLogin(
-        receipt: OfficialLoginReceipt,
-        environment: [String: String] = ProcessInfo.processInfo.environment,
-        homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser,
-        isExecutable: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) },
-        launchTerminal: (String) -> Bool = launchTerminalCommand
-    ) -> Result<ProviderSetupOutcome, ProviderSetupError> {
-        performTerminal(
-            TerminalLaunchSpecification(executable: "claude", arguments: ["auth", "login"]),
-            fallbackURL: nil,
-            companionProvider: .claude,
-            environment: environment,
-            homeDirectory: homeDirectory,
-            isExecutable: isExecutable,
-            launchTerminal: { launchTerminal(receipt.wrapping($0)) }
-        )
-    }
-
     static func performTerminal(
         _ specification: TerminalLaunchSpecification,
         fallbackURL: URL?,
@@ -950,16 +802,12 @@ enum ProviderSetup {
             ) else {
                 continue
             }
-            failedExecutable = specification.executable
-            var command = ([executablePath] + specification.arguments)
+            // User-facing errors name the provider, not the raw executable.
+            failedExecutable = companionProvider?.displayName
+                ?? specification.executable
+            let command = ([executablePath] + specification.arguments)
                 .map(shellQuote)
                 .joined(separator: " ")
-            if companionProvider == .claude {
-                let directory = CredentialDiscovery.claudeLoginDirectory(
-                    home: homeDirectory
-                ).path.precomposedStringWithCanonicalMapping
-                command = "CLAUDE_CONFIG_DIR=\(shellQuote(directory)) \(command)"
-            }
             if launchTerminal(command) {
                 return .success(.launched)
             }
@@ -992,15 +840,6 @@ enum ProviderSetup {
         homeDirectory: URL,
         isExecutable: (String) -> Bool
     ) -> String? {
-        if
-            executable == "claude",
-            let bundled = bundledClaudeExecutable(
-                homeDirectory: homeDirectory,
-                isExecutable: isExecutable
-            )
-        {
-            return bundled
-        }
         if
             executable == "codex",
             let bundled = bundledCodexExecutable(
@@ -1075,43 +914,6 @@ enum ProviderSetup {
         return candidates
             .map(\.path)
             .first(where: isExecutable)
-    }
-
-    private static func bundledClaudeExecutable(
-        homeDirectory: URL,
-        isExecutable: (String) -> Bool
-    ) -> String? {
-        let versionsDirectory = homeDirectory.appending(
-            components: "Library",
-            "Application Support",
-            "Claude",
-            "claude-code"
-        )
-        guard
-            let versions = try? FileManager.default.contentsOfDirectory(
-                at: versionsDirectory,
-                includingPropertiesForKeys: nil
-            )
-        else {
-            return nil
-        }
-        for version in versions.sorted(by: {
-            $0.lastPathComponent.compare(
-                $1.lastPathComponent,
-                options: .numeric
-            ) == .orderedDescending
-        }) {
-            let candidate = version.appending(
-                components: "claude.app",
-                "Contents",
-                "MacOS",
-                "claude"
-            ).path
-            if isExecutable(candidate) {
-                return candidate
-            }
-        }
-        return nil
     }
 
     static func terminalCommandFile(

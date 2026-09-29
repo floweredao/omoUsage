@@ -372,6 +372,72 @@ struct AccountSettingsPresentationTests {
         #expect(!name.contains("@"))
     }
 
+    // MARK: Connection badge
+
+    @Test
+    func badgeReportsAvailabilityWhenNoLoginIsPending() {
+        let expected: [(ProviderAvailability?, ConnectionBadgeState)] = [
+            (.available, .connected),
+            (.failed, .checkFailed),
+            (.schemaChanged, .checkFailed),
+            (.authenticationRequired, .notConnected),
+            (.unavailable, .notConnected),
+            (nil, .checking)
+        ]
+        for (availability, state) in expected {
+            for presentation in [nil, .authenticated, .failed]
+                as [ProviderConnectionPresentationState?]
+            {
+                #expect(
+                    ConnectionBadgeState.resolve(
+                        availability: availability,
+                        presentation: presentation,
+                        waitingForBrowser: false
+                    ) == state
+                )
+            }
+        }
+    }
+
+    @Test(arguments: [nil, .available, .failed] as [ProviderAvailability?])
+    func pendingLoginOutranksLastKnownAvailability(
+        availability: ProviderAvailability?
+    ) {
+        #expect(
+            ConnectionBadgeState.resolve(
+                availability: availability,
+                presentation: .waitingForCredential,
+                waitingForBrowser: true
+            ) == .waitingForSignIn
+        )
+        #expect(
+            ConnectionBadgeState.resolve(
+                availability: availability,
+                presentation: .waitingForCredential,
+                waitingForBrowser: false
+            ) == .waitingForCompanion
+        )
+        #expect(
+            ConnectionBadgeState.resolve(
+                availability: availability,
+                presentation: .companionRequired,
+                waitingForBrowser: false
+            ) == .companionRequired
+        )
+    }
+
+    @Test
+    func badgeStatesNeverDifferByColorAlone() {
+        let symbols = [
+            ConnectionBadgeState.connected,
+            .checkFailed,
+            .notConnected,
+            .checking
+        ].map(\.symbolName)
+
+        #expect(Set(symbols).count == symbols.count)
+    }
+
     // MARK: Alias editing
 
     @Test

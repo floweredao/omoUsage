@@ -10,6 +10,8 @@ enum DevinBrowserConnectionTarget: Equatable {
 enum DevinBrowserConnectionError: Error, Equatable {
     case alreadyConnecting
     case usageUnavailable
+    /// The verified credential could not be written to the registry.
+    case storageFailed
 }
 
 @MainActor
@@ -40,6 +42,12 @@ final class DevinBrowserConnectionCoordinator {
         else {
             throw DevinBrowserConnectionError.usageUnavailable
         }
-        return try persist(target, snapshot)
+        do {
+            return try persist(target, snapshot)
+        } catch ProviderAccountRegistryControllerError.invalidLabel {
+            throw ProviderAccountRegistryControllerError.invalidLabel
+        } catch {
+            throw DevinBrowserConnectionError.storageFailed
+        }
     }
 }

@@ -383,6 +383,8 @@ public enum ProviderTextLocalization {
         "Antigravity 앱 또는 agy CLI에서 로그인": "Sign in with the Antigravity app or agy CLI",
         "Copilot CLI 또는 GitHub CLI에서 로그인": "Sign in with Copilot CLI or GitHub CLI",
         "브라우저에서 Devin 로그인": "Sign in to Devin in your browser",
+        "브라우저에서 Claude 로그인": "Sign in to Claude in your browser",
+        "연결 시작을 눌러 브라우저에서 Claude에 로그인하세요.": "Choose Connect to sign in to Claude in your browser.",
         "grok login 실행": "Run grok login",
         "kiro-cli login 실행": "Run kiro-cli login",
         "Kiro 계정 연결": "Connect Kiro account",
