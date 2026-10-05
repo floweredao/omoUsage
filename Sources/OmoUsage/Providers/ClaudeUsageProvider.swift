@@ -43,6 +43,10 @@ struct ClaudeUsageProvider: UsageProvider {
     let usageCooldown: ClaudeUsageCooldown
     let refreshCoordinator: ClaudeRefreshCoordinator
     let planCache: ClaudePlanCache
+    /// `nil` reads live on every fetch; the app passes `.shared`.
+    let usageCache: ClaudeUsageCache?
+    /// `nil` publishes nothing; the app passes `.live`.
+    let shareStore: ClaudeUsageShareStore?
 
     init(
         accountID: AccountID = .legacy,
@@ -68,7 +72,9 @@ struct ClaudeUsageProvider: UsageProvider {
         usageCooldown: ClaudeUsageCooldown = .shared,
         refreshCoordinator: ClaudeRefreshCoordinator =
             ClaudeRefreshCoordinator(),
-        planCache: ClaudePlanCache = ClaudePlanCache()
+        planCache: ClaudePlanCache = ClaudePlanCache(),
+        usageCache: ClaudeUsageCache? = nil,
+        shareStore: ClaudeUsageShareStore? = nil
     ) {
         self.accountID = accountID
         self.accountLabel = accountLabel
@@ -82,6 +88,8 @@ struct ClaudeUsageProvider: UsageProvider {
         self.usageCooldown = usageCooldown
         self.refreshCoordinator = refreshCoordinator
         self.planCache = planCache
+        self.usageCache = usageCache
+        self.shareStore = shareStore
     }
 
     func fetch(now: Date) async throws -> ProviderUsage {
@@ -108,6 +116,15 @@ struct ClaudeUsageProvider: UsageProvider {
             at: now
         ) else {
             throw ProviderTransportError.requestFailed(id, 429)
+        }
+        // A recent read is still the answer: the endpoint's budget is shared
+        // with every other program reading this account, manual refreshes
+        // included.
+        if let cached = await usageCache?.usage(
+            for: accountProviderID,
+            at: now
+        ) {
+            return cached
         }
         // Only an auth rejection says anything about *which* credential we
         // picked. A 500, a 429, a malformed payload or a lost rotation are
@@ -246,10 +263,16 @@ struct ClaudeUsageProvider: UsageProvider {
             )
         } catch let failure as ProviderHTTPStatusFailure {
             if failure.transportError == .requestFailed(id, 429) {
-                await usageCooldown.recordRateLimit(
+                let blockedUntil = await usageCooldown.recordRateLimit(
                     for: accountProviderID,
                     at: now,
                     retryAfter: failure.retryAfter
+                )
+                await shareStore?.recordRateLimit(
+                    until: blockedUntil,
+                    for: accountID,
+                    label: accountLabel,
+                    at: now
                 )
             }
             DiagnosticStore.shared.record(
@@ -271,6 +294,13 @@ struct ClaudeUsageProvider: UsageProvider {
             )
         }
         await usageCooldown.recordSuccess(for: accountProviderID)
+        await usageCache?.record(usage, for: accountProviderID, at: now)
+        await shareStore?.recordSuccess(
+            data,
+            for: accountID,
+            label: accountLabel,
+            at: now
+        )
         return usage
     }
 

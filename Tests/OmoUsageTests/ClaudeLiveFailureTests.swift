@@ -299,6 +299,119 @@ struct ClaudeUsageCooldownTests {
 
         #expect(ClaudeUsageCooldownExchange.shared.usageRequests() == 2)
     }
+
+    /// Manual refreshes and the one-minute timer both reuse a read for five
+    /// minutes; only then is the endpoint asked again.
+    @Test
+    func successfulUsageIsReusedForFiveMinutes() async throws {
+        ClaudeUsageCooldownExchange.shared.reset(usageStatus: 200)
+        let provider = ClaudeUsageCooldownFixtures.provider(
+            usageCooldown: ClaudeUsageCooldown(),
+            usageCache: ClaudeUsageCache()
+        )
+
+        let first = try await provider.fetch(now: Self.now)
+        for offset in [1, 60, 120, 240] as [TimeInterval] {
+            let reused = try await provider.fetch(
+                now: Self.now.addingTimeInterval(offset)
+            )
+            #expect(reused == first)
+        }
+        #expect(ClaudeUsageCooldownExchange.shared.usageRequests() == 1)
+
+        _ = try await provider.fetch(now: Self.now.addingTimeInterval(300))
+        #expect(ClaudeUsageCooldownExchange.shared.usageRequests() == 2)
+    }
+
+    @Test
+    func secondAccountComesDueOnADifferentTick() async throws {
+        ClaudeUsageCooldownExchange.shared.reset(usageStatus: 200)
+        let cache = ClaudeUsageCache()
+        let cooldown = ClaudeUsageCooldown()
+        let first = ClaudeUsageCooldownFixtures.provider(
+            usageCooldown: cooldown,
+            usageCache: cache
+        )
+        let second = ClaudeUsageCooldownFixtures.provider(
+            usageCooldown: cooldown,
+            usageCache: cache
+        )
+
+        _ = try await first.fetch(now: Self.now)
+        _ = try await second.fetch(now: Self.now)
+        #expect(ClaudeUsageCooldownExchange.shared.usageRequests() == 2)
+
+        let at300 = Self.now.addingTimeInterval(300)
+        _ = try await first.fetch(now: at300)
+        _ = try await second.fetch(now: at300)
+        #expect(ClaudeUsageCooldownExchange.shared.usageRequests() == 3)
+
+        let at420 = Self.now.addingTimeInterval(420)
+        _ = try await first.fetch(now: at420)
+        _ = try await second.fetch(now: at420)
+        #expect(ClaudeUsageCooldownExchange.shared.usageRequests() == 4)
+    }
+
+    @Test
+    func rateLimitAndSuccessArePublishedWithoutTokens() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appending(path: "OmoUsageClaudeShare-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appending(path: "claude-usage.json")
+        let accountID = AccountID()
+        ClaudeUsageCooldownExchange.shared.reset(usageStatus: 429)
+        let provider = ClaudeUsageCooldownFixtures.provider(
+            accountID: accountID,
+            usageCooldown: ClaudeUsageCooldown(),
+            usageCache: ClaudeUsageCache(),
+            shareStore: ClaudeUsageShareStore(url: url)
+        )
+
+        await #expect(
+            throws: ProviderTransportError.requestFailed(.claude, 429)
+        ) {
+            _ = try await provider.fetch(now: Self.now)
+        }
+        var account = try Self.sharedAccount(at: url)
+        #expect(account["account_id"] as? String == accountID.rawValue)
+        #expect(account["account_label"] as? String == "floweredao")
+        #expect(account["fetched_at"] is NSNull)
+        #expect(
+            account["rate_limited_until"] as? String
+                == Self.now.addingTimeInterval(300).formatted(.iso8601)
+        )
+        let attributes = try FileManager.default.attributesOfItem(
+            atPath: url.path
+        )
+        #expect(
+            (attributes[.posixPermissions] as? NSNumber)?.intValue == 0o600
+        )
+
+        ClaudeUsageCooldownExchange.shared.reset(usageStatus: 200)
+        let later = Self.now.addingTimeInterval(300)
+        _ = try await provider.fetch(now: later)
+        account = try Self.sharedAccount(at: url)
+        #expect(account["fetched_at"] as? String == later.formatted(.iso8601))
+        #expect(account["rate_limited_until"] is NSNull)
+        let fiveHour = try #require(account["five_hour"] as? [String: Any])
+        let sevenDay = try #require(account["seven_day"] as? [String: Any])
+        #expect(fiveHour["utilization"] as? Double == 42)
+        #expect(sevenDay["utilization"] as? Double == 25)
+        let text = try String(contentsOf: url, encoding: .utf8)
+        #expect(!text.contains("cooldown-access-token"))
+        #expect(!text.contains("cooldown-refresh-token"))
+    }
+
+    private static func sharedAccount(at url: URL) throws -> [String: Any] {
+        let root = try #require(
+            JSONSerialization.jsonObject(with: Data(contentsOf: url))
+                as? [String: Any]
+        )
+        #expect(root["schema_version"] as? Int == 1)
+        let accounts = try #require(root["accounts"] as? [[String: Any]])
+        #expect(accounts.count == 1)
+        return try #require(accounts.first)
+    }
 }
 
 private enum ClaudeUsageCooldownFixtures {
@@ -314,7 +427,10 @@ private enum ClaudeUsageCooldownFixtures {
         """
 
     static func provider(
+        accountID: AccountID = AccountID(),
         usageCooldown: ClaudeUsageCooldown = .shared,
+        usageCache: ClaudeUsageCache? = nil,
+        shareStore: ClaudeUsageShareStore? = nil,
         retryPolicy: ProviderRetryPolicy = ProviderRetryPolicy(
             maximumAttempts: 1
         )
@@ -325,7 +441,8 @@ private enum ClaudeUsageCooldownFixtures {
         ]
         let missing = URL(filePath: "/omo-claude-cooldown/missing")
         return ClaudeUsageProvider(
-            accountID: AccountID(),
+            accountID: accountID,
+            accountLabel: "floweredao",
             discovery: CredentialDiscovery(
                 paths: CredentialPaths(claude: missing, codex: missing),
                 environment: [:],
@@ -339,7 +456,9 @@ private enum ClaudeUsageCooldownFixtures {
             desktopUsageURL: missing,
             desktopSessionDiscovery: .unavailable,
             refreshCooldown: ClaudeRefreshCooldown(),
-            usageCooldown: usageCooldown
+            usageCooldown: usageCooldown,
+            usageCache: usageCache,
+            shareStore: shareStore
         )
     }
 }

@@ -58,7 +58,9 @@ enum ProviderFactory {
                     accountID: account.id,
                     accountLabel: account.label,
                     discovery: discovery,
-                    http: http
+                    http: http,
+                    usageCache: .shared,
+                    shareStore: .live
                 )
             case .codex:
                 CodexUsageProvider(
@@ -139,7 +141,12 @@ enum ProviderFactory {
         http: ProviderHTTP
     ) -> [any UsageProvider] {
         [
-            ClaudeUsageProvider(discovery: discovery, http: http),
+            ClaudeUsageProvider(
+                discovery: discovery,
+                http: http,
+                usageCache: .shared,
+                shareStore: .live
+            ),
             CodexUsageProvider(discovery: discovery, http: http),
             CursorUsageProvider(discovery: discovery, http: http),
             AntigravityUsageProvider(discovery: discovery, http: http),
