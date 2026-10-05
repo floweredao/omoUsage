@@ -197,6 +197,74 @@ struct StaleUsagePresentationTests {
         )
     }
 
+    // MARK: - Rate limit
+
+    @Test
+    @MainActor
+    func rateLimitKeepsValuesCurrentWithRetryNoticeHoweverLong() async throws {
+        let harness = await Harness(failure: .rateLimited, step: 300)
+
+        await harness.refreshSucceeding()
+        // An hour of throttled reads never turns the wait into a failure.
+        for _ in 1...12 {
+            await harness.refreshFailing()
+        }
+
+        let retained = try #require(harness.retainedUsage)
+        #expect(retained.groups == harness.usage.groups)
+        #expect(retained.refreshFailure == .rateLimited)
+        #expect(retained.freshness == .current)
+        #expect(retained.lastSuccessfulAt == successAt)
+        #expect(harness.viewModel.connectionStates[.codex] == .available)
+        let display = ProviderFreshnessDisplay.make(
+            for: retained,
+            includesSuccessRow: false
+        )
+        #expect(!display.showsStaleBadge)
+        #expect(display.showsRetryNotice)
+        #expect(display.successAt == successAt)
+        #expect(display.attemptAt == nil)
+        #expect(display.rowCount == 2)
+    }
+
+    @Test
+    @MainActor
+    func successAfterRateLimitClearsRetryNotice() async throws {
+        let harness = await Harness(failure: .rateLimited, step: 300)
+
+        await harness.refreshSucceeding()
+        await harness.refreshFailing()
+        await harness.refreshSucceeding()
+
+        let fresh = try #require(harness.retainedUsage)
+        #expect(fresh.refreshFailure == nil)
+        #expect(
+            !ProviderFreshnessDisplay.make(
+                for: fresh,
+                includesSuccessRow: true
+            ).showsRetryNotice
+        )
+    }
+
+    @Test
+    func rateLimitWaitTravelsToCloudAsCurrentValues() throws {
+        let waiting = currentUsage().recordingRefreshAttempt(
+            at: successAt.addingTimeInterval(attemptInterval),
+            failure: .rateLimited
+        )
+        let snapshot = DashboardSnapshot(
+            providers: [waiting],
+            refreshedAt: successAt.addingTimeInterval(attemptInterval)
+        )
+
+        let decoded = try UsageSnapshotCodec.decode(
+            UsageSnapshotCodec.encode(snapshot)
+        )
+
+        #expect(decoded.providers.first?.refreshFailure == nil)
+        #expect(decoded.providers.first?.lastSuccessfulAt == successAt)
+    }
+
     // MARK: - Shared presentation
 
     @Test
@@ -484,9 +552,12 @@ enum TransientProviderFailure: Sendable {
     case credentialExpired
     case authenticationRequired
     case credentialNotFound
+    case rateLimited
 
     func error(for provider: ProviderID) -> any Error {
         switch self {
+        case .rateLimited:
+            ProviderTransportError.requestFailed(provider, 429)
         case .network:
             URLError(.notConnectedToInternet)
         case .transientTransport:

@@ -726,6 +726,9 @@ private struct SideNotchProviderButton: View {
         // The label already names the provider, so the value starts with the
         // usage itself.
         let value = localization.metricValue(summaryMeter.metric)
+        if usage.isWaitingForRetry {
+            return "\(value), \(localization.rateLimitRetryNoticeText())"
+        }
         guard usage.freshness == .stale else { return value }
         return "\(value), \(localization.staleBadgeText())"
     }

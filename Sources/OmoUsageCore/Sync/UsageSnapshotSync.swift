@@ -53,7 +53,9 @@ private struct CloudProviderUsage: Codable {
         availability = usage.availability
         lastSuccessfulAt = usage.lastSuccessfulAt
         lastRefreshAttemptAt = usage.lastRefreshAttemptAt
-        refreshFailure = usage.refreshFailure
+        // Older mobile and web clients reject an unknown failure, and a
+        // rate-limit wait is not one: send the kept values as current.
+        refreshFailure = usage.isWaitingForRetry ? nil : usage.refreshFailure
     }
 
     func usage(sameProviderCount: Int) -> ProviderUsage {

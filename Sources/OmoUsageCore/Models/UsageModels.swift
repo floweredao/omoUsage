@@ -346,6 +346,9 @@ public enum ProviderRefreshFailure: String, Codable, Sendable, CaseIterable {
     case schema
     case credential
     case unknown
+    /// The provider asked us to wait. Not a failure to warn about: the kept
+    /// values stay current and the card says it will check again shortly.
+    case rateLimited
 }
 
 public enum AccountLabel {
@@ -401,7 +404,13 @@ public struct ProviderUsage: Identifiable, Equatable, Codable, Sendable {
     /// Displayed values are stale once an attempt failed after the last
     /// success and the previous values were kept on screen.
     public var freshness: UsageFreshness {
-        refreshFailure == nil ? .current : .stale
+        refreshFailure == nil || isWaitingForRetry ? .current : .stale
+    }
+
+    /// The last read was rate limited, so the kept values wait for a retry
+    /// the provider allows instead of being marked as a failure.
+    public var isWaitingForRetry: Bool {
+        refreshFailure == .rateLimited
     }
 
     public init(
@@ -544,9 +553,12 @@ public struct ProviderFreshnessDisplay: Equatable, Sendable {
     public let showsStaleBadge: Bool
     public let successAt: Date?
     public let attemptAt: Date?
+    /// A rate-limited read adds a calm "checking again shortly" row.
+    public var showsRetryNotice = false
 
     public var rowCount: Int {
         (successAt == nil ? 0 : 1) + (attemptAt == nil ? 0 : 1)
+            + (showsRetryNotice ? 1 : 0)
     }
 
     /// - Parameter includesSuccessRow: whether the surface already shows the
@@ -556,12 +568,14 @@ public struct ProviderFreshnessDisplay: Equatable, Sendable {
         includesSuccessRow: Bool
     ) -> ProviderFreshnessDisplay {
         let isStale = usage.freshness == .stale
+        let isWaiting = usage.isWaitingForRetry
         return ProviderFreshnessDisplay(
             showsStaleBadge: isStale,
-            successAt: includesSuccessRow || isStale
+            successAt: includesSuccessRow || isStale || isWaiting
                 ? usage.lastSuccessfulAt
                 : nil,
-            attemptAt: isStale ? usage.lastRefreshAttemptAt : nil
+            attemptAt: isStale ? usage.lastRefreshAttemptAt : nil,
+            showsRetryNotice: isWaiting
         )
     }
 }
