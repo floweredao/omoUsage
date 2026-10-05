@@ -323,7 +323,8 @@ struct CredentialDiscoveryTests {
                 environment: [
                     "CLAUDE_CONFIG_DIR": configDirectory.path
                 ],
-                keychain: StubKeychain(values: [:])
+                keychain: StubKeychain(values: [:]),
+                providerKeychain: StubKeychain(values: [:])
             )
 
             let credential = try discovery.claude(now: now)
