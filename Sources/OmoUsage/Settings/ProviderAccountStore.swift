@@ -175,7 +175,8 @@ struct ProviderAccountStore {
                 do {
                     _ = try CredentialDiscovery.live(
                         home: home,
-                        environment: environment
+                        environment: environment,
+                        providerKeychain: providerKeychain
                     ).opencode()
                     return true
                 } catch CredentialDiscoveryError.notFound(.opencode) {
