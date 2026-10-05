@@ -226,7 +226,21 @@ other privileged controls remain native-only.
   badge. Payload and credential failures, and failures after that window, mark
   the values stale at once, and they stay stale until the next success.
 - A rate-limited Claude usage read is not retried inside the same refresh. It
-  arms a five-minute cooldown even when the server asks for a longer wait.
+  arms a cooldown of at least five minutes, longer when `Retry-After` asks
+  (clamped to thirty minutes); manual refreshes inside it make no request.
+- A successful Claude usage read is reused for five minutes per account, so
+  the one-minute dashboard timer never re-reads it sooner. Each account's
+  first window is offset (0, 2, 4, 1, 3 minutes) so accounts come due on
+  different ticks.
+- A rate limit (HTTP 429) is a wait, not a failure. The card keeps every
+  meter, shows no stale badge, keeps its "As of" success time, and adds a
+  calm clock-symbol line: "잠시 후 다시 확인할게요" / "Checking again
+  shortly". It never turns into a failure however long the wait lasts, and
+  Settings keeps the account Connected. Sign-in rejections still read as
+  Not Connected. iCloud and web payloads send these kept values as current.
+- Claude usage reads are also written, without tokens, to
+  `~/Library/Application Support/OmoUsage/claude-usage.json` (0600, atomic)
+  so local tools reuse them instead of spending the same account's budget.
 - Settings owns one retained window that closes and reopens without duplication.
   It is deliberately not miniaturizable because a minimized Settings thumbnail
   creates Dock presence for an otherwise Dockless `LSUIElement` application.
