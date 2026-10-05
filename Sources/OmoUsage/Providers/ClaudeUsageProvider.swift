@@ -42,6 +42,7 @@ struct ClaudeUsageProvider: UsageProvider {
     let refreshCooldown: ClaudeRefreshCooldown
     let usageCooldown: ClaudeUsageCooldown
     let refreshCoordinator: ClaudeRefreshCoordinator
+    let planCache: ClaudePlanCache
 
     init(
         accountID: AccountID = .legacy,
@@ -66,7 +67,8 @@ struct ClaudeUsageProvider: UsageProvider {
         refreshCooldown: ClaudeRefreshCooldown = .shared,
         usageCooldown: ClaudeUsageCooldown = .shared,
         refreshCoordinator: ClaudeRefreshCoordinator =
-            ClaudeRefreshCoordinator()
+            ClaudeRefreshCoordinator(),
+        planCache: ClaudePlanCache = ClaudePlanCache()
     ) {
         self.accountID = accountID
         self.accountLabel = accountLabel
@@ -79,6 +81,7 @@ struct ClaudeUsageProvider: UsageProvider {
         self.refreshCooldown = refreshCooldown
         self.usageCooldown = usageCooldown
         self.refreshCoordinator = refreshCoordinator
+        self.planCache = planCache
     }
 
     func fetch(now: Date) async throws -> ProviderUsage {
@@ -251,15 +254,87 @@ struct ClaudeUsageProvider: UsageProvider {
             }
             throw failure.transportError
         }
+        let planName = try await resolvedPlanName(
+            for: credential,
+            now: now
+        )
         let usage = try endpoint.schemaChecked {
             try ClaudeUsageParser.parse(
                 data,
-                planName: credential.planName ?? "",
+                planName: planName,
                 now: now
             )
         }
         await usageCooldown.recordSuccess(for: accountProviderID)
         return usage
+    }
+
+    /// The credential's own plan, else the account's OAuth profile plan.
+    /// An in-app browser grant carries no plan, so the profile is read once
+    /// per account after a successful usage read; a failed read only leaves
+    /// the plan blank and waits out `ClaudePlanCache`'s retry interval.
+    private func resolvedPlanName(
+        for credential: DiscoveredCredential,
+        now: Date
+    ) async throws -> String {
+        if let plan = credential.planName, !plan.isEmpty {
+            return plan
+        }
+        if let plan = await planCache.plan(for: accountProviderID) {
+            return plan
+        }
+        guard await planCache.allowsLookup(
+            for: accountProviderID,
+            at: now
+        ) else {
+            return ""
+        }
+        do {
+            let plan = try await fetchProfilePlanName(credential)
+            await planCache.record(plan, for: accountProviderID)
+            return plan
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            await planCache.recordFailure(
+                for: accountProviderID,
+                at: now
+            )
+            DiagnosticStore.shared.record(
+                error: error,
+                provider: id,
+                category: .providerRefresh
+            )
+            return ""
+        }
+    }
+
+    private func fetchProfilePlanName(
+        _ credential: DiscoveredCredential
+    ) async throws -> String {
+        let endpoint = ProviderContractCatalog.endpoint(
+            .claudeOAuthProfile,
+            for: id
+        )
+        var request = URLRequest(
+            url: URL(string: "https://api.anthropic.com/api/oauth/profile")!
+        )
+        request.timeoutInterval = 10
+        request.setValue(
+            "Bearer \(credential.accessToken)",
+            forHTTPHeaderField: "Authorization"
+        )
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(
+            "oauth-2025-04-20",
+            forHTTPHeaderField: "anthropic-beta"
+        )
+        request.setValue(Self.cliUserAgent, forHTTPHeaderField: "User-Agent")
+        let data = try await http.data(for: request, endpoint: endpoint)
+        guard let plan = ClaudePlanName.fromProfile(data) else {
+            throw ProviderTransportError.invalidResponse(id)
+        }
+        return plan
     }
 
     /// Routes every exchange for this account through one in-flight refresh
@@ -536,5 +611,91 @@ struct ClaudeUsageProvider: UsageProvider {
             provider: id,
             category: .desktopSession
         )
+    }
+}
+
+/// Claude subscription display names, e.g. `max` + `default_claude_max_20x`
+/// -> "Max 20x". Shared by Claude Code credential files and the OAuth
+/// profile so both sources label a plan the same way.
+enum ClaudePlanName {
+    static func make(
+        subscriptionType: String?,
+        rateLimitTier: String?
+    ) -> String? {
+        guard let subscription = subscriptionType, !subscription.isEmpty
+        else {
+            return nil
+        }
+        let plan = subscription.capitalized
+        guard
+            let tier = rateLimitTier?.lowercased(),
+            tier.contains("_\(subscription.lowercased())_"),
+            let suffix = tier.split(separator: "_").last,
+            suffix.last == "x",
+            let multiplier = Int(suffix.dropLast()),
+            multiplier > 0
+        else {
+            return plan
+        }
+        return "\(plan) \(multiplier)x"
+    }
+
+    /// Reads `GET /api/oauth/profile`: `organization.organization_type`
+    /// (`claude_max`, `claude_pro`, ...) names the subscription and
+    /// `organization.rate_limit_tier` carries its multiplier.
+    static func fromProfile(_ data: Data) -> String? {
+        guard
+            let root = try? UsageJSON.object(data),
+            let organization = UsageJSON.object(root["organization"]),
+            let type = (organization["organization_type"] as? String)?
+                .lowercased(),
+            type.hasPrefix("claude_"),
+            type.count > "claude_".count
+        else {
+            return nil
+        }
+        return make(
+            subscriptionType: String(type.dropFirst("claude_".count)),
+            rateLimitTier: organization["rate_limit_tier"] as? String
+        )
+    }
+}
+
+/// Each account's profile plan for this launch. A failed profile read is
+/// retried only after `retryInterval`, so the plan lookup never adds load
+/// to an account whose requests are failing.
+actor ClaudePlanCache {
+    private let retryInterval: TimeInterval
+    private var plans: [AccountProviderID: String] = [:]
+    private var retryAfter: [AccountProviderID: Date] = [:]
+
+    init(retryInterval: TimeInterval = 1_800) {
+        self.retryInterval = retryInterval
+    }
+
+    func plan(for accountProviderID: AccountProviderID) -> String? {
+        plans[accountProviderID]
+    }
+
+    func allowsLookup(
+        for accountProviderID: AccountProviderID,
+        at now: Date
+    ) -> Bool {
+        guard let blockedUntil = retryAfter[accountProviderID] else {
+            return true
+        }
+        return now >= blockedUntil
+    }
+
+    func record(_ plan: String, for accountProviderID: AccountProviderID) {
+        plans[accountProviderID] = plan
+        retryAfter[accountProviderID] = nil
+    }
+
+    func recordFailure(
+        for accountProviderID: AccountProviderID,
+        at now: Date
+    ) {
+        retryAfter[accountProviderID] = now.addingTimeInterval(retryInterval)
     }
 }

@@ -1168,6 +1168,10 @@ private final class ClaudeFallbackURLProtocol: URLProtocol,
             )
             return
         }
+        if url.path == "/api/oauth/profile" {
+            respond(statusCode: 404, body: Data())
+            return
+        }
         guard
             let status = ClaudeFallbackExchange.shared.recordUsage(
                 authorization: request.value(

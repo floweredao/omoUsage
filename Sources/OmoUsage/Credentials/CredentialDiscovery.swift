@@ -1241,27 +1241,10 @@ struct CredentialDiscovery: Sendable {
     private func claudePlanName(
         _ oauth: [String: Any]
     ) -> String? {
-        guard
-            let subscription = (
-                oauth["subscriptionType"] as? String
-            )?.nonEmpty
-        else {
-            return nil
-        }
-        let plan = subscription.capitalized
-        guard
-            let tier = (
-                oauth["rateLimitTier"] as? String
-            )?.nonEmpty?.lowercased(),
-            tier.contains("_\(subscription.lowercased())_"),
-            let suffix = tier.split(separator: "_").last,
-            suffix.last == "x",
-            let multiplier = Int(suffix.dropLast()),
-            multiplier > 0
-        else {
-            return plan
-        }
-        return "\(plan) \(multiplier)x"
+        ClaudePlanName.make(
+            subscriptionType: oauth["subscriptionType"] as? String,
+            rateLimitTier: oauth["rateLimitTier"] as? String
+        )
     }
 
     private func parseCodex(

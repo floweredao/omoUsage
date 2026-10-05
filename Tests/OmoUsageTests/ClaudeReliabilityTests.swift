@@ -162,8 +162,11 @@ private final class HephaestusOAuthHeaderRecorder: @unchecked Sendable {
         lock.withLock { headers = nil }
     }
 
+    /// Keeps the first request: the usage read precedes the profile read
+    /// that labels a credential without a plan.
     func record(_ request: URLRequest) {
         lock.withLock {
+            guard headers == nil else { return }
             headers = (
                 request.url?.absoluteString,
                 request.httpMethod,
