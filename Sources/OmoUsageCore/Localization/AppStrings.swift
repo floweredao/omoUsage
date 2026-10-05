@@ -150,6 +150,7 @@ public enum AppStringKey: String, CaseIterable, Sendable {
     case authenticationRequired
     case unavailable
     case refreshFailed
+    case rateLimitRetryNotice
     case lastRefreshAttempt
     case justNow
     case asOfNow
@@ -378,6 +379,7 @@ public struct AppStrings: Sendable {
         .authenticationRequired: "인증 필요",
         .unavailable: "사용할 수 없음",
         .refreshFailed: "새로고침 실패",
+        .rateLimitRetryNotice: "잠시 후 다시 확인할게요",
         .lastRefreshAttempt: "마지막 갱신 %@",
         .justNow: "방금",
         .asOfNow: "방금 기준",
@@ -593,6 +595,7 @@ public struct AppStrings: Sendable {
         .authenticationRequired: "Authentication Required",
         .unavailable: "Unavailable",
         .refreshFailed: "Refresh Failed",
+        .rateLimitRetryNotice: "Checking again shortly",
         .lastRefreshAttempt: "Last refreshed %@",
         .justNow: "Just now",
         .asOfNow: "As of now",

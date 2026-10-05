@@ -135,6 +135,11 @@ extension LocalizationResolving {
         text(.refreshFailed)
     }
 
+    /// Shown under retained values while a rate-limited provider waits.
+    public func rateLimitRetryNoticeText() -> String {
+        text(.rateLimitRetryNotice)
+    }
+
     /// Text shown beside the snapshot-age symbol so an out-of-date mobile
     /// snapshot is readable without color and stays distinct from a provider
     /// refresh failure.

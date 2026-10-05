@@ -1,6 +1,16 @@
 import OmoUsageCore
 import Foundation
 
+private actor FixtureRateLimitReads {
+    static let shared = FixtureRateLimitReads()
+    private var read: Set<AccountID> = []
+
+    /// Records this read and returns whether the account was read before.
+    func hasRead(_ accountID: AccountID) -> Bool {
+        !read.insert(accountID).inserted
+    }
+}
+
 struct FixtureUsageProvider: UsageProvider {
     let id: ProviderID
     let accountID: AccountID
@@ -32,6 +42,16 @@ struct FixtureUsageProvider: UsageProvider {
             // path. Without the persisted, explicitly authorized mirror it
             // throws notFound rather than making fixture usage look connected.
             _ = try claudeCredentialDiscovery?.claude(now: now)
+            // Rate-limit QA: the first read succeeds, every later one gets
+            // the 429 a throttled account sees.
+            if
+                ProcessInfo.processInfo.environment[
+                    "OMO_USAGE_FIXTURE_CLAUDE_RATE_LIMIT"
+                ] == "1",
+                await FixtureRateLimitReads.shared.hasRead(accountID)
+            {
+                throw ProviderTransportError.requestFailed(.claude, 429)
+            }
             let json = claudeCredentialDiscovery == nil
                 ? Self.claudeJSON
                 : Self.claudeAuthenticationUIJSON

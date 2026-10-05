@@ -161,6 +161,20 @@ struct ProviderSectionView: View {
                             ProviderMetadataVisualTokens.foreground
                         )
                 }
+
+                if freshness.showsRetryNotice {
+                    Label(
+                        localization.rateLimitRetryNoticeText(),
+                        systemImage: "clock.arrow.circlepath"
+                    )
+                        .font(
+                            .system(size: DashboardTypographyTokens.metadata)
+                        )
+                        .foregroundStyle(
+                            ProviderMetadataVisualTokens.foreground
+                        )
+                        .accessibilityIdentifier("provider-retry-notice")
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

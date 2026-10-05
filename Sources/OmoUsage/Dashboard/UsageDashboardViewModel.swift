@@ -857,6 +857,10 @@ final class UsageDashboardViewModel {
         if case ProviderTransportError.authenticationRequired = error {
             return .authenticationRequired
         }
+        // A rate-limited account is still connected; it is only waiting.
+        if case ProviderTransportError.requestFailed(_, 429) = error {
+            return .available
+        }
         return .failed
     }
 
@@ -896,6 +900,8 @@ final class UsageDashboardViewModel {
             switch error {
             case .authenticationRequired:
                 return .credential
+            case .requestFailed(_, 429):
+                return .rateLimited
             case .requestFailed:
                 return .service
             case .transientTransport, .operationTimedOut:
