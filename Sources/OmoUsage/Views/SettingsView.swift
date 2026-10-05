@@ -1457,7 +1457,10 @@ enum ProviderAccountAdditionRowState: Equatable, Sendable {
 
 /// Whether a provider row offers Add Account at all. Another account can
 /// only be added beside a connected primary account, so the affordance is
-/// absent, not merely disabled, until the primary is connected. A
+/// absent, not merely disabled, until the primary is connected. A primary
+/// whose latest refresh failed (`.failed`: its credential was found and
+/// accepted, the usage request did not complete) is still connected, so a
+/// rate-limited or offline primary does not hide Add Account. A
 /// companion login that is already pending keeps its own Check Again and
 /// Cancel controls reachable no matter what happens to the primary account
 /// meanwhile.
@@ -1487,7 +1490,10 @@ enum ProviderAccountAdditionAvailability: Equatable, Sendable {
         isPrimaryDisconnected: Bool
     ) -> ProviderAccountAdditionAvailability {
         if additionState == .waiting { return .pending }
-        guard primaryAvailability == .available, !isPrimaryDisconnected else {
+        guard
+            primaryAvailability == .available || primaryAvailability == .failed,
+            !isPrimaryDisconnected
+        else {
             return .hidden
         }
         return additionState == .idle ? .offered : .blocked

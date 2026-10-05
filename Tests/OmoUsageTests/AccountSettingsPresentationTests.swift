@@ -26,7 +26,6 @@ struct AccountSettingsPresentationTests {
             nil,
             .authenticationRequired,
             .unavailable,
-            .failed,
             .schemaChanged
         ] as [ProviderAvailability?]
     )
@@ -49,21 +48,53 @@ struct AccountSettingsPresentationTests {
         )
     }
 
-    @Test
-    func connectedPrimaryOffersAddAccountAndKeepsBlockingVisible() {
+    /// `.failed` means the primary's credential was accepted but its latest
+    /// usage request did not complete (rate limit, network), so it is still
+    /// a connected primary.
+    @Test(arguments: [.available, .failed] as [ProviderAvailability])
+    func connectedPrimaryOffersAddAccountAndKeepsBlockingVisible(
+        availability: ProviderAvailability
+    ) {
         #expect(
             ProviderAccountAdditionAvailability.resolve(
                 additionState: .idle,
-                primaryAvailability: .available,
+                primaryAvailability: availability,
                 isPrimaryDisconnected: false
             ) == .offered
         )
         #expect(
             ProviderAccountAdditionAvailability.resolve(
                 additionState: .blockedByOtherAddition,
-                primaryAvailability: .available,
+                primaryAvailability: availability,
                 isPrimaryDisconnected: false
             ) == .blocked
+        )
+        #expect(
+            ProviderAccountAdditionAvailability.resolve(
+                additionState: .idle,
+                primaryAvailability: availability,
+                isPrimaryDisconnected: true
+            ) == .hidden
+        )
+    }
+
+    /// Regression: a Claude primary whose usage read keeps failing
+    /// transiently showed "Check Failed" and no Add Account at all.
+    @Test(.timeLimit(.minutes(1)))
+    func transientlyFailingClaudePrimaryStillOffersAddAccount() async {
+        let viewModel = UsageDashboardViewModel(providers: [
+            TransientlyFailingUsageProvider(id: .claude, accountID: .legacy)
+        ])
+        await viewModel.refresh()
+
+        let primary = AccountProviderID(accountID: .legacy, providerID: .claude)
+        #expect(viewModel.accountConnectionStates[primary] == .failed)
+        #expect(
+            ProviderAccountAdditionAvailability.resolve(
+                provider: .claude,
+                viewModel: viewModel,
+                additionState: .idle
+            ) == .offered
         )
     }
 
@@ -97,7 +128,7 @@ struct AccountSettingsPresentationTests {
     @Test(
         .timeLimit(.minutes(1)),
         arguments: ProviderID.allCases,
-        [nil, .authenticationRequired, .unavailable, .failed, .schemaChanged]
+        [nil, .authenticationRequired, .unavailable, .schemaChanged]
             as [ProviderAvailability?]
     )
     func availableAdditionalCannotStandInForPrimary(
@@ -543,6 +574,15 @@ struct AccountSettingsPresentationTests {
                 == .rejected(.invalidLabel)
         )
         #expect(renamed.isEmpty)
+    }
+}
+
+private struct TransientlyFailingUsageProvider: UsageProvider {
+    let id: ProviderID
+    let accountID: AccountID
+
+    func fetch(now: Date) async throws -> ProviderUsage {
+        throw URLError(.timedOut)
     }
 }
 
