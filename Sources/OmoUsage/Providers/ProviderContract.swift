@@ -3,6 +3,7 @@ import Foundation
 
 enum ProviderEndpointPurpose: String, CaseIterable, Sendable {
     case claudeOAuthUsage = "claude.oauth-usage"
+    case claudeOAuthProfile = "claude.oauth-profile"
     case claudeTokenRefresh = "claude.token-refresh"
     case claudeDesktopUsage = "claude.desktop-usage"
     case claudeTokenExchange = "claude.token-exchange"
