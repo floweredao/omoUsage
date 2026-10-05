@@ -252,6 +252,11 @@ struct ClaudeUsageProvider: UsageProvider {
                     retryAfter: failure.retryAfter
                 )
             }
+            DiagnosticStore.shared.record(
+                error: failure.transportError,
+                provider: id,
+                category: .providerRefresh
+            )
             throw failure.transportError
         }
         let planName = try await resolvedPlanName(
