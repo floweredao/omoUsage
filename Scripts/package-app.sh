@@ -176,6 +176,11 @@ mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources/ProviderIcons" "$CONTENTS/Framew
 # ditto preserves the versioned framework's symlinks and executable permissions.
 ditto "$SPARKLE_FRAMEWORK" "$CONTENTS/Frameworks/Sparkle.framework"
 cp ".build/release/OmoUsage" "$CONTENTS/MacOS/OmoUsage"
+if [ "$QA_FIXTURES" = no ]; then
+    # Debug map entries record absolute build paths, including the builder's
+    # home directory; published binaries ship without them.
+    strip -S "$CONTENTS/MacOS/OmoUsage"
+fi
 cp "Config/Info.plist" "$CONTENTS/Info.plist"
 # SwiftPM does not expand Xcode build settings in the copied plist.
 /usr/libexec/PlistBuddy \
