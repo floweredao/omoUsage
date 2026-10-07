@@ -22,11 +22,12 @@ struct ProviderOrderingTests {
     }
 
     @Test
-    func nativeListHeightFitsEveryCompleteRow() {
-        #expect(ProviderOrderingLayout.rowHeight == 60)
-        #expect(ProviderOrderingLayout.verticalRowInset == 0)
+    func orderingRowValueSpeaksPositionThenConnectionState() {
         #expect(
-            ProviderOrderingLayout.listHeight(itemCount: 9) == 540
+            ProviderOrderingAccessibility.rowValue(
+                position: "2 of 6",
+                status: "Connected"
+            ) == "2 of 6, Connected"
         )
     }
 

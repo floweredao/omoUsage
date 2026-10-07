@@ -714,7 +714,9 @@ extension Driver {
             let labels = elements(try get(id)).flatMap { element in
                 [kAXValueAttribute, kAXTitleAttribute, kAXDescriptionAttribute].map { string(element, $0) }
             }
-            try require(labels.contains("Connected") && !labels.contains("Hidden from dashboard"),
+            // The row speaks "<position>, <state>" as one value.
+            try require(labels.contains { $0.contains("Connected") }
+                            && !labels.contains { $0.contains("Hidden from dashboard") },
                         "ordering connection status incorrect for \(account): expected Connected")
         }
         try screenshot(name)

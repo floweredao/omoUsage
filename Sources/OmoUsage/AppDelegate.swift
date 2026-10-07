@@ -372,7 +372,27 @@ enum SettingsWindowContract {
         .zoomButton
     ]
     static let contentWidth: CGFloat = 480
-    static let maximumPaneBodyHeight: CGFloat = 520
+    /// A pane never grows the window past this content height; taller
+    /// panes scroll inside their one grouped `Form`.
+    static let maximumPaneContentHeight: CGFloat = 640
+
+    /// The window content height for a pane whose `Form` content measures
+    /// `formContentHeight`: the content itself, up to the cap.
+    static func preferredContentHeight(
+        forFormContentHeight formContentHeight: CGFloat
+    ) -> CGFloat {
+        min(formContentHeight, maximumPaneContentHeight)
+    }
+
+    /// Whether a resize to the next pane's height animates. The first fit
+    /// and a hidden window jump, and Reduce Motion always jumps.
+    static func animatesFit(
+        isInitialFit: Bool,
+        isVisible: Bool,
+        reduceMotion: Bool
+    ) -> Bool {
+        !isInitialFit && isVisible && !reduceMotion
+    }
 
     @MainActor
     static func apply(to window: NSWindow) {
@@ -1369,9 +1389,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         )
         guard abs(frame.height - settingsWindow.frame.height) > 0.5
         else { return }
-        let animates = !settingsWindowNeedsInitialFit
-            && settingsWindow.isVisible
-            && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        let animates = SettingsWindowContract.animatesFit(
+            isInitialFit: settingsWindowNeedsInitialFit,
+            isVisible: settingsWindow.isVisible,
+            reduceMotion: NSWorkspace.shared
+                .accessibilityDisplayShouldReduceMotion
+        )
         settingsWindowNeedsInitialFit = false
         settingsWindow.setFrame(frame, display: true, animate: animates)
     }

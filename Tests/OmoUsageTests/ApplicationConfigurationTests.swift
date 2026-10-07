@@ -65,6 +65,50 @@ struct ApplicationConfigurationTests {
     }
 
     @Test
+    func settingsPaneHeightFollowsItsFormUpToTheCap() {
+        #expect(SettingsWindowContract.maximumPaneContentHeight == 640)
+        #expect(
+            SettingsWindowContract.preferredContentHeight(
+                forFormContentHeight: 219
+            ) == 219
+        )
+        #expect(
+            SettingsWindowContract.preferredContentHeight(
+                forFormContentHeight: 640
+            ) == 640
+        )
+        #expect(
+            SettingsWindowContract.preferredContentHeight(
+                forFormContentHeight: 1_180
+            ) == 640
+        )
+    }
+
+    @Test
+    func settingsWindowFitAnimatesOnlyVisiblePaneSwitchesWithoutReduceMotion() {
+        #expect(
+            SettingsWindowContract.animatesFit(
+                isInitialFit: false, isVisible: true, reduceMotion: false
+            )
+        )
+        #expect(
+            !SettingsWindowContract.animatesFit(
+                isInitialFit: false, isVisible: true, reduceMotion: true
+            )
+        )
+        #expect(
+            !SettingsWindowContract.animatesFit(
+                isInitialFit: true, isVisible: true, reduceMotion: false
+            )
+        )
+        #expect(
+            !SettingsWindowContract.animatesFit(
+                isInitialFit: false, isVisible: false, reduceMotion: false
+            )
+        )
+    }
+
+    @Test
     func settingsPanesFollowTheFormerSectionOrderWithStableIdentifiers() {
         #expect(SettingsPane.allCases == [
             .general, .display, .webAccess, .dashboardOrder, .accounts

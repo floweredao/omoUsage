@@ -3,15 +3,6 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-enum ProviderOrderingLayout {
-    static let rowHeight: CGFloat = 60
-    static let verticalRowInset: CGFloat = 0
-
-    static func listHeight(itemCount: Int) -> CGFloat {
-        rowHeight * CGFloat(max(1, itemCount))
-    }
-}
-
 enum ProviderOrderingAccessibility {
     static func identityName(
         providerName: String,
@@ -28,6 +19,12 @@ enum ProviderOrderingAccessibility {
         position: String
     ) -> String {
         "\(identityName), \(position)"
+    }
+
+    /// A row's spoken value. Neither the position nor the connection
+    /// state is visible text, so both ride on the row element.
+    static func rowValue(position: String, status: String) -> String {
+        "\(position), \(status)"
     }
 }
 
@@ -235,68 +232,62 @@ private struct ProviderOrderingDragHandle: NSViewRepresentable {
     }
 }
 
+/// The Order pane: the grouped form's rows are the draggable accounts,
+/// the instruction is the section footer, and Reset to Default follows as
+/// its own row. The window title already names the pane.
 struct ProviderOrderingView: View {
     @Bindable var viewModel: UsageDashboardViewModel
+    /// The resolved status line for the last action, shown under Reset.
+    var feedback: String?
     @Environment(\.appLocalization) private var localization
     @FocusState private var focused: AccountProviderID?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var drag = ProviderOrderingDragSession()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(localization.text(.dashboardOrder))
-                    .font(.system(size: 14, weight: .bold))
-                Spacer()
-                Button(localization.text(.resetToDefault)) {
-                    viewModel.resetAccountProviderOrder()
-                }
-                .controlSize(.small)
-                .disabled(viewModel.isAccountProviderOrderDefault)
-            }
-
-            // A List's NSOutlineView consumes mouse-down before the AppKit
-            // handle receives it. The settings view already owns scrolling.
-            VStack(spacing: 0) {
-                ForEach(Array(items.enumerated()), id: \.element.id) {
-                    index, item in
-                    row(item, index: index)
-                        .padding(.horizontal, 16)
-                        .background(
-                            Color.accentColor.opacity(
-                                drag.dragged == item.id ? 0.10 : 0
-                            ),
-                            in: RoundedRectangle(
-                                cornerRadius: 8,
-                                style: .continuous
-                            )
+        Section {
+            ForEach(Array(items.enumerated()), id: \.element.id) {
+                index, item in
+                row(item, index: index)
+                    // The dragged row stays in place, dimmed, while its
+                    // neighbors preview the new order around it.
+                    .opacity(drag.dragged == item.id ? 0.5 : 1)
+                    .onDrop(
+                        of: [ProviderOrderingTransfer.type],
+                        delegate: ProviderOrderingDropDelegate(
+                            isActive: drag.dragged != nil,
+                            entered: { preview(onto: item.id) },
+                            dropped: acceptDrop
                         )
-                        .onDrop(
-                            of: [ProviderOrderingTransfer.type],
-                            delegate: ProviderOrderingDropDelegate(
-                                isActive: drag.dragged != nil,
-                                entered: { preview(onto: item.id) },
-                                dropped: acceptDrop
-                            )
-                        )
-                }
+                    )
             }
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("provider-ordering-list")
-            .frame(
-                height: ProviderOrderingLayout.listHeight(
-                    itemCount: items.count
-                )
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(SettingsRowVisualTokens.border, lineWidth: 0.5)
+        } footer: {
+            SettingsSectionFooter {
+                // Grouped-form rows share no container view, so the list's own
+                // description is the stable scroll anchor QA drivers reveal.
+                Text(localization.text(.dashboardOrderDescription))
+                    .accessibilityIdentifier("provider-ordering-list")
             }
         }
-        .onDisappear { cancelDrag() }
-        .onChange(of: viewModel.accountProviderOrder) { cancelDrag() }
-        .onChange(of: viewModel.accountProviderOrderingItems.map(\.id)) { cancelDrag() }
+
+        Section {
+            Button(localization.text(.resetToDefault)) {
+                viewModel.resetAccountProviderOrder()
+            }
+            .disabled(viewModel.isAccountProviderOrderDefault)
+            .onDisappear { cancelDrag() }
+            .onChange(of: viewModel.accountProviderOrder) { cancelDrag() }
+            .onChange(of: viewModel.accountProviderOrderingItems.map(\.id)) {
+                cancelDrag()
+            }
+        } footer: {
+            SettingsSectionFooter {
+                if let feedback {
+                    Text(feedback)
+                        .accessibilityIdentifier("settings-feedback")
+                }
+            }
+        }
     }
 
     private var items: [AccountProviderOrderingItem] {
@@ -325,24 +316,17 @@ struct ProviderOrderingView: View {
                 .frame(width: 24, height: 24)
             VStack(alignment: .leading, spacing: 1) {
                 Text(item.provider.displayName)
-                    .font(.system(size: 13.5, weight: .semibold))
+                    .font(.system(size: 13, weight: .semibold))
                 if item.showsAccountLabel {
                     Text(item.accountLabel)
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                 }
-                Text(statusText(item))
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(.secondary)
             }
             Spacer()
-            Text(position)
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
             moveButton(item, offset: -1, symbol: "arrow.up", index: index)
             moveButton(item, offset: 1, symbol: "arrow.down", index: index)
         }
-        .frame(height: ProviderOrderingLayout.rowHeight)
         .contentShape(Rectangle())
         .focusable()
         .focusEffectDisabled()
@@ -350,7 +334,12 @@ struct ProviderOrderingView: View {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("provider-ordering-row.\(ProviderOrderingDrag.payload(for: item.id))")
         .accessibilityLabel(identityName)
-        .accessibilityValue(position)
+        .accessibilityValue(
+            ProviderOrderingAccessibility.rowValue(
+                position: position,
+                status: statusText(item)
+            )
+        )
         .accessibilityAction(named: localization.format(
             .moveUp, identityName
         )) { move(item, by: -1) }
