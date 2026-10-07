@@ -38,6 +38,7 @@
 		4545BD1043566A0598150B91 /* DiagnosticStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88A3EEA0AD46B5A6B8F84F81 /* DiagnosticStore.swift */; };
 		4B381373CDF4B7F91D07C3B9 /* MobileUsageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 180AC40D8EDBC622D6A9C298 /* MobileUsageView.swift */; };
 		4BBB05F174BCBEBDBAE40B20 /* UsageModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8DA9D36A26BE61B88ED41BB /* UsageModels.swift */; };
+		4CD55248BB3D7A49A1359CA5 /* SettingsPanes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FFF8F869FC214B583EE2779 /* SettingsPanes.swift */; };
 		4D56D9A1368CDEDE47FA1207 /* ZAIUsageProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10C4986CF84E3A839055E01 /* ZAIUsageProvider.swift */; };
 		4ECADF871C4A4A10F7F72FCD /* ProviderID.swift in Sources */ = {isa = PBXBuildFile; fileRef = 190F3B1AE7E3ED6996235F35 /* ProviderID.swift */; };
 		51638F234F2D5AE486A54EE1 /* ClaudeCookieDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81985102BEB8166F95456060 /* ClaudeCookieDatabase.swift */; };
@@ -191,6 +192,7 @@
 		57298D98E6BA5B39C881BBE7 /* ProviderTextLocalization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderTextLocalization.swift; sourceTree = "<group>"; };
 		57E5E7F93A4FF031DEF61076 /* AppIcon.svg */ = {isa = PBXFileReference; path = AppIcon.svg; sourceTree = "<group>"; };
 		5958F1C5F8136597C4779138 /* ClaudeRefreshCooldown.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeRefreshCooldown.swift; sourceTree = "<group>"; };
+		5FFF8F869FC214B583EE2779 /* SettingsPanes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsPanes.swift; sourceTree = "<group>"; };
 		61F5278036864C9CBF1983DB /* ProviderDisconnectionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderDisconnectionStore.swift; sourceTree = "<group>"; };
 		687CB8227B3969297CADD756 /* ClaudeBrowserAuthenticationListener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeBrowserAuthenticationListener.swift; sourceTree = "<group>"; };
 		6B53BDC090D74645E8E79C45 /* LocalizationMacExtensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalizationMacExtensions.swift; sourceTree = "<group>"; };
@@ -372,6 +374,7 @@
 				1EE0E4EACC8A1D3CF2749BBC /* ProviderOrderingView.swift */,
 				DC0B81DC5CFBF8B0D0E43BBD /* ProviderSectionView.swift */,
 				F31A95484F3E7C27B3246C59 /* RefreshTimestampPresenter.swift */,
+				5FFF8F869FC214B583EE2779 /* SettingsPanes.swift */,
 				F2F93832A03EEFC4678E3EFD /* SettingsView.swift */,
 				FBD6F6A5B76A2BAD347F2D9B /* SideNotchPanelView.swift */,
 				E5B22CD5D991B72AA8A5C823 /* UsageMeterView.swift */,
@@ -734,6 +737,7 @@
 				098A1A499BB09A93EFCAC141 /* RefreshTimestampPresenter.swift in Sources */,
 				D6712313D01B279FD91F9573 /* SecurityKeychainReader.swift in Sources */,
 				B399D2EAF532C1A631F03814 /* SecurityKeychainWriter.swift in Sources */,
+				4CD55248BB3D7A49A1359CA5 /* SettingsPanes.swift in Sources */,
 				F053355E2A64A69C851FF8C3 /* SettingsView.swift in Sources */,
 				0DB3F13EF62480568A7A6303 /* SideNotchPanelController.swift in Sources */,
 				56A2379729756259D8158297 /* SideNotchPanelView.swift in Sources */,

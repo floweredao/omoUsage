@@ -172,13 +172,19 @@ other privileged controls remain native-only.
   in full semantic primary.
 - Popover height calculation uses the same account-alias visibility rule as
   provider headers, including a lone non-default account and repeated providers.
-- Settings groups general controls, presentation, and web access under native
-  14 pt bold section headings with 12 pt leading separation and 4 pt trailing
-  separation. Updates belong to General; Dashboard Order remains between
-  presentation/web controls and Provider Authentication. The existing outer
-  body remains the only scroll owner, following StyleGallery
-  `patterns/viewport-shell/scroll-body-shell.md`; no sidebar, tab, nested scroll,
-  checkbox, new palette, or new material is introduced.
+- Settings follows Apple's HIG for a macOS settings window: a noncustomizable
+  `.preference`-style toolbar switches five panes in the former section order -
+  General (language, Launch at Login, updates), Display, Web Access,
+  Dashboard Order, and Provider Authentication - with SF Symbols
+  (`gearshape`, `macwindow`, `globe`, `list.number`, `person.crop.circle`),
+  always marks the active pane, and titles the window with the visible pane's
+  name. The window reopens on the last viewed pane. Section headings inside a
+  pane are dropped because the toolbar and window title already name it; no
+  sidebar, nested scroll, checkbox, new palette, or new material is introduced.
+- Refresh lives only in the Provider Authentication pane footer, beside the
+  feedback line: it re-checks connections and usage, which is meaningful only
+  next to the accounts it reports on. Settings apply immediately, so no pane
+  carries a save or apply button.
 - Side-notch mode pins a 6 pt hidden handle or 56 pt revealed rail to
   `NSScreen.visibleFrame.maxX`, centers it vertically with 20 pt minimum top
   and bottom margins, and grows to 344 pt inward without moving its right
@@ -244,10 +250,15 @@ other privileged controls remain native-only.
 - Settings owns one retained window that closes and reopens without duplication.
   It is deliberately not miniaturizable because a minimized Settings thumbnail
   creates Dock presence for an otherwise Dockless `LSUIElement` application.
-- Settings owns one page scroll region. The existing outer `ScrollView` around
-  the settings stack is the only scroll owner; every section inside it,
-  including `Dashboard Order`, lays out at its intrinsic content height and
-  never nests a second scroll region. The ordering list is height-driven by its
+  It is also not resizable, zoomable, or full-screen capable: minimize and zoom
+  show dimmed, a title-bar double-click does nothing, and the window is 480 pt
+  wide. The app menu offers Settings… with Command-Comma.
+- Each pane sizes the window to its content. The window keeps its top edge and
+  animates to the new height on a pane switch (instantly under Reduce Motion).
+- Each pane owns one scroll region. Its outer `ScrollView` is the only scroll
+  owner, sized to the pane's intrinsic content up to a 520 pt body; every
+  section inside it, including `Dashboard Order`, lays out at its intrinsic
+  content height and never nests a second scroll region. The ordering list is height-driven by its
   row count (row height times count) rather than a fixed viewport fraction, so
   a wheel gesture anywhere in Settings always moves the same surface.
 - This follows StyleGallery `scroll-body-shell`: the settings header and footer

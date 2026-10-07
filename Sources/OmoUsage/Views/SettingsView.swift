@@ -216,6 +216,8 @@ struct SettingsView: View {
     let onShareWebDashboardURL: (URL, NSView) -> Bool
     let onRetryWebDashboard: () -> Void
     let appUpdateController: AppUpdateController
+    let paneSelection: SettingsPaneSelection
+    let onPreferredContentHeightChange: (CGFloat) -> Void
     private let authenticateDevin: @MainActor () async throws -> CredentialSnapshot
     private let authenticateKiro: @MainActor () async throws -> CredentialSnapshot
     private let discoverKiro: (KiroBrowserConnectionTarget) throws -> CredentialSnapshot
@@ -246,6 +248,7 @@ struct SettingsView: View {
     @State private var dashboardLinkPresentation =
         WebDashboardLinkPresentationState()
     @State private var launchAtLogin = LaunchAtLoginController()
+    @State private var paneContentHeight: CGFloat = 0
 
     init(
         viewModel: UsageDashboardViewModel,
@@ -305,7 +308,9 @@ struct SettingsView: View {
         onCreateWebDashboardURL: @escaping () -> URL?,
         onShareWebDashboardURL: @escaping (URL, NSView) -> Bool,
         onRetryWebDashboard: @escaping () -> Void,
-        appUpdateController: AppUpdateController
+        appUpdateController: AppUpdateController,
+        paneSelection: SettingsPaneSelection,
+        onPreferredContentHeightChange: @escaping (CGFloat) -> Void
     ) {
         self.viewModel = viewModel
         self.localization = localization
@@ -324,6 +329,8 @@ struct SettingsView: View {
         self.onShareWebDashboardURL = onShareWebDashboardURL
         self.onRetryWebDashboard = onRetryWebDashboard
         self.appUpdateController = appUpdateController
+        self.paneSelection = paneSelection
+        self.onPreferredContentHeightChange = onPreferredContentHeightChange
         self.authenticateDevin = authenticateDevin
         self.authenticateKiro = authenticateKiro
         self.discoverKiro = discoverKiro
@@ -382,16 +389,8 @@ struct SettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(localization.text(.settingsTitle))
-                    .font(.system(size: 19, weight: .bold))
-                Text(localization.text(.settingsSubtitle))
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-            }
-
             ScrollView(.vertical, showsIndicators: true) {
-                LazyVStack(spacing: 8) {
+                VStack(spacing: 8) {
                     if accountRegistryController.recoveryState != .ready {
                         AccountRegistryRecoveryBanner(
                             state: accountRegistryController.recoveryState,
@@ -402,310 +401,322 @@ struct SettingsView: View {
                         )
                     }
 
-                    settingsSectionTitle(.generalSettings)
-
-                    HStack {
-                        Text(localization.text(.language))
-                            .font(.system(size: 13.5, weight: .semibold))
-                        Spacer()
-                        Picker(
-                            localization.text(.language),
-                            selection: Binding(
-                                get: { localization.language },
-                                set: { language in
-                                    localization.select(language)
-                                    onLanguageChange()
-                                }
-                            )
-                        ) {
-                            Text(localization.text(.korean))
-                                .tag(AppLanguage.korean)
-                            Text(localization.text(.english))
-                                .tag(AppLanguage.english)
-                        }
-                        .labelsHidden()
-                        .pickerStyle(.segmented)
-                        .fixedSize(horizontal: true, vertical: false)
-                    }
-                    .padding(10)
-                    .background(
-                        Color(nsColor: .controlBackgroundColor),
-                        in: RoundedRectangle(
-                            cornerRadius: 10,
-                            style: .continuous
-                        )
-                    )
-
-                    LaunchAtLoginSettingsRow(controller: launchAtLogin)
-
-                    AppUpdateSettingsRow(controller: appUpdateController)
-
-                    settingsSectionTitle(.displaySettings)
-
-                    HStack {
-                        Text(localization.text(.dashboardPresentation))
-                            .font(.system(size: 13.5, weight: .semibold))
-                        Spacer()
-                        Picker(
-                            localization.text(.dashboardPresentation),
-                            selection: Binding(
-                                get: { presentationStyle },
-                                set: { style in
-                                    presentationStyle = style
-                                    onPresentationStyleChange(style)
-                                }
-                            )
-                        ) {
-                            Text(localization.text(.popoverPresentation))
-                                .tag(DashboardPresentationStyle.popover)
-                            Text(localization.text(.sideNotchPresentation))
-                                .tag(DashboardPresentationStyle.sideNotch)
-                        }
-                        .labelsHidden()
-                        .pickerStyle(.segmented)
-                        .fixedSize(horizontal: true, vertical: false)
-                    }
-                    .padding(10)
-                    .background(
-                        Color(nsColor: .controlBackgroundColor),
-                        in: RoundedRectangle(
-                            cornerRadius: 10,
-                            style: .continuous
-                        )
-                    )
-
-                    if presentationStyle == .sideNotch {
+                    switch paneSelection.pane {
+                    case .general:
                         HStack {
-                            Text(
-                                localization.text(
-                                    .sideNotchHideDelay
-                                )
-                            )
-                                .font(
-                                    .system(
-                                        size: 13.5,
-                                        weight: .semibold
-                                    )
-                                )
+                            Text(localization.text(.language))
+                                .font(.system(size: 13.5, weight: .semibold))
                             Spacer()
                             Picker(
-                                localization.text(
-                                    .sideNotchHideDelay
-                                ),
+                                localization.text(.language),
                                 selection: Binding(
-                                    get: { sideNotchHideDelay },
-                                    set: { delay in
-                                        sideNotchHideDelay = delay
-                                        onSideNotchHideDelayChange(
-                                            delay
-                                        )
+                                    get: { localization.language },
+                                    set: { language in
+                                        localization.select(language)
+                                        onLanguageChange()
                                     }
                                 )
                             ) {
-                                ForEach(
-                                    SideNotchHideDelay.allCases
-                                ) { delay in
-                                    Text(
-                                        localization.format(
-                                            .sideNotchHideDelayOption,
-                                            delay.rawValue
-                                        )
-                                    )
-                                        .tag(delay)
-                                }
+                                Text(localization.text(.korean))
+                                    .tag(AppLanguage.korean)
+                                Text(localization.text(.english))
+                                    .tag(AppLanguage.english)
                             }
                             .labelsHidden()
-                            .pickerStyle(.menu)
-                            .frame(width: 128)
-                            .accessibilityLabel(
-                                localization.text(
-                                    .sideNotchHideDelay
-                                )
-                            )
+                            .pickerStyle(.segmented)
+                            .fixedSize(horizontal: true, vertical: false)
                         }
                         .padding(10)
                         .background(
-                            Color(
-                                nsColor:
-                                    .controlBackgroundColor
-                            ),
+                            Color(nsColor: .controlBackgroundColor),
                             in: RoundedRectangle(
                                 cornerRadius: 10,
                                 style: .continuous
                             )
                         )
-                    }
 
-                    settingsSectionTitle(.webAccessSettings)
+                        LaunchAtLoginSettingsRow(controller: launchAtLogin)
 
-                    WebDashboardSettingsRow(
-                        status: webDashboardStatusStore.status,
-                        tailscaleController:
-                            tailscaleDashboardController,
-                        onOpen: {
-                            if !onOpenWebDashboard() {
-                                feedback = .key(.webDashboardOpenFailed)
-                            }
-                        },
-                        onOpenQRCode: {
-                            if let failureKey =
-                                dashboardLinkPresentation.openQRCode(
-                                    onCreateWebDashboardURL
-                                )
-                            {
-                                feedback = .key(failureKey)
-                            }
-                        },
-                        onShareLink: { anchorView in
-                            if let failureKey =
-                                dashboardLinkPresentation.shareLink(
-                                    makeURL: onCreateWebDashboardURL,
-                                    present: {
-                                        onShareWebDashboardURL(
-                                            $0,
-                                            anchorView
-                                        )
+                        AppUpdateSettingsRow(controller: appUpdateController)
+
+                    case .display:
+                        HStack {
+                            Text(localization.text(.dashboardPresentation))
+                                .font(.system(size: 13.5, weight: .semibold))
+                            Spacer()
+                            Picker(
+                                localization.text(.dashboardPresentation),
+                                selection: Binding(
+                                    get: { presentationStyle },
+                                    set: { style in
+                                        presentationStyle = style
+                                        onPresentationStyleChange(style)
                                     }
                                 )
-                            {
-                                feedback = .key(failureKey)
+                            ) {
+                                Text(localization.text(.popoverPresentation))
+                                    .tag(DashboardPresentationStyle.popover)
+                                Text(localization.text(.sideNotchPresentation))
+                                    .tag(DashboardPresentationStyle.sideNotch)
                             }
-                        },
-                        onRetry: onRetryWebDashboard
-                    )
-
-                    if accountRegistryController.registry != nil {
-                        ProviderOrderingView(viewModel: viewModel)
-                            .padding(.top, 4)
-
-                        Text(localization.text(.providerAuthentication))
-                            .font(.system(size: 14, weight: .bold))
-                            .frame(
-                                maxWidth: .infinity,
-                                alignment: .leading
+                            .labelsHidden()
+                            .pickerStyle(.segmented)
+                            .fixedSize(horizontal: true, vertical: false)
+                        }
+                        .padding(10)
+                        .background(
+                            Color(nsColor: .controlBackgroundColor),
+                            in: RoundedRectangle(
+                                cornerRadius: 10,
+                                style: .continuous
                             )
-                            .padding(.top, 12)
-                            .padding(.bottom, 4)
-                            .accessibilityAddTraits(.isHeader)
+                        )
 
-                        ForEach(viewModel.providerOrder, id: \.self) {
-                            provider in
-                            ProviderSettingsRow(
-                                provider: provider,
-                                viewModel: viewModel,
-                                connectionPresentation:
-                                    connectionCoordinator.state(for: provider),
-                                connectionControlsDisabled:
-                                    connectionControlsDisabled(for: provider),
-                                keyDraft: binding(for: provider),
-                                keySource: accountRegistryController
-                                    .keyStorageSource(for: provider),
-                                needsLegacyCleanup: accountRegistryController
-                                    .pendingLegacyCleanup.contains {
-                                        $0.accountID == .legacy
-                                            && $0.providerID == provider
-                                    },
-                                onCleanupLegacy: retryLegacyKeyCleanup,
-                                onSetup: {
-                                    connectProvider(provider)
-                                },
-                                onSave: { saveKey(for: provider) },
-                                onRemove: { removeKey(for: provider) },
-                                onDisconnect: {
-                                    disconnectProvider(provider)
-                                },
-                                onReconnect: {
-                                    reconnectProvider(provider)
-                                },
-                                onRetry: {
-                                    retryProvider(provider)
-                                },
-                                accounts: ProviderAccountRowPresentation.rows(
-                                    from: accountRegistryController
-                                        .settingsAccounts(for: provider)
-                                ),
-                                newAccountLabel: accountLabelBinding(
-                                    for: provider
-                                ),
-                                newAccountKey: accountKeyBinding(
-                                    for: provider
-                                ),
-                                onAddAccount: {
-                                    addAccount(for: provider)
-                                },
-                                onRemoveAccount: removeAccount,
-                                onRenameAccount: renameAccount,
-                                onAliasOutcome: reportAliasOutcome,
-                                additionAvailability:
-                                    ProviderAccountAdditionAvailability.resolve(
-                                        provider: provider,
-                                        viewModel: viewModel,
-                                        additionState: additionState(for: provider)
-                                    ),
-                                onCheckAgain: checkForCompanionCredential,
-                                onCancelAddition: cancelAddition,
-                                isAwaitingConnectionCredential:
-                                    provider == .codex
-                                        && codexReconnectCoordinator
-                                            .isWaiting,
-                                onCheckAgainConnection:
-                                    checkForCodexReconnectCredential,
-                                onCancelConnection: {
-                                    if provider == .kiro { cancelKiroConnection() }
-                                    else if provider == .devin { cancelDevinConnection() }
-                                    else if provider == .claude { cancelClaudeConnection() }
-                                    else { cancelCodexReconnect() }
-                                },
-                                browserConnectionTarget: devinConnection.pending,
-                                kiroConnectionTarget: kiroConnection.pending,
-                                claudeConnectionTarget: claudeConnection.pending,
-                                onBrowserConnect: {
-                                    resetKeychainAuthorizationForUserAction()
-                                    startDevinConnection(.existing($0))
-                                },
-                                onKiroConnect: {
-                                    resetKeychainAuthorizationForUserAction()
-                                    startKiroConnection(.existing($0))
-                                },
-                                onClaudeConnect: {
-                                    resetKeychainAuthorizationForUserAction()
-                                    startClaudeConnection(.existing($0.accountID))
-                                },
-                                codexPlanMultiplier:
-                                    codexPlanMultiplierBinding(
-                                        for: provider
+                        if presentationStyle == .sideNotch {
+                            HStack {
+                                Text(
+                                    localization.text(
+                                        .sideNotchHideDelay
                                     )
+                                )
+                                    .font(
+                                        .system(
+                                            size: 13.5,
+                                            weight: .semibold
+                                        )
+                                    )
+                                Spacer()
+                                Picker(
+                                    localization.text(
+                                        .sideNotchHideDelay
+                                    ),
+                                    selection: Binding(
+                                        get: { sideNotchHideDelay },
+                                        set: { delay in
+                                            sideNotchHideDelay = delay
+                                            onSideNotchHideDelayChange(
+                                                delay
+                                            )
+                                        }
+                                    )
+                                ) {
+                                    ForEach(
+                                        SideNotchHideDelay.allCases
+                                    ) { delay in
+                                        Text(
+                                            localization.format(
+                                                .sideNotchHideDelayOption,
+                                                delay.rawValue
+                                            )
+                                        )
+                                            .tag(delay)
+                                    }
+                                }
+                                .labelsHidden()
+                                .pickerStyle(.menu)
+                                .frame(width: 128)
+                                .accessibilityLabel(
+                                    localization.text(
+                                        .sideNotchHideDelay
+                                    )
+                                )
+                            }
+                            .padding(10)
+                            .background(
+                                Color(
+                                    nsColor:
+                                        .controlBackgroundColor
+                                ),
+                                in: RoundedRectangle(
+                                    cornerRadius: 10,
+                                    style: .continuous
+                                )
                             )
+                        }
+
+                    case .webAccess:
+                        WebDashboardSettingsRow(
+                            status: webDashboardStatusStore.status,
+                            tailscaleController:
+                                tailscaleDashboardController,
+                            onOpen: {
+                                if !onOpenWebDashboard() {
+                                    feedback = .key(.webDashboardOpenFailed)
+                                }
+                            },
+                            onOpenQRCode: {
+                                if let failureKey =
+                                    dashboardLinkPresentation.openQRCode(
+                                        onCreateWebDashboardURL
+                                    )
+                                {
+                                    feedback = .key(failureKey)
+                                }
+                            },
+                            onShareLink: { anchorView in
+                                if let failureKey =
+                                    dashboardLinkPresentation.shareLink(
+                                        makeURL: onCreateWebDashboardURL,
+                                        present: {
+                                            onShareWebDashboardURL(
+                                                $0,
+                                                anchorView
+                                            )
+                                        }
+                                    )
+                                {
+                                    feedback = .key(failureKey)
+                                }
+                            },
+                            onRetry: onRetryWebDashboard
+                        )
+
+                    case .dashboardOrder:
+                        if accountRegistryController.registry != nil {
+                            ProviderOrderingView(viewModel: viewModel)
+                        }
+                    case .accounts:
+                        if accountRegistryController.registry != nil {
+                            ForEach(viewModel.providerOrder, id: \.self) {
+                                provider in
+                                ProviderSettingsRow(
+                                    provider: provider,
+                                    viewModel: viewModel,
+                                    connectionPresentation:
+                                        connectionCoordinator.state(for: provider),
+                                    connectionControlsDisabled:
+                                        connectionControlsDisabled(for: provider),
+                                    keyDraft: binding(for: provider),
+                                    keySource: accountRegistryController
+                                        .keyStorageSource(for: provider),
+                                    needsLegacyCleanup: accountRegistryController
+                                        .pendingLegacyCleanup.contains {
+                                            $0.accountID == .legacy
+                                                && $0.providerID == provider
+                                        },
+                                    onCleanupLegacy: retryLegacyKeyCleanup,
+                                    onSetup: {
+                                        connectProvider(provider)
+                                    },
+                                    onSave: { saveKey(for: provider) },
+                                    onRemove: { removeKey(for: provider) },
+                                    onDisconnect: {
+                                        disconnectProvider(provider)
+                                    },
+                                    onReconnect: {
+                                        reconnectProvider(provider)
+                                    },
+                                    onRetry: {
+                                        retryProvider(provider)
+                                    },
+                                    accounts: ProviderAccountRowPresentation.rows(
+                                        from: accountRegistryController
+                                            .settingsAccounts(for: provider)
+                                    ),
+                                    newAccountLabel: accountLabelBinding(
+                                        for: provider
+                                    ),
+                                    newAccountKey: accountKeyBinding(
+                                        for: provider
+                                    ),
+                                    onAddAccount: {
+                                        addAccount(for: provider)
+                                    },
+                                    onRemoveAccount: removeAccount,
+                                    onRenameAccount: renameAccount,
+                                    onAliasOutcome: reportAliasOutcome,
+                                    additionAvailability:
+                                        ProviderAccountAdditionAvailability.resolve(
+                                            provider: provider,
+                                            viewModel: viewModel,
+                                            additionState: additionState(for: provider)
+                                        ),
+                                    onCheckAgain: checkForCompanionCredential,
+                                    onCancelAddition: cancelAddition,
+                                    isAwaitingConnectionCredential:
+                                        provider == .codex
+                                            && codexReconnectCoordinator
+                                                .isWaiting,
+                                    onCheckAgainConnection:
+                                        checkForCodexReconnectCredential,
+                                    onCancelConnection: {
+                                        if provider == .kiro { cancelKiroConnection() }
+                                        else if provider == .devin { cancelDevinConnection() }
+                                        else if provider == .claude { cancelClaudeConnection() }
+                                        else { cancelCodexReconnect() }
+                                    },
+                                    browserConnectionTarget: devinConnection.pending,
+                                    kiroConnectionTarget: kiroConnection.pending,
+                                    claudeConnectionTarget: claudeConnection.pending,
+                                    onBrowserConnect: {
+                                        resetKeychainAuthorizationForUserAction()
+                                        startDevinConnection(.existing($0))
+                                    },
+                                    onKiroConnect: {
+                                        resetKeychainAuthorizationForUserAction()
+                                        startKiroConnection(.existing($0))
+                                    },
+                                    onClaudeConnect: {
+                                        resetKeychainAuthorizationForUserAction()
+                                        startClaudeConnection(.existing($0.accountID))
+                                    },
+                                    codexPlanMultiplier:
+                                        codexPlanMultiplierBinding(
+                                            for: provider
+                                        )
+                                )
+                            }
                         }
                     }
                 }
                 .padding(.vertical, 2)
+                .onGeometryChange(for: CGFloat.self) { proxy in
+                    proxy.size.height
+                } action: { height in
+                    paneContentHeight = height
+                }
             }
+            .frame(
+                height: min(
+                    max(paneContentHeight, 1),
+                    SettingsWindowContract.maximumPaneBodyHeight
+                )
+            )
 
-            HStack {
-                if let feedback {
-                    Text(localization.resolve(feedback))
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(.primary)
-                        .lineLimit(2)
-                        .accessibilityIdentifier("settings-feedback")
+            if feedback != nil || paneSelection.pane == .accounts {
+                HStack {
+                    if let feedback {
+                        Text(localization.resolve(feedback))
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(.primary)
+                            .lineLimit(2)
+                            .accessibilityIdentifier("settings-feedback")
+                    }
+                    Spacer()
+                    if paneSelection.pane == .accounts {
+                        Button(localization.text(.refresh)) {
+                            resetKeychainAuthorizationForUserAction()
+                            Task { await viewModel.refresh() }
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(viewModel.isRefreshing)
+                    }
                 }
-                Spacer()
-                Button(localization.text(.refresh)) {
-                    resetKeychainAuthorizationForUserAction()
-                    Task { await viewModel.refresh() }
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(viewModel.isRefreshing)
             }
         }
         .padding(20)
+        .frame(width: SettingsWindowContract.contentWidth)
+        .fixedSize(horizontal: false, vertical: true)
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.height
+        } action: { height in
+            onPreferredContentHeightChange(height)
+        }
         .frame(
-            minWidth: 440,
-            idealWidth: 480,
-            minHeight: 460,
-            idealHeight: 560
+            maxWidth: .infinity,
+            maxHeight: .infinity,
+            alignment: .top
         )
         .environment(\.appLocalization, localization.context)
         .sheet(item: $dashboardLinkPresentation.presentedItem) { item in
@@ -782,15 +793,6 @@ struct SettingsView: View {
                 ]
             )
         }
-    }
-
-    private func settingsSectionTitle(_ key: AppStringKey) -> some View {
-        Text(localization.text(key))
-            .font(.system(size: 14, weight: .bold))
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.top, 12)
-            .padding(.bottom, 4)
-            .accessibilityAddTraits(.isHeader)
     }
 
     private func refreshPendingConnectionsAfterActivation() async {

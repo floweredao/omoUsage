@@ -348,37 +348,105 @@ final class CompanionAccountFixtureKeychain: ProviderKeychain,
 }
 #endif
 
+/// AppKit still zooms a window without `.resizable` (a title-bar
+/// double-click included), so the settings window refuses zoom outright.
+final class SettingsWindow: NSWindow {
+    override var isZoomable: Bool { false }
+
+    override func zoom(_ sender: Any?) {}
+}
+
+/// A macOS settings window per Apple's HIG: sized by its current pane, never
+/// resized, zoomed, or full-screened by the person, with minimize and zoom
+/// shown dimmed rather than hidden.
 enum SettingsWindowContract {
     static let styleMask: NSWindow.StyleMask = [
         .titled,
-        .closable,
-        .resizable
+        .closable
     ]
+    static let collectionBehavior: NSWindow.CollectionBehavior = [
+        .fullScreenNone
+    ]
+    static let dimmedButtons: [NSWindow.ButtonType] = [
+        .miniaturizeButton,
+        .zoomButton
+    ]
+    static let contentWidth: CGFloat = 480
+    static let maximumPaneBodyHeight: CGFloat = 520
 
     @MainActor
     static func apply(to window: NSWindow) {
         window.styleMask = styleMask
-        window.standardWindowButton(.miniaturizeButton)?.isHidden = true
-        window.standardWindowButton(.zoomButton)?.isHidden = true
+        window.collectionBehavior = collectionBehavior
+        window.toolbarStyle = .preference
+        for type in dimmedButtons {
+            let button = window.standardWindowButton(type)
+            button?.isHidden = false
+            button?.isEnabled = false
+        }
+    }
+
+    /// Keeps the top edge fixed so the toolbar stays under the pointer while
+    /// the window grows or shrinks to the next pane.
+    @MainActor
+    static func frame(
+        for window: NSWindow,
+        fittingContentHeight contentHeight: CGFloat
+    ) -> NSRect {
+        let currentContentHeight = window.contentView?.frame.height
+            ?? window.contentLayoutRect.height
+        let chrome = window.frame.height - currentContentHeight
+        let height = (contentHeight + chrome).rounded()
+        return NSRect(
+            x: window.frame.minX,
+            y: window.frame.maxY - height,
+            width: window.frame.width,
+            height: height
+        )
     }
 }
 
 /// The accessory app has no nib and no other menu, so without a main menu
 /// key equivalents such as Cmd+W never reach a window. This contract owns the
-/// minimal File -> Close wiring; the action stays gated to the settings
-/// window so the transient popover's internal panel can never receive it.
+/// minimal app menu (Settings..., Cmd+,) and File -> Close wiring; Close stays
+/// gated to the settings window so the transient popover's internal panel can
+/// never receive it.
 @MainActor
 enum ApplicationMenuContract {
     static let closeAction = #selector(
         AppDelegate.closeSettingsWindow(_:)
     )
+    static let settingsAction = #selector(
+        AppDelegate.openSettings(_:)
+    )
+
+    static func settingsItemTitle(_ settingsTitle: String) -> String {
+        settingsTitle + "\u{2026}"
+    }
 
     static func makeMenu(
+        settingsTitle: String,
         fileTitle: String,
         closeTitle: String,
-        closeTarget: AnyObject
-    ) -> (fileMenu: NSMenu, closeItem: NSMenuItem) {
+        target: AnyObject
+    ) -> (
+        settingsItem: NSMenuItem,
+        fileMenu: NSMenu,
+        closeItem: NSMenuItem
+    ) {
         let mainMenu = NSMenu()
+        let appItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        let appMenu = NSMenu(title: "OmoUsage")
+        appItem.submenu = appMenu
+        let settingsItem = NSMenuItem(
+            title: settingsItemTitle(settingsTitle),
+            action: settingsAction,
+            keyEquivalent: ","
+        )
+        settingsItem.keyEquivalentModifierMask = NSEvent.ModifierFlags.command
+        settingsItem.target = target
+        appMenu.addItem(settingsItem)
+        mainMenu.addItem(appItem)
         let fileItem = NSMenuItem(
             title: fileTitle,
             action: nil,
@@ -392,11 +460,11 @@ enum ApplicationMenuContract {
             keyEquivalent: "w"
         )
         closeItem.keyEquivalentModifierMask = NSEvent.ModifierFlags.command
-        closeItem.target = closeTarget
+        closeItem.target = target
         fileMenu.addItem(closeItem)
         mainMenu.addItem(fileItem)
         NSApplication.shared.mainMenu = mainMenu
-        return (fileMenu, closeItem)
+        return (settingsItem, fileMenu, closeItem)
     }
 }
 
@@ -531,6 +599,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         await self?.viewModel.refresh()
     }
     private var settingsWindow: NSWindow?
+    private lazy var settingsPaneSelection = SettingsPaneSelection()
+    private var settingsToolbarController: SettingsToolbarController?
+    private var settingsWindowNeedsInitialFit = false
+    private var applicationSettingsItem: NSMenuItem?
     private var applicationFileMenu: NSMenu?
     private var applicationCloseItem: NSMenuItem?
     private weak var stabilizedPopoverWindow: NSWindow?
@@ -1165,15 +1237,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                         )
                     }
                 },
-                appUpdateController: appUpdateController
+                appUpdateController: appUpdateController,
+                paneSelection: settingsPaneSelection,
+                onPreferredContentHeightChange: { [weak self] height in
+                    Task { @MainActor in
+                        self?.fitSettingsWindow(toContentHeight: height)
+                    }
+                }
             )
         )
-        let window = NSWindow(contentViewController: controller)
-        window.title = localization.text(.settingsTitle)
+        controller.sizingOptions = []
+        let window = SettingsWindow(contentViewController: controller)
+        let toolbarController = SettingsToolbarController(
+            selection: settingsPaneSelection,
+            title: { [localization] in localization.text($0.titleKey) },
+            onSelect: { [weak self] pane in
+                guard let self else { return }
+                self.settingsWindow?.title =
+                    self.localization.text(pane.titleKey)
+            }
+        )
+        settingsToolbarController = toolbarController
+        window.toolbar = toolbarController.toolbar
+        window.title = localization.text(
+            settingsPaneSelection.pane.titleKey
+        )
         SettingsWindowContract.apply(to: window)
         window.isReleasedWhenClosed = false
-        window.setContentSize(NSSize(width: 480, height: 620))
+        window.setContentSize(
+            NSSize(width: SettingsWindowContract.contentWidth, height: 420)
+        )
         window.center()
+        settingsWindowNeedsInitialFit = true
         AppAppearancePolicy.followSystem(on: window)
         settingsWindow = window
         window.makeKeyAndOrderFront(nil)
@@ -1192,6 +1287,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             }
         }
 #endif
+    }
+
+    private func fitSettingsWindow(toContentHeight height: CGFloat) {
+        guard let settingsWindow, height > 0 else { return }
+        let frame = SettingsWindowContract.frame(
+            for: settingsWindow,
+            fittingContentHeight: height
+        )
+        guard abs(frame.height - settingsWindow.frame.height) > 0.5
+        else { return }
+        let animates = !settingsWindowNeedsInitialFit
+            && settingsWindow.isVisible
+            && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        settingsWindowNeedsInitialFit = false
+        settingsWindow.setFrame(frame, display: true, animate: animates)
     }
 
     private func presentSharingPicker(
@@ -1255,19 +1365,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         let title = localization.text(.aiUsage)
         statusItem?.button?.toolTip = title
         statusItem?.button?.setAccessibilityLabel(title)
-        settingsWindow?.title = localization.text(.settingsTitle)
+        settingsWindow?.title = localization.text(
+            settingsPaneSelection.pane.titleKey
+        )
+        settingsToolbarController?.relabel(
+            title: { [localization] in localization.text($0.titleKey) }
+        )
+        applicationSettingsItem?.title =
+            ApplicationMenuContract.settingsItemTitle(
+                localization.text(.settingsTitle)
+            )
         applicationFileMenu?.title = localization.text(.fileMenu)
         applicationCloseItem?.title = localization.text(.close)
     }
 
     private func installApplicationMenu() {
         let menu = ApplicationMenuContract.makeMenu(
+            settingsTitle: localization.text(.settingsTitle),
             fileTitle: localization.text(.fileMenu),
             closeTitle: localization.text(.close),
-            closeTarget: self
+            target: self
         )
+        applicationSettingsItem = menu.settingsItem
         applicationFileMenu = menu.fileMenu
         applicationCloseItem = menu.closeItem
+    }
+
+    @objc
+    func openSettings(_ sender: NSMenuItem) {
+        showSettings()
     }
 
     @objc
