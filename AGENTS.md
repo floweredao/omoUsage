@@ -107,7 +107,7 @@ sh Scripts/check-core-boundary.sh
 sh Scripts/package-app.sh
 ```
 
-`package-app.sh` builds release with SwiftPM, assembles `dist/OmoUsage.app`, patches plist substitutions, generates the icon, and signs in explicit ad-hoc or Developer ID mode. `release-app.sh` owns notarization/stapling/assessment.
+`package-app.sh` builds release with SwiftPM, assembles `dist/OmoUsage.app`, patches plist substitutions, generates the icon, and signs with a detected Apple Development identity by default (ad-hoc fallback), or in explicit ad-hoc, development, or Developer ID mode. `release-app.sh` owns notarization/stapling/assessment.
 
 ## NOTES
 

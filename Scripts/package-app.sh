@@ -31,8 +31,17 @@ usage() {
     exit 64
 }
 
-# No mode remains the documented local ad-hoc path. For compatibility,
-# --print-signing-plan infers Developer ID only when an identity was supplied.
+# The first valid Apple Development identity in the user's keychains, as its
+# SHA-1 hash, or nothing. It is a public certificate fingerprint, not a secret.
+find_development_identity() {
+    security find-identity -v -p codesigning 2>/dev/null |
+        awk '/"Apple Development: / { print $2; exit }' || true
+}
+
+# No mode signs with a stable Apple Development identity when one is found
+# (see the inference below) and otherwise falls back to ad-hoc. For
+# compatibility, --print-signing-plan infers Developer ID only when an
+# identity was supplied.
 SIGNING_MODE=adhoc
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -66,6 +75,17 @@ done
 if [ "$MODE_WAS_EXPLICIT" = no ] && [ "$PLAN" = yes ] && [ "$REQUESTED_IDENTITY" != "-" ]; then
     SIGNING_MODE=developer-id
 fi
+# Ad-hoc signatures change with every build, so Keychain treats each install
+# as a new app and asks again. A stable identity keeps "Always Allow" grants.
+# OMO_USAGE_CODESIGN_IDENTITY=- (or --adhoc) still forces ad-hoc.
+if [ "$MODE_WAS_EXPLICIT" = no ] && [ -z "${OMO_USAGE_CODESIGN_IDENTITY+set}" ] \
+    && [ -z "$TEAM_IDENTIFIER" ]; then
+    DETECTED_IDENTITY="$(find_development_identity)"
+    if [ -n "$DETECTED_IDENTITY" ]; then
+        SIGNING_MODE=development
+        REQUESTED_IDENTITY="$DETECTED_IDENTITY"
+    fi
+fi
 
 case "$TEAM_IDENTIFIER" in
     *[!A-Za-z0-9]*)
@@ -89,7 +109,10 @@ elif [ "$SIGNING_MODE" = development ]; then
     # rebuilds; it carries no entitlements, so cloud KVS stays unavailable.
     IDENTITY="$REQUESTED_IDENTITY"
     if [ -z "$IDENTITY" ] || [ "$IDENTITY" = "-" ]; then
-        printf '%s\n' "error: development packaging requires OMO_USAGE_CODESIGN_IDENTITY (e.g. \"Apple Development: NAME (TEAMID)\")" >&2
+        IDENTITY="$(find_development_identity)"
+    fi
+    if [ -z "$IDENTITY" ]; then
+        printf '%s\n' "error: development packaging found no Apple Development identity; set OMO_USAGE_CODESIGN_IDENTITY (e.g. \"Apple Development: NAME (TEAMID)\")" >&2
         exit 64
     fi
     if [ -n "$TEAM_IDENTIFIER" ]; then
@@ -194,6 +217,12 @@ elif [ "$SIGNING_MODE" = development ]; then
     printf '%s\n' "warning: development package has no entitlements; cloud KVS is unavailable" >&2
     sh Scripts/sign-app.sh --development "$APP" "$IDENTITY"
     codesign --verify --deep --strict --verbose=2 "$APP"
+    # Keychain grants follow the designated requirement; it must name the
+    # certificate, not a per-build cdhash.
+    if ! codesign -d -r- "$APP" 2>&1 | grep -q 'certificate leaf'; then
+        printf '%s\n' "error: development signature has no certificate-based designated requirement" >&2
+        exit 1
+    fi
 else
     printf '%s\n' "warning: ad-hoc package has no team identifier; cloud KVS is unavailable" >&2
     sh Scripts/sign-app.sh --adhoc "$APP"

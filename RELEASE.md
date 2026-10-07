@@ -1,10 +1,19 @@
 # macOS releases and Sparkle updates
 
-## Local ad-hoc packaging
+## Local packaging
 
 ```sh
-env -u SDKROOT -u DEVELOPER_DIR sh Scripts/package-app.sh --adhoc
+env -u SDKROOT -u DEVELOPER_DIR sh Scripts/package-app.sh
 ```
+
+With no mode, packaging signs with the first valid Apple Development identity
+from `security find-identity -v -p codesigning`. Its designated requirement
+names the certificate and bundle identifier rather than a per-build cdhash, so
+Keychain "Always Allow" grants survive rebuilds and reinstalls. Without such an
+identity it falls back to ad-hoc; `--adhoc` or `OMO_USAGE_CODESIGN_IDENTITY=-`
+forces ad-hoc, and `--development` accepts an explicit identity through
+`OMO_USAGE_CODESIGN_IDENTITY`. Development packages carry no entitlements, so
+iCloud sync stays unavailable.
 
 The result is `dist/OmoUsage.app`. Packaging embeds the checksum-verified
 SwiftPM Sparkle 2.9.6 framework, preserving its symlinks and helpers. The

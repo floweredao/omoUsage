@@ -71,6 +71,50 @@ struct PackageSmokeTests {
     }
 
     @Test
+    func packageScriptDefaultsToAStableDevelopmentIdentity() throws {
+        let fingerprint = "0123456789ABCDEF0123456789ABCDEF01234567"
+        let identities = """
+          1) \(fingerprint) "Apple Development: Test (TESTTEAM)"
+             1 valid identities found
+        """
+
+        let detected = try signingPlan(
+            environment: [:],
+            identities: identities
+        )
+        #expect(detected.status == 0)
+        #expect(detected.output.contains("SIGNING_MODE=development\n"))
+        #expect(detected.output.contains("SIGNING_IDENTITY=\(fingerprint)\n"))
+        #expect(detected.output.contains("CLOUD_KVS_AVAILABLE=no\n"))
+
+        let forcedAdHoc = try signingPlan(
+            environment: ["OMO_USAGE_CODESIGN_IDENTITY": "-"],
+            identities: identities
+        )
+        #expect(forcedAdHoc.output.contains("SIGNING_MODE=adhoc\n"))
+
+        let explicitAdHoc = try signingPlan(
+            environment: [:],
+            arguments: ["--adhoc"],
+            identities: identities
+        )
+        #expect(explicitAdHoc.output.contains("SIGNING_MODE=adhoc\n"))
+
+        let explicitDevelopment = try signingPlan(
+            environment: [:],
+            arguments: ["--development"],
+            identities: identities
+        )
+        #expect(explicitDevelopment.output.contains("SIGNING_IDENTITY=\(fingerprint)\n"))
+
+        let missing = try signingPlan(
+            environment: [:],
+            arguments: ["--development"]
+        )
+        #expect(missing.status != 0)
+    }
+
+    @Test
     func packageScriptRejectsIdentityWithoutTeam() throws {
         let plan = try signingPlan(environment: [
             "OMO_USAGE_CODESIGN_IDENTITY": "Impossible Identity"
@@ -243,10 +287,29 @@ struct PackageSmokeTests {
         ).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// Runs the plan with a stand-in `security` that lists `identities`, so
+    /// the result never depends on this machine's keychains.
     private func signingPlan(
         environment: [String: String],
-        arguments: [String] = []
+        arguments: [String] = [],
+        identities: String = "     0 valid identities found"
     ) throws -> (status: Int32, output: String) {
+        let tools = FileManager.default.temporaryDirectory.appending(
+            path: "OmoUsageSigningPlan-\(UUID().uuidString)"
+        )
+        try FileManager.default.createDirectory(
+            at: tools,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: tools) }
+        let listing = tools.appending(path: "identities.txt")
+        try Data((identities + "\n").utf8).write(to: listing)
+        let security = tools.appending(path: "security")
+        try Data("#!/bin/sh\ncat '\(listing.path)'\n".utf8).write(to: security)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o755],
+            ofItemAtPath: security.path
+        )
         let process = Process()
         let output = Pipe()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
@@ -266,6 +329,8 @@ struct PackageSmokeTests {
             environment,
             uniquingKeysWith: { _, requested in requested }
         )
+        processEnvironment["PATH"] = tools.path + ":"
+            + (processEnvironment["PATH"] ?? "/usr/bin:/bin")
         process.environment = processEnvironment
         process.standardOutput = output
         process.standardError = output
