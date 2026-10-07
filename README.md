@@ -66,7 +66,11 @@ swift test                  # full test suite
 sh Scripts/package-app.sh   # → dist/OmoUsage.app
 ```
 
-`package-app.sh` produces an explicitly ad-hoc, signed-for-local-use `.app`.
+`package-app.sh` produces a signed-for-local-use `.app`. When your keychain
+holds an Apple Development certificate, it signs with that certificate, so
+rebuilt installs keep their Keychain "Always Allow" grants and approval
+prompts appear only once. Without one it falls back to ad-hoc signing; pass
+`--adhoc` (or set `OMO_USAGE_CODESIGN_IDENTITY=-`) to force ad-hoc.
 Copy it wherever you keep apps:
 
 ```sh
