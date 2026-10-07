@@ -71,11 +71,15 @@ targets:
   OmoUsageMobile:
     type: application
     platform: iOS
+    productName: OmoUsage
     supportedDestinations:
       - iOS
       - macCatalyst
     sources:
       - path: Sources/OmoUsage/Mobile
+      - path: Sources/OmoUsage/Resources/ProviderIcons
+        type: folder
+        buildPhase: resources
     entitlements:
       path: Config/OmoUsageMobile.entitlements
       properties:

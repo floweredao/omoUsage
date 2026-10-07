@@ -37,6 +37,7 @@ if "OmoUsageCore" not in test_dependencies:
 PY
 
 python3 - project.yml <<'PY'
+import os
 import sys
 text = open(sys.argv[1]).read()
 required = [
@@ -50,7 +51,18 @@ for token in required:
         raise SystemExit(f"core boundary: project.yml is missing {token.strip()}")
 mobile = text.split("  OmoUsageMobile:\n", 1)[1].split("\nschemes:", 1)[0]
 sources = mobile.split("    sources:\n", 1)[1].split("    entitlements:\n", 1)[0]
-if sources.strip() != "- path: Sources/OmoUsage/Mobile":
+compiled = []
+for entry in sources.split("      - path: ")[1:]:
+    path, _, options = entry.partition("\n")
+    if "buildPhase: resources" not in {line.strip() for line in options.splitlines()}:
+        compiled.append(path)
+        continue
+    if not path.startswith("Sources/OmoUsage/Resources/"):
+        raise SystemExit(f"core boundary: mobile resource {path} must live under Sources/OmoUsage/Resources")
+    for root, _, files in os.walk(path):
+        if any(name.endswith(".swift") for name in files):
+            raise SystemExit(f"core boundary: mobile resource {root} contains Swift sources")
+if compiled != ["Sources/OmoUsage/Mobile"]:
     raise SystemExit("core boundary: mobile must compile only Mobile sources")
 if "- target: OmoUsageCore" not in mobile:
     raise SystemExit("core boundary: Xcode mobile does not depend on Core")
@@ -135,6 +147,7 @@ else
         "$BIN_PATH/OmoUsageCore.build/ProviderTextLocalization.swift.o" \
         "$BIN_PATH/OmoUsageCore.build/DashboardSnapshot.swift.o" \
         "$BIN_PATH/OmoUsageCore.build/ProviderID.swift.o" \
+        "$BIN_PATH/OmoUsageCore.build/ProviderMark.swift.o" \
         "$BIN_PATH/OmoUsageCore.build/ProviderVisualStyle.swift.o" \
         "$BIN_PATH/OmoUsageCore.build/UsageModels.swift.o" \
         "$BIN_PATH/OmoUsageCore.build/ProviderDisplayOrder.swift.o" \

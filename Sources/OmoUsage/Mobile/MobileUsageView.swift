@@ -126,59 +126,24 @@ private struct MobileProviderCard: View {
     private var localization
 
     var body: some View {
-        let iconStyle = ProviderVisualStyle.style(for: usage.provider)
         let freshness = ProviderFreshnessDisplay.make(
             for: usage,
             includesSuccessRow: false
         )
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 10) {
-                Text(usage.provider.monogram)
-                    .font(.subheadline.weight(.bold))
-                    .frame(width: 32, height: 32)
-                    .foregroundStyle(iconStyle.foreground)
-                    .background(
-                        iconStyle.background,
-                        in: RoundedRectangle(
-                            cornerRadius: 8,
-                            style: .continuous
-                        )
-                    )
-                    .accessibilityHidden(true)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(usage.provider.displayName)
-                        .font(.headline)
-
-                    if showsAccountLabel {
-                        Text(AccountLabel.sanitized(usage.accountLabel))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                    }
-
-                    if !usage.planName.isEmpty {
-                        Text(usage.planName)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(
-                                Color.primary.opacity(0.06),
-                                in: Capsule()
-                            )
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 10) {
+                    identity
+                    Spacer(minLength: 0)
+                    if freshness.showsStaleBadge {
+                        staleBadge
                     }
                 }
-
-                Spacer(minLength: 0)
-
-                if freshness.showsStaleBadge {
-                    MobileFreshnessBadge(
-                        symbolName: StaleUsageVisualTokens.symbolName,
-                        text: localization.staleBadgeText(),
-                        accent: StaleUsageVisualTokens.accent
-                    )
+                VStack(alignment: .leading, spacing: 8) {
+                    identity
+                    if freshness.showsStaleBadge {
+                        staleBadge
+                    }
                 }
             }
 
@@ -233,6 +198,184 @@ private struct MobileProviderCard: View {
         )
         .accessibilityElement(children: .contain)
     }
+
+    private var identity: some View {
+        HStack(spacing: 10) {
+            MobileProviderMark(provider: usage.provider)
+
+            VStack(alignment: .leading, spacing: 4) {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) {
+                        providerName
+                        planPill
+                    }
+                    VStack(alignment: .leading, spacing: 4) {
+                        providerName
+                        planPill
+                    }
+                }
+
+                if showsAccountLabel {
+                    Text(AccountLabel.sanitized(usage.accountLabel))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+            }
+        }
+    }
+
+    private var providerName: some View {
+        Text(usage.provider.displayName)
+            .font(.headline)
+    }
+
+    @ViewBuilder
+    private var planPill: some View {
+        if !usage.planName.isEmpty {
+            Text(usage.planName)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(
+                    Color(uiColor: .tertiarySystemGroupedBackground),
+                    in: Capsule()
+                )
+                .overlay {
+                    Capsule()
+                        .stroke(Color(uiColor: .separator), lineWidth: 0.5)
+                }
+        }
+    }
+
+    private var staleBadge: some View {
+        MobileFreshnessBadge(
+            symbolName: StaleUsageVisualTokens.symbolName,
+            text: localization.staleBadgeText(),
+            accent: StaleUsageVisualTokens.accent
+        )
+    }
+}
+
+/// The macOS `ProviderIcon` tile at mobile size: the brand background from
+/// `ProviderVisualStyle`, the bundled SVG mark when one ships for the
+/// provider, and the Core monogram otherwise.
+private struct MobileProviderMark: View {
+    let provider: ProviderID
+    @ScaledMetric(relativeTo: .headline)
+    private var scaledSize = ProviderMarkVisualTokens.mobileSize
+
+    var body: some View {
+        let style = ProviderVisualStyle.style(for: provider)
+        let size = min(scaledSize, ProviderMarkVisualTokens.mobileMaximumSize)
+        ZStack {
+            RoundedRectangle(
+                cornerRadius: size * ProviderMarkVisualTokens.cornerRadiusRatio
+            )
+            .fill(style.background)
+            .shadow(
+                color: .black.opacity(ProviderMarkVisualTokens.shadowOpacity),
+                radius: ProviderMarkVisualTokens.shadowRadius,
+                y: ProviderMarkVisualTokens.shadowOffsetY
+            )
+
+            if let mark = MobileProviderMarkStore.mark(for: provider) {
+                MobileProviderMarkArtwork(mark: mark)
+                    .padding(size * ProviderMarkVisualTokens.artworkInsetRatio)
+            } else {
+                Text(provider.monogram)
+                    .font(
+                        .system(
+                            size: size
+                                * ProviderMarkVisualTokens.monogramPointRatio,
+                            weight: .heavy,
+                            design: .rounded
+                        )
+                    )
+                    .foregroundStyle(style.foreground)
+            }
+        }
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
+    }
+}
+
+@MainActor
+private enum MobileProviderMarkStore {
+    private static var marks: [ProviderID: ProviderMark?] = [:]
+
+    static func mark(for provider: ProviderID) -> ProviderMark? {
+        if let cached = marks[provider] {
+            return cached
+        }
+        let url = Bundle.main.resourceURL?
+            .appending(path: "ProviderIcons", directoryHint: .isDirectory)
+            .appending(path: "\(provider.rawValue).svg")
+        let mark = url
+            .flatMap { try? Data(contentsOf: $0) }
+            .flatMap { ProviderMark(svg: $0) }
+        marks.updateValue(mark, forKey: provider)
+        return mark
+    }
+}
+
+private struct MobileProviderMarkArtwork: View {
+    let mark: ProviderMark
+
+    var body: some View {
+        ZStack {
+            ForEach(Array(mark.shapes.enumerated()), id: \.offset) { _, shape in
+                MobileProviderMarkPath(
+                    elements: shape.elements,
+                    viewBox: mark.viewBox
+                )
+                .fill(fillColor(shape.fill))
+            }
+        }
+    }
+
+    private func fillColor(_ fill: ProviderMark.Fill) -> Color {
+        switch fill {
+        case .currentColor: .white
+        case .rgb(let rgb): rgb.color
+        }
+    }
+}
+
+private struct MobileProviderMarkPath: Shape {
+    let elements: [ProviderMark.Element]
+    let viewBox: CGRect
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        for element in elements {
+            switch element {
+            case .move(let point):
+                path.move(to: point)
+            case .line(let point):
+                path.addLine(to: point)
+            case .quadCurve(let point, let control):
+                path.addQuadCurve(to: point, control: control)
+            case .curve(let point, let control1, let control2):
+                path.addCurve(to: point, control1: control1, control2: control2)
+            case .close:
+                path.closeSubpath()
+            }
+        }
+        let scale = min(
+            rect.width / viewBox.width,
+            rect.height / viewBox.height
+        )
+        let transform = CGAffineTransform(
+            translationX: rect.midX - viewBox.midX * scale,
+            y: rect.midY - viewBox.midY * scale
+        )
+        .scaledBy(x: scale, y: scale)
+        return path.applying(transform)
+    }
 }
 
 /// States what mobile actually knows: when the Mac last checked, whether that
@@ -247,21 +390,21 @@ private struct MobileSyncStatusHeader: View {
         let clockText = MobileClockText.string(
             from: freshness.macLastCheckedAt
         )
+        let statusText = freshness.statusText(
+            localization,
+            clockText: clockText
+        )
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Image(
-                    systemName: freshness.hasSyncIssue
-                        ? "exclamationmark.icloud"
-                        : "icloud.fill"
-                )
-                Text(localization.text(.syncedThroughICloud))
-                Spacer(minLength: 0)
-                Text(
-                    freshness.statusText(
-                        localization,
-                        clockText: clockText
-                    )
-                )
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 6) {
+                    syncLabel
+                    Spacer(minLength: 12)
+                    Text(statusText)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    syncLabel
+                    Text(statusText)
+                }
             }
             .font(.footnote.weight(.medium))
 
@@ -292,6 +435,15 @@ private struct MobileSyncStatusHeader: View {
         )
         .accessibilityHint(
             localization.text(.mobileICloudCheckExplanation)
+        )
+    }
+
+    private var syncLabel: some View {
+        Label(
+            localization.text(.syncedThroughICloud),
+            systemImage: freshness.hasSyncIssue
+                ? "exclamationmark.icloud"
+                : "icloud.fill"
         )
     }
 }
@@ -367,9 +519,17 @@ private struct MobileUsageMeter: View {
                     GeometryReader { geometry in
                         ZStack(alignment: .leading) {
                             Capsule()
-                                .fill(Color.primary.opacity(0.16))
+                                .fill(
+                                    Color.primary.opacity(
+                                        UsageMeterVisualTokens.trackOpacity
+                                    )
+                                )
                             Capsule()
-                                .fill(meterColor)
+                                .fill(
+                                    UsageMeterVisualTokens.fillRGB(
+                                        for: meter.period
+                                    ).color
+                                )
                                 .frame(width: geometry.size.width * fraction)
                         }
                     }
@@ -402,19 +562,14 @@ private struct MobileUsageMeter: View {
     private var remainingValue: some View {
         Text(localization.metricValue(meter.metric))
             .font(.subheadline.weight(.semibold))
+            .monospacedDigit()
+            .multilineTextAlignment(.trailing)
     }
 
     private var resetAccessibilitySuffix: String {
         meter.resetText != nil || meter.resetsAt != nil
             ? ", \(resetDescription)"
             : ""
-    }
-
-    private var meterColor: Color {
-        if meter.period == .extra {
-            return Color(red: 0xB7 / 255, green: 0x79 / 255, blue: 0x3F / 255)
-        }
-        return Color(red: 0x4C / 255, green: 0x85 / 255, blue: 0x77 / 255)
     }
 
     private var resetDescription: String {

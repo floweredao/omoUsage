@@ -117,9 +117,15 @@ other privileged controls remain native-only.
 - The hidden side-notch handle is 6 pt wide with an 8 pt edge tracking region.
   The revealed rail uses 20 pt leading corners and square screen-edge corners;
   its ring track reuses `UsageMeterVisualTokens.trackOpacity`.
-- Mobile canvas and cards use semantic system backgrounds. Mobile meters reuse
-  the standard eucalyptus and extra-usage amber tokens without introducing a
-  second palette.
+- Mobile canvas and cards use semantic system backgrounds. Mobile meters read
+  `UsageMeterVisualTokens` from Core, the same eucalyptus/amber fills and
+  track opacity the popover and Side Notch use, so no second palette exists.
+  The mobile provider tile is the `ProviderIcon` contract at 32 pt: the
+  `ProviderVisualStyle` brand tile, the bundled Claude/Codex/Antigravity SVG
+  mark decoded by `ProviderMark`, or the Core monogram. Its corner, inset,
+  monogram size, and shadow are `ProviderMarkVisualTokens` ratios of the
+  macOS 20 pt tile, and it scales with Dynamic Type to a 48 pt cap. The plan
+  pill uses the tertiary grouped background with a separator stroke.
 - Web canvas: `#F4F4F0` light and `#111310` dark; card: semantic elevated
   surfaces with a one-pixel low-contrast border and restrained shadow.
 - Web spacing: 4/8/12/16/20/24/32 px. Content is capped at 720 px and uses
@@ -151,8 +157,11 @@ other privileged controls remain native-only.
 - Meter labels: 11.5–12 pt medium.
 - Metadata and reset labels: 11 pt regular/medium.
 - Mobile title: native large navigation title.
-- Mobile provider names: 17 pt semibold; meter labels and values: 13 pt
-  medium/semibold; metadata: 12 pt regular.
+- Mobile uses Dynamic Type text styles: provider names `headline`, plan pill
+  `caption` semibold, meter labels and values `subheadline` medium/semibold
+  with monospaced digits, reset metadata `footnote`, and the sync header
+  `footnote`/`caption`. Values never truncate: header, identity, and meter
+  rows stack vertically when a line no longer fits.
 - Web uses the system font stack with a 28 px/700 page title, 17 px/650
   provider names, 14 px/600 meter values, and 12–13 px metadata. Text remains
   usable at 200% zoom without clipping or horizontal page scroll.
@@ -312,15 +321,21 @@ other privileged controls remain native-only.
   Quota-remaining metrics alone add the percentage track and remaining
   language; spend, credit, count, and informational metrics never impersonate
   percentages. The former `메뉴바` badge is not part of the UI.
-- Mobile owns the full screen and scrolls provider cards vertically with
-  16 pt page margins and 12 pt card spacing. Pull-to-refresh reloads iCloud;
-  it does not call provider APIs from the phone.
+- Mobile owns the full screen: `Config/MobileInfo.plist` declares
+  `UILaunchScreen`, so iOS never letterboxes the app, and supports portrait
+  plus landscape on iPhone and all four orientations on iPad. It scrolls
+  provider cards vertically with 16 pt page margins and 12 pt card spacing.
+  Pull-to-refresh reloads iCloud; it does not call provider APIs from the
+  phone.
 - Mobile states when the Mac last checked rather than implying that the phone
   just refreshed. That time is the snapshot's own refresh attempt and never
   moves on a pull; only a newly published snapshot advances it. Once the
   snapshot reaches fifteen minutes of age, the header adds an amber
   symbol-and-text out-of-date badge. Snapshot age and provider staleness are
-  separate facts and may appear together on one screen.
+  separate facts and may appear together on one screen. The header is
+  compact: one footnote line pairs the iCloud label with the Mac's last check
+  time when it fits and stacks the two otherwise; badges and the explanatory
+  sentence follow as caption text.
 - A failed iCloud read keeps the last good snapshot and its timestamps on
   screen and adds one explicit sync-issue line instead of blanking the data.
   The refresh affordance states that it checks iCloud only.
@@ -422,9 +437,13 @@ other privileged controls remain native-only.
 - `SideNotchHideDelayStore`: repaired typed UserDefaults preference with 0.8
   seconds as the omitted-key default.
 - `ProviderIcon`: 20 pt branded tile with SVG or native monogram fallback.
-- `MobileProviderCard`: composite account-provider identity, conditional
-  sanitized account alias, optional plan pill, usage groups, meters, credits,
-  and provider timestamp in one semantic grouped surface.
+- `MobileProviderCard`: composite account-provider identity with the plan
+  pill inline beside the provider name (stacking under it only when the width
+  is too small), conditional sanitized account alias, usage groups, meters,
+  credits, and provider timestamp in one semantic grouped surface.
+- `MobileProviderMark`: the `ProviderIcon` contract at 32 pt. It reads the
+  bundled `ProviderIcons/<provider>.svg` through `ProviderMark` and falls
+  back to the monogram for every provider without artwork.
 - `MobileUsageMeter`: title, typed semantic value, and reset metadata. A quota
   adds the 6 pt capsule track; spend, credit, count, and informational values
   remain text-only with truthful VoiceOver labels.
