@@ -482,6 +482,51 @@ enum AppAppearancePolicy {
     }
 }
 
+#if OMO_USAGE_FIXTURES
+/// Sample-data screenshot QA only: light and dark captures without changing
+/// the Mac's appearance, and a visible popover while the status item sits
+/// in a hidden or full-screen menu bar. Release builds never compile this.
+enum FixtureScreenshotHooks {
+    static func appearance(environment: [String: String]) -> NSAppearance? {
+        guard environment["OMO_USAGE_FIXTURE_MODE"] == "1" else { return nil }
+        switch environment["OMO_USAGE_FIXTURE_APPEARANCE"] {
+        case "light": return NSAppearance(named: .aqua)
+        case "dark": return NSAppearance(named: .darkAqua)
+        default: return nil
+        }
+    }
+
+    static func anchorsPopoverOnScreen(environment: [String: String]) -> Bool {
+        environment["OMO_USAGE_FIXTURE_MODE"] == "1"
+            && environment["OMO_USAGE_FIXTURE_POPOVER_ANCHOR"] == "1"
+    }
+
+    @MainActor
+    static func makePopoverAnchor() -> NSWindow? {
+        guard let screen = NSScreen.main else { return nil }
+        let visible = screen.visibleFrame
+        let window = NSWindow(
+            contentRect: NSRect(
+                x: visible.maxX - 220,
+                y: visible.maxY - 2,
+                width: 2,
+                height: 2
+            ),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.level = .statusBar
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        window.isReleasedWhenClosed = false
+        window.orderFrontRegardless()
+        return window
+    }
+}
+#endif
+
 @MainActor
 enum StatusPopoverWindowStabilizer {
     private static var observations: [
@@ -609,6 +654,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var hasFinishedLaunching = false
     private var hasPendingSecondaryActivation = false
     private var popoverHeight = DashboardLayout.panelHeight(for: [])
+#if OMO_USAGE_FIXTURES
+    private var fixturePopoverAnchor: NSWindow?
+#endif
     private lazy var sideNotchController = SideNotchPanelController(
         viewModel: viewModel,
         localization: localization,
@@ -904,6 +952,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     func applicationDidFinishLaunching(
         _ notification: Notification
     ) {
+#if OMO_USAGE_FIXTURES
+        if let appearance = FixtureScreenshotHooks.appearance(
+            environment: ProcessInfo.processInfo.environment
+        ) {
+            NSApp.appearance = appearance
+        }
+#endif
         installApplicationMenu()
         configureStatusItem()
         configureStatusPopover()
@@ -1077,6 +1132,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             width: 320,
             height: popoverHeight
         )
+#if OMO_USAGE_FIXTURES
+        if FixtureScreenshotHooks.anchorsPopoverOnScreen(
+            environment: ProcessInfo.processInfo.environment
+        ) {
+            if fixturePopoverAnchor == nil {
+                fixturePopoverAnchor = FixtureScreenshotHooks.makePopoverAnchor()
+            }
+            if let anchor = fixturePopoverAnchor?.contentView {
+                statusPopover.show(
+                    relativeTo: anchor.bounds,
+                    of: anchor,
+                    preferredEdge: StatusPanelPresentationContract.preferredEdge
+                )
+                return
+            }
+        }
+#endif
         statusPopover.show(
             relativeTo: button.bounds,
             of: button,

@@ -56,13 +56,13 @@ struct FixtureUsageProvider: UsageProvider {
                 ? Self.claudeJSON
                 : Self.claudeAuthenticationUIJSON
             return try ClaudeUsageParser.parse(
-                Data(json.utf8),
+                Data(Self.anchoring(json, to: now).utf8),
                 planName: "Pro",
                 now: now.addingTimeInterval(-60)
             )
         case .codex:
             return try CodexUsageParser.parse(
-                Data(Self.codexJSON.replacingOccurrences(
+                Data(Self.anchoring(Self.codexJSON, to: now).replacingOccurrences(
                     of: "\"plan_type\": \"plus\"",
                     with: "\"plan_type\": \"\(codexReportedPlan)\""
                 ).utf8),
@@ -71,7 +71,7 @@ struct FixtureUsageProvider: UsageProvider {
             )
         case .antigravity:
             return try AntigravityUsageParser.parse(
-                Data(Self.antigravityJSON.utf8),
+                Data(Self.anchoring(Self.antigravityJSON, to: now).utf8),
                 now: now
             )
         case .kiro:
@@ -159,6 +159,39 @@ struct FixtureUsageProvider: UsageProvider {
             availability: .available,
             updatedAt: now
         )
+    }
+
+    /// The payloads below keep stable placeholder timestamps so the real
+    /// parsers run on fixed text; fetching moves each one to the same
+    /// offset from `now`, so fixture screens read "Resets in 3 hr" rather
+    /// than a date decades away.
+    private static let placeholderOffsets: [(placeholder: String, offset: TimeInterval)] = [
+        ("2099-01-01T03:32:00Z", 3 * 3_600 + 32 * 60),
+        ("2099-01-01T04:51:00Z", 4 * 3_600 + 51 * 60),
+        ("2099-01-01T04:56:00Z", 4 * 3_600 + 56 * 60),
+        ("2099-01-03T00:00:00Z", 2 * 86_400),
+        ("2099-01-04T00:00:00Z", 3 * 86_400),
+        ("2099-01-07T00:00:00Z", 6 * 86_400),
+        ("2099-02-01T00:00:00Z", 30 * 86_400),
+        ("2099-02-05T00:00:00Z", 28 * 86_400),
+        ("2098-01-01T00:00:00Z", -86_400),
+        ("4070926800", 3 * 3_600),
+        ("4071340800", 5 * 86_400)
+    ]
+
+    static func anchoring(_ json: String, to now: Date) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return placeholderOffsets.reduce(json) { text, entry in
+            let date = now.addingTimeInterval(entry.offset)
+            let replacement = entry.placeholder.hasPrefix("40")
+                ? String(Int(date.timeIntervalSince1970))
+                : formatter.string(from: date)
+            return text.replacingOccurrences(
+                of: entry.placeholder,
+                with: replacement
+            )
+        }
     }
 
     private static let claudeJSON = """
