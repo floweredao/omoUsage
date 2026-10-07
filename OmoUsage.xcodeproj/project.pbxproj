@@ -27,6 +27,7 @@
 		2D2BB0F1375CA855D93301EE /* OmoUsageCore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 194AED28C9C20A8BDA503544 /* OmoUsageCore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		2DCD16665AC3EDDDDDF21AC5 /* antigravity.svg in Resources */ = {isa = PBXBuildFile; fileRef = 29E125B432F6AF3B9025F9C9 /* antigravity.svg */; };
 		323623D130654D3674CADAB5 /* KiroUsageProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26824BF739E32100B72B1803 /* KiroUsageProvider.swift */; };
+		32BD1E3149495519D27A7AD9 /* ProviderIcons in Resources */ = {isa = PBXBuildFile; fileRef = 349EECF6EE714C25A2F56E20 /* ProviderIcons */; };
 		32CA1F82D9CD7767B951C6A1 /* KiroBrowserAuthenticationListener.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A85E449E6244DF1A88E66A7 /* KiroBrowserAuthenticationListener.swift */; };
 		33A51AED460468A6840802CC /* OmoUsageCore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 194AED28C9C20A8BDA503544 /* OmoUsageCore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		3852FAF9A3344DFB927A4FE3 /* ProviderVisualStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5043503948695FCA371FC1C2 /* ProviderVisualStyle.swift */; };
@@ -62,6 +63,7 @@
 		76586160A7D4F59218F9BE1F /* ProviderSectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC0B81DC5CFBF8B0D0E43BBD /* ProviderSectionView.swift */; };
 		77085914D073A6F1CD4CA7C7 /* ProviderAPIKeyStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 904BE1BBDC988ADD8BE50A13 /* ProviderAPIKeyStore.swift */; };
 		799FBC3CF96FED237F7597C5 /* ProviderAccountStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12880EC739A2114067FFC005 /* ProviderAccountStore.swift */; };
+		7C22440040E7DF2E16432569 /* ProviderMark.swift in Sources */ = {isa = PBXBuildFile; fileRef = 938A73E255757DDA97942D7E /* ProviderMark.swift */; };
 		8170BB41E2A183846F897346 /* AdditionalCredentialDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18E04655A177A8AA235FBDB9 /* AdditionalCredentialDiscovery.swift */; };
 		82DE60A35965393294FBD448 /* ProviderContractCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0C4BE01E14207E07EE49590 /* ProviderContractCatalog.swift */; };
 		88C3C9770CA098CD21C01E36 /* ProviderContract.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1B9E88530B0E8A542576A73 /* ProviderContract.swift */; };
@@ -173,11 +175,11 @@
 		25A9BD2A6FB5200F937748B8 /* AppUpdateController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUpdateController.swift; sourceTree = "<group>"; };
 		25DDBD14AFA75AB0522C6FDD /* CursorUsageProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CursorUsageProvider.swift; sourceTree = "<group>"; };
 		26824BF739E32100B72B1803 /* KiroUsageProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KiroUsageProvider.swift; sourceTree = "<group>"; };
-		2839AE5CADDD8BD525BF4E86 /* OmoUsageMobile.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = OmoUsageMobile.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		29E125B432F6AF3B9025F9C9 /* antigravity.svg */ = {isa = PBXFileReference; path = antigravity.svg; sourceTree = "<group>"; };
 		29F6ADB0CB7BEAD8D90AF893 /* ClaudeBrowserAuthentication.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeBrowserAuthentication.swift; sourceTree = "<group>"; };
 		2FF0322D5D63B947145ED7D6 /* OmoUsageMobileApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OmoUsageMobileApp.swift; sourceTree = "<group>"; };
 		332B6061B110A89D9233C052 /* OpenRouterUsageProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenRouterUsageProvider.swift; sourceTree = "<group>"; };
+		349EECF6EE714C25A2F56E20 /* ProviderIcons */ = {isa = PBXFileReference; lastKnownFileType = folder; name = ProviderIcons; path = Sources/OmoUsage/Resources/ProviderIcons; sourceTree = SOURCE_ROOT; };
 		3DABB14A0BEE73305B501919 /* DevinUsageProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevinUsageProvider.swift; sourceTree = "<group>"; };
 		3E6D7E23743FBBC34BFEED57 /* UsageProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageProvider.swift; sourceTree = "<group>"; };
 		49C4D32EDDD9D2B9A4B21481 /* OmoUsage.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OmoUsage.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -210,6 +212,7 @@
 		88A3EEA0AD46B5A6B8F84F81 /* DiagnosticStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticStore.swift; sourceTree = "<group>"; };
 		904BE1BBDC988ADD8BE50A13 /* ProviderAPIKeyStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderAPIKeyStore.swift; sourceTree = "<group>"; };
 		90AB4BC350C05CBD76F7B6CD /* ProviderFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderFactory.swift; sourceTree = "<group>"; };
+		938A73E255757DDA97942D7E /* ProviderMark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderMark.swift; sourceTree = "<group>"; };
 		939BD79BB1EE0AF0C220247B /* AppStrings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStrings.swift; sourceTree = "<group>"; };
 		945BC4BBC002A094B10D8A0B /* BoundedProcessRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoundedProcessRunner.swift; sourceTree = "<group>"; };
 		97A750E49E148983D0B09FFB /* ProviderRetryPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderRetryPolicy.swift; sourceTree = "<group>"; };
@@ -227,6 +230,7 @@
 		B58F3EEA41813039298DC387 /* KiroCredentialDiscovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KiroCredentialDiscovery.swift; sourceTree = "<group>"; };
 		BBE0F4DB355CE64D19098317 /* Redactor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Redactor.swift; sourceTree = "<group>"; };
 		C1087695DA3ACF137ADC91C6 /* UnifiedProviderKeychain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnifiedProviderKeychain.swift; sourceTree = "<group>"; };
+		C136AAC2779109D1C1F6753D /* OmoUsage.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = OmoUsage.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C3D3D4A69F4FA62AD31142D2 /* SingleInstanceController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SingleInstanceController.swift; sourceTree = "<group>"; };
 		C4B872B2A57A896FFDF03140 /* DevinBrowserAuthenticationListener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevinBrowserAuthenticationListener.swift; sourceTree = "<group>"; };
 		D0C17CBEEABC6FE304881A7E /* DevinBrowserConnectionCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevinBrowserConnectionCoordinator.swift; sourceTree = "<group>"; };
@@ -316,6 +320,7 @@
 		2213CBBF51F805C8109974F9 = {
 			isa = PBXGroup;
 			children = (
+				349EECF6EE714C25A2F56E20 /* ProviderIcons */,
 				E3C0B9970F8F271EDF61C861 /* Config */,
 				6CD5B3A51A8D25E3EFC38FFF /* Mobile */,
 				9F6B0CAFDDD65FF975359D22 /* OmoUsage */,
@@ -388,6 +393,7 @@
 				1008C6991F867F79B709AED8 /* DashboardSnapshot.swift */,
 				7C996C87F736249ADD43E974 /* ProviderDisplayOrder.swift */,
 				190F3B1AE7E3ED6996235F35 /* ProviderID.swift */,
+				938A73E255757DDA97942D7E /* ProviderMark.swift */,
 				5043503948695FCA371FC1C2 /* ProviderVisualStyle.swift */,
 				A8DA9D36A26BE61B88ED41BB /* UsageModels.swift */,
 			);
@@ -522,8 +528,8 @@
 			isa = PBXGroup;
 			children = (
 				49C4D32EDDD9D2B9A4B21481 /* OmoUsage.app */,
+				C136AAC2779109D1C1F6753D /* OmoUsage.app */,
 				194AED28C9C20A8BDA503544 /* OmoUsageCore.framework */,
-				2839AE5CADDD8BD525BF4E86 /* OmoUsageMobile.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -594,6 +600,7 @@
 			buildConfigurationList = CEDACB132CCEA21E7966D603 /* Build configuration list for PBXNativeTarget "OmoUsageMobile" */;
 			buildPhases = (
 				C401F8BD925817E8104F09D4 /* Sources */,
+				DB2A90561932DD393F5CE18A /* Resources */,
 				1FB7A01E9FF90E76248FCB92 /* Frameworks */,
 				58CB5DA0FA2F768EF68045EE /* Embed Frameworks */,
 			);
@@ -606,7 +613,7 @@
 			packageProductDependencies = (
 			);
 			productName = OmoUsageMobile;
-			productReference = 2839AE5CADDD8BD525BF4E86 /* OmoUsageMobile.app */;
+			productReference = C136AAC2779109D1C1F6753D /* OmoUsage.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -651,6 +658,14 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		DB2A90561932DD393F5CE18A /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				32BD1E3149495519D27A7AD9 /* ProviderIcons in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		DE299416AEA02C473B1754F1 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -773,6 +788,7 @@
 				C4CD7FCF26DEF2E0C8383AF8 /* DashboardSnapshot.swift in Sources */,
 				2131F4A60FBB1CF79C62D1F2 /* ProviderDisplayOrder.swift in Sources */,
 				4ECADF871C4A4A10F7F72FCD /* ProviderID.swift in Sources */,
+				7C22440040E7DF2E16432569 /* ProviderMark.swift in Sources */,
 				D35DE7464B36DF24F1C5A1C9 /* ProviderTextLocalization.swift in Sources */,
 				3852FAF9A3344DFB927A4FE3 /* ProviderVisualStyle.swift in Sources */,
 				4BBB05F174BCBEBDBAE40B20 /* UsageModels.swift in Sources */,
