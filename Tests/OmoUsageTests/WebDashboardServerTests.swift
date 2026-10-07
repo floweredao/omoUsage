@@ -1530,6 +1530,129 @@ struct WebDashboardServerTests {
         )
     }
 
+    @Test
+    func providerNamesMonogramsAndArtworkMatchCore() throws {
+        let html = String(
+            decoding: WebDashboardAssets.indexHTML(
+                mutationNonce: "test-nonce"
+            ),
+            as: UTF8.self
+        )
+        let expectedNames = Dictionary(
+            uniqueKeysWithValues: ProviderID.allCases.map {
+                ($0.rawValue, $0.displayName)
+            }
+        )
+        let expectedMonograms = Dictionary(
+            uniqueKeysWithValues: ProviderID.allCases.map {
+                ($0.rawValue, $0.monogram)
+            }
+        )
+        let bundledArtwork = Set(
+            WebDashboardAssets.providerIconSVGs.keys.map(\.rawValue)
+        )
+
+        #expect(
+            try webStringMap(named: "providerNames", in: html)
+                == expectedNames
+        )
+        #expect(
+            try webStringMap(named: "providerMonograms", in: html)
+                == expectedMonograms
+        )
+        #expect(!bundledArtwork.isEmpty)
+        #expect(
+            try webStringSet(named: "artworkProviders", in: html)
+                == bundledArtwork
+        )
+    }
+
+    @Test
+    func cardGridAndMeterTrackMatchNativeContract() {
+        let html = String(
+            decoding: WebDashboardAssets.indexHTML(
+                mutationNonce: "test-nonce"
+            ),
+            as: UTF8.self
+        )
+        let trackOpacity = String(
+            format: "%.2f",
+            UsageMeterVisualTokens.trackOpacity
+        )
+
+        #expect(
+            html.contains("--track: rgba(24, 32, 28, \(trackOpacity));")
+        )
+        #expect(
+            html.contains("--track: rgba(242, 245, 241, \(trackOpacity));")
+        )
+        #expect(html.contains("--content-max: 1200px;"))
+        #expect(
+            html.contains(
+                ".cards {\n      display: grid;\n"
+                    + "      grid-template-columns: "
+                    + "repeat(auto-fill, minmax(min(100%, 320px), 1fr));\n"
+                    + "      align-items: start;"
+            )
+        )
+    }
+
+    @Test
+    func shellTextWaitsForWebLanguageAndStaleBadgeUsesSymbol() {
+        let html = String(
+            decoding: WebDashboardAssets.indexHTML(
+                mutationNonce: "test-nonce"
+            ),
+            as: UTF8.self
+        )
+
+        #expect(
+            html.contains(
+                "html:not([data-i18n-ready]) [data-i18n] {\n"
+                    + "      visibility: hidden;"
+            )
+        )
+        #expect(
+            html.contains(
+                #"document.documentElement.dataset.i18nReady = "true";"#
+            )
+        )
+        #expect(html.contains(#"<template id="stale-badge-icon">"#))
+        #expect(html.contains("staleBadgeIcon.content.cloneNode(true)"))
+        #expect(!html.contains(#"content: "!";"#))
+    }
+
+    private func webObjectBody(
+        named name: String,
+        in html: String
+    ) throws -> Substring {
+        let pattern = try Regex(
+            "const \(name) = (?:new Set\\()?[\\{\\[]([^\\}\\]]*)[\\}\\]]"
+        )
+        let match = try #require(html.firstMatch(of: pattern))
+        return try #require(match.output[1].substring)
+    }
+
+    private func webStringMap(
+        named name: String,
+        in html: String
+    ) throws -> [String: String] {
+        let body = try webObjectBody(named: name, in: html)
+        return Dictionary(
+            uniqueKeysWithValues: body.matches(of: #/(\w+): "([^"]*)"/#).map {
+                (String($0.1), String($0.2))
+            }
+        )
+    }
+
+    private func webStringSet(
+        named name: String,
+        in html: String
+    ) throws -> Set<String> {
+        let body = try webObjectBody(named: name, in: html)
+        return Set(body.matches(of: #/"(\w+)"/#).map { String($0.1) })
+    }
+
     private func accountIdentityJSON(_ accountID: AccountID) -> String {
         "{\"accountID\":\"\(accountID.rawValue)\",\"providerID\":\"openrouter\"}"
     }

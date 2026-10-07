@@ -142,8 +142,19 @@ other privileged controls remain native-only.
   pill uses the tertiary grouped background with a separator stroke.
 - Web canvas: `#F4F4F0` light and `#111310` dark; card: semantic elevated
   surfaces with a one-pixel low-contrast border and restrained shadow.
-- Web spacing: 4/8/12/16/20/24/32 px. Content is capped at 720 px and uses
-  16 px phone gutters, increasing to 24 px when space permits.
+- Web spacing: 4/8/12/16/20/24/32 px. Content is capped at 1200 px and uses
+  12 px phone gutters, increasing to 24 px when space permits.
+- Web meter tracks use the text color at 0.16 opacity, the same
+  `UsageMeterVisualTokens.trackOpacity` as native meters.
+- Web provider marks mirror the native `ProviderIcon`: the `ProviderVisualStyle`
+  fill on a 32 px tile with an 8 px radius and the native 1 px shadow, bundled
+  artwork rendered as template white (Antigravity keeps its original color),
+  and otherwise the Core `ProviderID.monogram` in heavy rounded type. The
+  SwiftUI semantic colors behind those fills are mirrored as light/dark
+  `--system-*` tokens.
+- The web stale badge reuses `StaleUsageVisualTokens`: an inline warning
+  triangle symbol plus text, amber accent text, and the 0.12 background and
+  0.34 border tints.
 - Web focus and status colors meet WCAG AA against their surfaces. Standard
   and extra meters reuse eucalyptus and amber; availability is also written.
 - Keyboard focus uses opaque eucalyptus `#3F7568` on light surfaces and
@@ -176,8 +187,9 @@ other privileged controls remain native-only.
   with monospaced digits, reset metadata `footnote`, and the sync header
   `footnote`/`caption`. Values never truncate: header, identity, and meter
   rows stack vertically when a line no longer fits.
-- Web uses the system font stack with a 28 px/700 page title, 17 px/650
-  provider names, 14 px/600 meter values, and 12–13 px metadata. Text remains
+- Web uses the system font stack with a 20 px/700 page title, 17 px/650
+  provider names, 16 px/600 meter values with 13 px metadata on phones, and
+  14 px/600 meter values with 12 px metadata from 640 px up. Text remains
   usable at 200% zoom without clipping or horizontal page scroll.
 - Settings labels use 15–17 px semibold hierarchy; helper, synchronization,
   and validation text use 12–13 px regular text with explicit status wording.
@@ -376,18 +388,22 @@ other privileged controls remain native-only.
   remains visually unchanged.
 - The mobile empty state explains that the Mac must refresh once and that both
   devices must use the same Apple ID.
-- Web owns one page-level vertical scroll. The sticky summary header remains
-  compact; account-provider cards follow StyleGallery `card-grid`, forming a
-  single column below 640 px and a fluid two-column grid above it. Each card is
-  keyed by `AccountProviderID`; DOM, reading, focus, and account order stay
-  aligned, and no card has internal scrolling.
+- Web owns one page-level vertical scroll. The sticky summary header is one
+  row on desktop (identity, relative refresh time, Refresh, Settings) and
+  wraps its actions onto a second full-width row below 640 px (StyleGallery
+  `sticky-header` + `wrap-row`). Account-provider cards follow StyleGallery
+  `card-grid`/`ram-grid`: `repeat(auto-fill, minmax(min(100%, 320px), 1fr))`
+  with `align-items: start`, so the column count follows the available width
+  and every card sizes to its own content instead of stretching to its row.
+  Each card is keyed by `AccountProviderID`; DOM, reading, focus, and account
+  order stay aligned, and no card has internal scrolling.
 - Repeated provider cards and settings rows pair the provider brand mark with
   an alias whenever the account is non-default or that provider occurs more
   than once. Alias containers use `min-width: 0`, one-line ellipsis, and a
   native title exposing the full sanitized value without page overflow.
 - The web empty and error states stay inside the main content region and keep
   the last successful refresh timestamp visible when available.
-- `/settings` reuses the same 720 px shell and sticky identity header. Its
+- `/settings` reuses the same shell and sticky identity header. Its
   controls form one column below 640 px and grouped cards above it. Provider
   order controls remain in DOM order and never create nested scrolling.
 
@@ -482,18 +498,21 @@ other privileged controls remain native-only.
 - `MobileFreshnessPresentation`: the one model behind that header. It derives
   the Mac's last check time, the fifteen-minute snapshot age, and the sync-issue
   flag from an injected clock, so every surface and test reads the same state.
-- `WebDashboardHeader`: identity, private-tailnet status, latest refresh time,
-  a non-interactive live connection indicator, the dashboard/settings page
-  link, and `WebRefreshButton`.
+- `WebDashboardHeader`: identity, a non-interactive live connection indicator
+  whose status text appears only while loading or unavailable, the latest
+  refresh time as relative text (`Updated 2 min ago`, absolute time in its
+  tooltip), `WebRefreshButton`, and the dashboard/settings page link.
 - `WebDashboardSettingsRow`: one local/private-tailnet dashboard status,
   endpoint, Tailscale setup/retry controls, and three ready-state actions.
   `Open Dashboard` opens the canonical URL, `Open QR Code` presents that same
   stable URL as a scannable sheet, and `Share Link` opens the native macOS
   sharing picker. No parallel mobile-specific access feature or authorization
   layer remains.
-- `WebProviderCard`: provider mark, provider name, conditional sanitized account
-  alias, plan, availability, grouped usage meters, credits, and provider
-  timestamp in one semantic article keyed by `AccountProviderID`.
+- `WebProviderCard`: provider mark rendered like the native `ProviderIcon`,
+  provider name, conditional sanitized account alias, plan, availability only
+  when it names a problem, the stale badge (symbol plus text), grouped usage
+  meters, credits, and relative provider timestamps in one semantic article
+  keyed by `AccountProviderID`.
 - `WebUsageMeter`: label, typed semantic value, reset metadata, and the shared
   period color. Native progress semantics exist only for quota remaining.
 - `WebRefreshButton`: one local-view-model refresh command, immediate busy and
@@ -581,8 +600,11 @@ other privileged controls remain native-only.
 - Mobile refresh uses the native pull gesture and toolbar action. No decorative
   motion is added; system reduced-motion and Dynamic Type behavior are kept.
 - Web data refreshes every 30 seconds and when the page becomes visible. The
-  connection indicator announces loading, current, and unavailable states.
-  Meter transitions use opacity only and are disabled by reduced motion.
+  connection indicator shows loading, current, and unavailable states and
+  announces only the unavailable text. Card reveal and the refresh spinner use
+  opacity and rotation only and are disabled by reduced motion.
+- Web shell text stays hidden (`visibility`) until the Web language has been
+  applied, so the English markup defaults never flash before Korean.
 - Web settings reconcile from `/api/settings` every 2 seconds and when the
   page becomes visible so native-app changes propagate without navigation.
 - A user-triggered refresh updates the control state immediately, disables the
