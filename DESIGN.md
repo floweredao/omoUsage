@@ -175,9 +175,12 @@ other privileged controls remain native-only.
 - Settings follows Apple's HIG for a macOS settings window: a noncustomizable
   `.preference`-style toolbar switches five panes in the former section order -
   General (language, Launch at Login, updates), Display, Web Access,
-  Dashboard Order, and Provider Authentication - with SF Symbols
-  (`gearshape`, `macwindow`, `globe`, `list.number`, `person.crop.circle`),
-  always marks the active pane, and titles the window with the visible pane's
+  Dashboard Order, and Provider Authentication - labeled General, Display,
+  Web Access, Order, and Auth (Korean: 일반, 화면 표시, 웹 접근, 순서, 인증) - with
+  SF Symbols (`gearshape`, `macwindow`, `globe`, `list.number`,
+  `person.crop.circle`). Every toolbar item lists all five labels as its
+  `possibleLabels`, so the five items share the widest label's width in
+  each language and none truncates. The toolbar always marks the active pane, and titles the window with the visible pane's
   name. The window reopens on the last viewed pane. Section headings inside a
   pane are dropped because the toolbar and window title already name it; no
   sidebar, nested scroll, checkbox, new palette, or new material is introduced.

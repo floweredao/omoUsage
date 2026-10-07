@@ -127,6 +127,8 @@ struct ApplicationConfigurationTests {
             willBeInsertedIntoToolbar: true
         ))
         #expect(item.label == "accounts")
+        // Every item reserves the widest pane title, so all five share one width.
+        #expect(item.possibleLabels == Set(SettingsPane.allCases.map(\.rawValue)))
         controller.selectPane(item)
 
         #expect(selected == [.accounts])
