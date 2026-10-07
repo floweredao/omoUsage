@@ -144,36 +144,39 @@ public struct DashboardSnapshot: Equatable, Codable, Sendable {
                     id: "openrouter-\(accountID.rawValue)",
                     title: nil,
                     meters: [
+                        // Provider text is stored in its canonical Korean form
+                        // and localized at display time, exactly like the
+                        // snapshots the Mac publishes.
                         UsageMeter(
                             id: "weekly",
-                            title: "Weekly",
+                            title: "주간",
                             period: .week,
                             percentRemaining: percentRemaining,
                             resetsAt: now.addingTimeInterval(259_200)
                         ),
                         UsageMeter(
                             id: "spend",
-                            title: "Last 30 days",
+                            title: "최근 30일",
                             period: .extra,
                             metric: .spend(amount: 3, currency: .usd)
                         ),
                         UsageMeter(
                             id: "credit",
-                            title: "Credits",
+                            title: "크레딧",
                             period: .extra,
                             metric: .credit(balance: 12, unit: .credits)
                         ),
                         UsageMeter(
                             id: "count",
-                            title: "Requests",
+                            title: "요청",
                             period: .extra,
                             metric: .count(value: 500, unit: .requests)
                         ),
                         UsageMeter(
                             id: "information",
-                            title: "Billing",
+                            title: "결제",
                             period: .extra,
-                            metric: .informational(value: "Manual renewal")
+                            metric: .informational(value: "수동 갱신")
                         )
                     ],
                     creditText: nil
