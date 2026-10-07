@@ -104,8 +104,15 @@ final class SettingsToolbarController: NSObject, NSToolbarDelegate {
                 toolbarItemIdentifier: item.itemIdentifier
             ) else { continue }
             item.label = title(pane)
+            item.possibleLabels = allTitles()
             item.image = image(for: pane)
         }
+    }
+
+    /// Every pane title in the current language. Each item reserves room for
+    /// all of them, so the five toolbar items share the widest label's width.
+    func allTitles() -> Set<String> {
+        Set(SettingsPane.allCases.map(title))
     }
 
     func toolbarDefaultItemIdentifiers(
@@ -136,6 +143,7 @@ final class SettingsToolbarController: NSObject, NSToolbarDelegate {
         ) else { return nil }
         let item = NSToolbarItem(itemIdentifier: itemIdentifier)
         item.label = title(pane)
+        item.possibleLabels = allTitles()
         item.image = image(for: pane)
         item.target = self
         item.action = #selector(selectPane(_:))
