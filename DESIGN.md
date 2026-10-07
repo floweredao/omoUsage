@@ -90,19 +90,23 @@ other privileged controls remain native-only.
 - Footer controls share the same passive secondary foreground. No icon-only
   footer action receives a persistent filled background.
 - Provider colors identify brands without expanding the dashboard chrome.
-- Settings rows use semantic control backgrounds and separator colors; meter
-  tracks use 16% semantic contrast in both appearances.
-- Provider authentication groups keep the same control background under the
-  pointer. The group itself is not an action; hover feedback belongs only to
-  its buttons, never a lighter selection fill behind its text.
-- Each settings account is a separate semantic control-background group with
-  10 pt padding, an 8 pt corner radius, a 0.5 pt separator-color border, and
-  8 pt spacing between groups. Its status and connection actions sit below
-  its identity, inside the same border.
-- Dashboard-order rows reuse the settings surface, separator, 4/8/10 pt
-  spacing, system type, and native focus/accent treatments. Their 24 pt
-  provider icon and SF Symbol drag handle introduce no new color, material,
-  radius, or typography token.
+- Settings draws no row chrome of its own: every pane is one SwiftUI
+  `Form` in the grouped style, so row backgrounds, separators, corner radii,
+  section headers, and footers are the system's. Meter tracks use 16%
+  semantic contrast in both appearances.
+- Settings status is a symbol beside secondary text (`checkmark.circle.fill`,
+  `exclamationmark.triangle.fill`, `minus.circle`, `clock`, `hourglass`);
+  no connection, web, Tailscale, launch, or recovery state is carried by a
+  fixed green, orange, or red. A failed check keeps primary text so it is
+  not visually demoted. Disconnect is a plain bordered button.
+- Each settings account is one grouped-form row. Its identity line, its
+  status-and-actions line, and (on the primary row) its credential controls
+  and Codex tier stack inside that row with 8 pt spacing; the role is a
+  secondary caption in a quaternary capsule, not a bordered badge.
+- Dashboard-order rows are grouped-form rows too: 24 pt provider icon, SF
+  Symbol drag handle, provider name, optional alias, and the native move
+  buttons. They introduce no new color, material, radius, or typography
+  token; the dragged row dims to 50% while its neighbors preview the order.
 - The side-notch rail and detail card use regular system material, semantic
   borders, and the existing eucalyptus/amber usage palette. Provider branding
   remains inside the existing icon artwork, clipped to a circle only on the
@@ -226,10 +230,25 @@ other privileged controls remain native-only.
   name. The window reopens on the last viewed pane. Section headings inside a
   pane are dropped because the toolbar and window title already name it; no
   sidebar, nested scroll, checkbox, new palette, or new material is introduced.
-- Refresh lives only in the Provider Authentication pane footer, beside the
-  feedback line: it re-checks connections and usage, which is meaningful only
-  next to the accounts it reports on. Settings apply immediately, so no pane
-  carries a save or apply button.
+- Every pane is a `Form` with `.formStyle(.grouped)`: `Section`s with native
+  row anatomy (label leading, control trailing, explanatory text as a
+  subtitle or section footer). General holds Language, Launch at Login, and
+  an Updates section; Display holds the presentation picker, the hide-delay
+  picker when Side Notch is selected, and a footer explaining both styles;
+  Web Access holds the dashboard status and address rows, then a Tailscale
+  row with its action and, once ready, the QR Code and Share Link buttons;
+  Order holds the account rows, the reorder instruction as footer, and Reset
+  to Default as its own row; Auth holds one section per provider (header =
+  icon, name, help button; footer = connection instruction) and ends with a
+  Connections section. While the account registry needs recovery, the
+  recovery section is the first section of whichever pane is shown.
+- Refresh lives only in the Auth pane's last section, as the "Check
+  connections again" row: it re-checks connections and usage, which is
+  meaningful only next to the accounts it reports on. Feedback for the last
+  action is that section's footer; Web Access reports in its own footer, and
+  the other panes report under their last section or under the recovery
+  section while it is shown. Settings apply immediately, so no pane carries a
+  save or apply button.
 - Side-notch mode pins a 6 pt hidden handle or 56 pt revealed rail to
   `NSScreen.visibleFrame.maxX`, centers it vertically with 20 pt minimum top
   and bottom margins, and grows to 344 pt inward without moving its right
@@ -307,27 +326,31 @@ other privileged controls remain native-only.
   It is also not resizable, zoomable, or full-screen capable: minimize and zoom
   show dimmed, a title-bar double-click does nothing, and the window is 480 pt
   wide. The app menu offers Settings… with Command-Comma.
-- Each pane sizes the window to its content. The window keeps its top edge and
-  animates to the new height on a pane switch (instantly under Reduce Motion).
-- Each pane owns one scroll region. Its outer `ScrollView` is the only scroll
-  owner, sized to the pane's intrinsic content up to a 520 pt body; every
-  section inside it, including `Dashboard Order`, lays out at its intrinsic
-  content height and never nests a second scroll region. The ordering list is height-driven by its
-  row count (row height times count) rather than a fixed viewport fraction, so
-  a wheel gesture anywhere in Settings always moves the same surface.
-- This follows StyleGallery `scroll-body-shell`: the settings header and footer
-  remain stable while the named outer body owns vertical scrolling. Per-provider
-  account forms and account rows participate in ordinary body flow and never
-  introduce another `List` or `ScrollView`.
+- Each pane sizes the window to its content: the Form reports its content
+  height through `onScrollGeometryChange`, and the window content height is
+  that height capped at 640 pt (`SettingsWindowContract.maximumPaneContentHeight`).
+  Short panes fit exactly; Order and Auth scroll inside the cap. The window
+  keeps its top edge and animates to the new height on a pane switch; the
+  first fit, a hidden window, and Reduce Motion resize instantly
+  (`SettingsWindowContract.animatesFit`).
+- Each pane owns one scroll region: the grouped Form itself, flush with the
+  window edge, is the only scroller. Nothing inside it, including `Dashboard
+  Order`, nests a second scroll region, so a wheel gesture anywhere in
+  Settings always moves the same surface.
+- This follows StyleGallery `saas-settings` scroll ownership: the toolbar
+  stays stable while the main region owns vertical scrolling. Per-provider
+  account forms and account rows are ordinary form rows and never introduce
+  another `List` or `ScrollView`.
 - `Dashboard Order` sits between the presentation settings group and the
   `Provider Authentication` group. Ordering is a separate task from
   authentication, so it gets its own titled section rather than controls
   embedded in each auth row.
 - The ordering list is keyed by `AccountProviderID`, so two accounts on one
   provider are two independently draggable rows. Each row shows a drag handle,
-  `ProviderIcon`, provider name, the sanitized account alias when the account
-  is non-default or the provider has more than one account, and `N of M`
-  position text.
+  `ProviderIcon`, provider name, and the sanitized account alias when the
+  account is non-default or the provider has more than one account. The
+  `N of M` position and the connection state are not visible text; the row
+  speaks them as its accessibility value.
 - Dashboard Order lists only accounts with verified available usage that are
   not explicitly disconnected. Hidden accounts retain their stored positions;
   reordering visible accounts never removes a configured identity.
@@ -410,52 +433,56 @@ other privileged controls remain native-only.
 ## 5. Components
 
 - `ProviderSectionView`: authenticated provider usage only.
-- `ProviderSettingsRow`: icon, name, native help, and credential guidance.
-  Connection status and controls belong to each account group, not the
-  provider header; the primary group also owns its editable API-key controls.
-  Every row embeds its provider-specific
-  account manager. It owns authentication only and carries no ordering
-  affordance.
-- `AppUpdateSettingsRow`: replaces the diagnostic export row with the installed
-  version, a short update description, and one native Check for Updates button.
-  It reuses settings spacing, typography, control background and separator.
-  No checkbox or automatic-check permission prompt is added. Sparkle owns
-  update discovery, progress, signed installation and relaunch after the user
-  requests a check and accepts an update. Internal redacted diagnostics remain.
-- `ProviderOrderingView`: the `Dashboard Order` surface. A native SwiftUI
-  fixed-height row stack with an explicit native AppKit drag handle and
-  account-qualified row drop destinations. The dragged row and its insertion
-  position remain visible while neighboring rows move in a local preview.
-  One completed drop commits one semantic insertion; cancellation discards the
-  preview without changing the stored order. Its
-  height is computed from a 60 pt content-safe row height times the row count
-  without an inner scrolling container; the page `ScrollView` keeps scroll
-  ownership. A `Reset to Default` control sits in the section header and is
-  disabled while the order already equals the configured default.
+- `ProviderSettingsSection`: one grouped-form section per provider. Its
+  header is the icon, name, and native help button; its footer is the
+  credential guidance. Connection status and controls belong to each account
+  row, not the header; the primary row also owns its editable API-key
+  controls. Every section embeds its provider-specific account manager. It
+  owns authentication only and carries no ordering affordance.
+- `AppUpdateSettingsRow`: a labeled row with the installed version as its
+  subtitle and one native Check for Updates… button; the update description
+  is the section footer. No checkbox or automatic-check permission prompt is
+  added. Sparkle owns update discovery, progress, signed installation and
+  relaunch after the user requests a check and accepts an update. Internal
+  redacted diagnostics remain.
+- `LaunchAtLoginSettingsRow`: a native switch row whose subtitle is the
+  current status; the Open Login Items Settings… row follows only while
+  macOS waits for approval, and a failed change is reported as a symbol plus
+  text in the section footer.
+- `ProviderOrderingView`: the `Dashboard Order` surface. Grouped-form rows
+  with an explicit native AppKit drag handle and account-qualified row drop
+  destinations. The dragged row and its insertion position remain visible
+  while neighboring rows move in a local preview. One completed drop commits
+  one semantic insertion; cancellation discards the preview without changing
+  the stored order. The rows size themselves and the Form keeps scroll
+  ownership. The reorder instruction is the section footer, and `Reset to
+  Default` follows as its own row, disabled while the order already equals
+  the configured default.
 - `ProviderOrderRow`: one composite account-provider row. Drag handle glyph,
-  `ProviderIcon`, provider name, optional sanitized account alias, and
-  `N of M` position text. Never renders credentials, account UUIDs, or
-  credential-source paths.
+  `ProviderIcon`, provider name, and optional sanitized account alias; the
+  `N of M` position and connection state are its accessibility value. Never
+  renders credentials, account UUIDs, or credential-source paths.
 - `ProviderAccountsSection`: native multi-account management embedded once in
-  every provider row. At rest it shows a primary row followed by saved additional
-  rows, each with a role, editable alias, and masked identity when available.
-  Each account group owns its connection badge and targeted connection action.
-  Disconnect and reconnect affect only that account, never its siblings.
-  Additional accounts reconnect using their saved credential; they never
-  launch a shared companion login that could replace another account.
-  A compact plus-labelled Add Account button appears only while the primary
-  account is connected, not as an always-visible input strip. The
-  button expands a vertically labelled form with an alias example, a separate
-  secure key field where required, and trailing Cancel and primary action.
-  Companion forms explain that another official login is required. Waiting
-  replaces editable fields with the pending alias, a textual login instruction,
-  and reachable Check Again and Cancel controls. Cancelling a pending login
-  returns to the draft; successful addition collapses the form. Fields and
-  actions reuse native rounded controls, 8/10/12 pt spacing, and semantic text
-  without new colors or decorative motion. The add action requires a sanitized alias and additionally
-  requires a key only for API-key providers. Success clears that provider's
-  drafts; failure preserves them and reports localized status without echoing
-  any credential. Existing rows show the alias and one targeted Remove action.
+  every provider section as its rows. At rest it shows a primary row followed
+  by saved additional rows, each with a role, editable alias, and masked
+  identity when available. Each account row owns its connection badge and
+  targeted connection action. Disconnect and reconnect affect only that
+  account, never its siblings. Additional accounts reconnect using their saved
+  credential; they never launch a shared companion login that could replace
+  another account. A plus-labelled Add Account row appears only while the
+  primary account is connected, not as an always-visible input strip. It
+  expands into form rows: an instruction, a labeled alias field with an
+  example prompt, a labeled secure key field where required, and trailing
+  Cancel and primary action. Companion forms explain that another official
+  login is required. Waiting replaces the fields with the pending alias, a
+  textual login instruction, and reachable Check Again and Cancel controls.
+  Cancelling a pending login returns to the draft; successful addition
+  collapses the form. Fields and actions are the Form's native controls with
+  semantic text, no new colors, and no decorative motion. The add action
+  requires a sanitized alias and additionally requires a key only for API-key
+  providers. Success clears that provider's drafts; failure preserves them
+  and reports localized status without echoing any credential. Existing rows
+  show the alias and one targeted Remove action.
 - `DashboardAccountIdentityRule`: shows a sanitized alias beside the provider
   name whenever the account is non-default or the current snapshot contains
   more than one row for that provider. The alias uses secondary system text
@@ -502,12 +529,14 @@ other privileged controls remain native-only.
   whose status text appears only while loading or unavailable, the latest
   refresh time as relative text (`Updated 2 min ago`, absolute time in its
   tooltip), `WebRefreshButton`, and the dashboard/settings page link.
-- `WebDashboardSettingsRow`: one local/private-tailnet dashboard status,
-  endpoint, Tailscale setup/retry controls, and three ready-state actions.
-  `Open Dashboard` opens the canonical URL, `Open QR Code` presents that same
-  stable URL as a scannable sheet, and `Share Link` opens the native macOS
-  sharing picker. No parallel mobile-specific access feature or authorization
-  layer remains.
+- `WebDashboardSettingsSections`: two grouped-form sections. The first pairs
+  the dashboard status row (symbol plus text) with the selectable monospaced
+  address row whose trailing `Open Dashboard` opens the canonical URL, and
+  carries the description, endpoint, and any listener failure in its footer.
+  The second is the Tailscale row: its status, its setup/retry action, and,
+  once ready, `Open QR Code` (that same stable URL as a scannable sheet) and
+  `Share Link` (the native macOS sharing picker). No parallel mobile-specific
+  access feature or authorization layer remains.
 - `WebProviderCard`: provider mark rendered like the native `ProviderIcon`,
   provider name, conditional sanitized account alias, plan, availability only
   when it names a problem, the stale badge (symbol plus text), grouped usage
@@ -584,9 +613,12 @@ other privileged controls remain native-only.
   Every completed logical move writes the composite order exactly once, reorders
   the snapshot once, and publishes control state once. A boundary move (up at
   the top, down at the bottom) is a no-op that writes nothing.
-- Reorder motion animates the stack's local row positions, not a decorative
+- Reorder motion animates the form's local row positions, not a decorative
   transform. Reduce Motion disables the position animation and native drag
   snap-back animation while preserving target feedback.
+- The Settings window's height change on a pane switch is the one Settings
+  animation; `SettingsWindowContract.animatesFit` skips it for the first fit,
+  a hidden window, and Reduce Motion.
 - Refresh uses a dedicated active subtree that rotates only while work is
   active. Returning to idle creates a fresh zero-rotation button, so no
   repeat-forever transaction survives refresh completion.
