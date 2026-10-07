@@ -245,6 +245,7 @@ struct SettingsView: View {
     @State private var sideNotchHideDelay: SideNotchHideDelay
     @State private var dashboardLinkPresentation =
         WebDashboardLinkPresentationState()
+    @State private var launchAtLogin = LaunchAtLoginController()
 
     init(
         viewModel: UsageDashboardViewModel,
@@ -434,6 +435,8 @@ struct SettingsView: View {
                             style: .continuous
                         )
                     )
+
+                    LaunchAtLoginSettingsRow(controller: launchAtLogin)
 
                     AppUpdateSettingsRow(controller: appUpdateController)
 
@@ -712,11 +715,15 @@ struct SettingsView: View {
                     localization.context
                 )
         }
+        .onAppear {
+            launchAtLogin.refresh()
+        }
         .onReceive(
             NotificationCenter.default.publisher(
                 for: NSApplication.didBecomeActiveNotification
             )
         ) { _ in
+            launchAtLogin.refresh()
             let pendingProvider = additionCoordinator.pending?.provider
             apply(
                 additionCoordinator.applicationDidBecomeActive(),
@@ -2516,6 +2523,75 @@ private struct WebDashboardSettingsRow: View {
         case .unavailable(let port):
             localization.format(.webDashboardUnavailable, String(port))
         }
+    }
+}
+
+private struct LaunchAtLoginSettingsRow: View {
+    @Bindable var controller: LaunchAtLoginController
+    @Environment(\.appLocalization) private var localization
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Image(systemName: "power.circle")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 24, height: 24)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(localization.text(.launchAtLogin))
+                        .font(.system(size: 13.5, weight: .semibold))
+                    Text(localization.launchStatus(controller.state))
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 8)
+
+                Toggle(
+                    localization.text(.launchAtLogin),
+                    isOn: Binding(
+                        get: { controller.isEnabled },
+                        set: { controller.setEnabled($0) }
+                    )
+                )
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                    .accessibilityIdentifier("launch-at-login-toggle")
+            }
+
+            if controller.errorMessage != nil {
+                Text(localization.text(.launchChangeFailed))
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(.red)
+            }
+
+            if controller.showsSystemSettingsButton {
+                Button(
+                    localization.text(.openLoginItems),
+                    action: controller.openSystemSettings
+                )
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+        }
+        .padding(10)
+        .background(
+            Color(nsColor: .controlBackgroundColor),
+            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(
+                    Color(nsColor: .separatorColor),
+                    lineWidth: 0.5
+                )
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("launch-at-login-settings")
     }
 }
 
