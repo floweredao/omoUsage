@@ -392,4 +392,28 @@ struct LocalizationTests {
                 == "세션 (5시간)"
         )
     }
+
+    @Test
+    func mobileFixtureProviderTextLocalizesLikePublishedSnapshots() {
+        let fixture = DashboardSnapshot.mobileFixture(
+            now: Date(timeIntervalSince1970: 1_785_675_000)
+        )
+        let meters = fixture.providers.flatMap(\.groups).flatMap(\.meters)
+        var providerText = meters.map(\.title)
+        for case .informational(let value) in meters.map(\.metric) {
+            providerText.append(value)
+        }
+
+        #expect(providerText.count == 12)
+        for text in providerText {
+            #expect(
+                ProviderTextLocalization.text(text, language: .korean) == text,
+                Comment(rawValue: text)
+            )
+            #expect(
+                ProviderTextLocalization.text(text, language: .english) != text,
+                Comment(rawValue: text)
+            )
+        }
+    }
 }
