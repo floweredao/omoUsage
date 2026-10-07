@@ -11,7 +11,11 @@ enum RefreshTimestampPresenter {
         if age(of: lastRefreshAttemptAt, at: now) < 10 {
             return AppStrings(language: language).text(.justNow)
         }
-        return clockText(lastRefreshAttemptAt, timeZone: timeZone)
+        return clockText(
+            lastRefreshAttemptAt,
+            language: language,
+            timeZone: timeZone
+        )
     }
 
     static func footerText(
@@ -41,7 +45,11 @@ enum RefreshTimestampPresenter {
         return String(
             format: strings.text(.asOf),
             locale: language.locale,
-            clockText(lastSuccessfulAt, timeZone: timeZone)
+            clockText(
+                lastSuccessfulAt,
+                language: language,
+                timeZone: timeZone
+            )
         )
     }
 
@@ -68,11 +76,12 @@ enum RefreshTimestampPresenter {
 
     private static func clockText(
         _ date: Date,
+        language: AppLanguage,
         timeZone: TimeZone
     ) -> String {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.locale = language.locale
         formatter.timeZone = timeZone
         formatter.dateFormat = "HH:mm"
         return formatter.string(from: date)

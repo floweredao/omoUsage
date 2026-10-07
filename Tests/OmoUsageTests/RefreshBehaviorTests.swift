@@ -59,6 +59,29 @@ struct RefreshTimestampPresenterTests {
         )
     }
 
+    @Test(arguments: [AppLanguage.korean, .english])
+    func clockKeepsTwentyFourHourTimeInEveryAppLanguage(
+        language: AppLanguage
+    ) {
+        let evening = updatedAt.addingTimeInterval(11 * 3_600)
+        #expect(
+            RefreshTimestampPresenter.footerText(
+                refreshedAt: evening,
+                now: evening.addingTimeInterval(10),
+                language: language,
+                timeZone: utc
+            ) == "23:00"
+        )
+        #expect(
+            RefreshTimestampPresenter.providerText(
+                updatedAt: evening,
+                now: evening.addingTimeInterval(10),
+                language: language,
+                timeZone: utc
+            ).contains("23:00")
+        )
+    }
+
     @Test
     func futureTimestampRemainsNow() {
         #expect(

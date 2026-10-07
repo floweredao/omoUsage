@@ -597,7 +597,7 @@ public struct AppStrings: Sendable {
         .refreshFailed: "Refresh Failed",
         .rateLimitRetryNotice: "Checking again shortly",
         .lastRefreshAttempt: "Last refreshed %@",
-        .justNow: "Just now",
+        .justNow: "just now",
         .asOfNow: "As of now",
         .asOf: "As of %@",
         .remaining: "%d%% remaining",

@@ -1,4 +1,5 @@
 import OmoUsageCore
+import AppKit
 import SwiftUI
 
 struct DashboardView: View {
@@ -63,6 +64,7 @@ struct DashboardView: View {
                     .bottom,
                     DashboardLayout.contentBottomPadding
                 )
+                .dashboardOverlayScrollers()
             }
             .scrollIndicators(.automatic)
             .frame(
@@ -89,6 +91,86 @@ struct DashboardView: View {
             onPanelHeightChange(
                 DashboardLayout.panelHeight(for: providers)
             )
+        }
+    }
+}
+
+/// Scroller contract for the two compact dashboard scroll regions: the
+/// popover body and the Side Notch rail.
+///
+/// `scrollIndicators` only decides whether SwiftUI asks for a scroller at
+/// all. The scroller's style still follows the system "Show scroll bars"
+/// preference, and the legacy style takes a 15 pt gutter out of the 320 pt
+/// popover or the 56 pt rail and keeps its knob visible for as long as the
+/// content overflows. Both surfaces therefore pin the overlay style: it
+/// reserves no width, appears while scrolling, and flashes only when the
+/// content overflows. The Settings window keeps the system preference.
+enum DashboardScrollerPolicy {
+    static let style = NSScroller.Style.overlay
+
+    @MainActor
+    static func apply(to scrollView: NSScrollView) {
+        if scrollView.scrollerStyle != style {
+            scrollView.scrollerStyle = style
+        }
+        if !scrollView.autohidesScrollers {
+            scrollView.autohidesScrollers = true
+        }
+    }
+}
+
+extension View {
+    /// Applies `DashboardScrollerPolicy` to the enclosing `ScrollView`.
+    /// Attach it to the scroll view's content, so the configurator sits
+    /// inside the scroll view's document hierarchy.
+    func dashboardOverlayScrollers() -> some View {
+        background(DashboardScrollerConfigurator())
+    }
+}
+
+struct DashboardScrollerConfigurator: NSViewRepresentable {
+    func makeNSView(context: Context) -> ConfiguratorView {
+        ConfiguratorView()
+    }
+
+    func updateNSView(_ nsView: ConfiguratorView, context: Context) {
+        nsView.applyPolicy()
+    }
+
+    final class ConfiguratorView: NSView {
+        override init(frame frameRect: NSRect) {
+            super.init(frame: frameRect)
+            // AppKit resets every scroll view to the preferred style when the
+            // preference or the connected pointing device changes, so the
+            // policy is applied again once that update has landed.
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(preferredScrollerStyleDidChange),
+                name: NSScroller.preferredScrollerStyleDidChangeNotification,
+                object: nil
+            )
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) {
+            nil
+        }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            applyPolicy()
+        }
+
+        func applyPolicy() {
+            guard let scrollView = enclosingScrollView else { return }
+            DashboardScrollerPolicy.apply(to: scrollView)
+        }
+
+        @objc
+        private func preferredScrollerStyleDidChange() {
+            Task { @MainActor [weak self] in
+                self?.applyPolicy()
+            }
         }
     }
 }
