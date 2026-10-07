@@ -298,6 +298,25 @@ enum SideNotchRevealAnchorPolicy {
     }
 }
 
+/// How a newly computed panel frame is applied.
+///
+/// AppKit replays its own keyframes while a panel frame animates, so a frame
+/// set directly during the 200 ms reveal is overwritten by that animation's
+/// final frame. A cold reveal that starts before the first snapshot targets
+/// the 128 pt minimum; the provider update then lands mid-slide and loses,
+/// leaving one visible row. Such updates re-target the running animation
+/// instead. Hiding keeps the direct set, because the hidden-trigger restore
+/// already runs when that animation completes.
+enum SideNotchFrameUpdatePolicy {
+    static func animates(
+        requested: Bool,
+        animationInFlight: Bool,
+        mode: SideNotchPanelMode
+    ) -> Bool {
+        requested || (animationInFlight && mode != .hidden)
+    }
+}
+
 enum SideNotchMotionPolicy {
     static let duration = 0.2
 
@@ -695,6 +714,8 @@ final class SideNotchPanelController: NSObject {
     private var revealGeneration = 0
     private var revealTask: (any SideNotchAutoHideTask)?
     private var transitionGeneration = 0
+    private var frameAnimationGeneration = 0
+    private var isAnimatingPanelFrame = false
     private var configuredAutoHideDelay: TimeInterval
     static let autoHideDelay =
         SideNotchHideDelay.standard.rawValue
@@ -1107,7 +1128,24 @@ final class SideNotchPanelController: NSObject {
         )
         panel.setFrame(edgeFrame, display: true)
         transitionState(to: mode, animated: true)
-        animatePanel(to: targetFrame)
+        transitionGeneration += 1
+        let generation = transitionGeneration
+        animatePanel(to: targetFrame) { [weak self] in
+            self?.settleRevealedFrame(generation: generation)
+        }
+    }
+
+    /// A snapshot published while the reveal was still sliding in has
+    /// re-targeted the animation; the frame for the final provider set is
+    /// applied once more after the last keyframe.
+    private func settleRevealedFrame(generation: Int) {
+        guard
+            transitionGeneration == generation,
+            state.mode != .hidden
+        else {
+            return
+        }
+        reposition(animated: false)
     }
 
     private func transitionState(
@@ -1225,7 +1263,13 @@ final class SideNotchPanelController: NSObject {
         guard let screen = targetScreen(preferredScreen) else { return }
         let frame = frame(for: state.mode, on: screen)
         guard panel.frame != frame else { return }
-        guard animated else {
+        guard
+            SideNotchFrameUpdatePolicy.animates(
+                requested: animated,
+                animationInFlight: isAnimatingPanelFrame,
+                mode: state.mode
+            )
+        else {
             panel.setFrame(frame, display: true)
             return
         }
@@ -1263,6 +1307,15 @@ final class SideNotchPanelController: NSObject {
             return
         }
 
+        frameAnimationGeneration += 1
+        let generation = frameAnimationGeneration
+        isAnimatingPanelFrame = true
+        let finish: @MainActor () -> Void = { [weak self] in
+            if let self, self.frameAnimationGeneration == generation {
+                self.isAnimatingPanelFrame = false
+            }
+            completion?()
+        }
         NSAnimationContext.runAnimationGroup { context in
             context.duration = SideNotchMotionPolicy.duration
             context.timingFunction = CAMediaTimingFunction(
@@ -1270,9 +1323,8 @@ final class SideNotchPanelController: NSObject {
             )
             panel.animator().setFrame(frame, display: true)
         } completionHandler: {
-            guard let completion else { return }
             Task { @MainActor in
-                completion()
+                finish()
             }
         }
     }
