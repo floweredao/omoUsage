@@ -1,171 +1,168 @@
-# OmoUsage
+# oh-my-openusage
 
-A native macOS menu-bar app that shows how much quota you have left across eleven
-coding-AI providers in one popover, reusing existing logins where possible.
+**Every coding-AI quota you pay for, one glance away in the macOS menu bar.**
 
-<img src="Docs/screenshot.png" width="346" alt="OmoUsage popover showing remaining Codex and Claude Code quota">
+oh-my-openusage is a native Swift menu-bar app that shows how much quota you
+have left across eleven coding-AI providers. It reuses the logins you already
+have, keeps every credential on your Mac, and needs no account or backend of
+its own. The app itself is named **OmoUsage**.
 
-OmoUsage reuses credentials owned by official CLIs and apps whenever possible.
-For API keys entered directly in Settings, OmoUsage owns only its exact
-generic-password items in the macOS Keychain. It calls each provider's usage
-endpoint and renders quota, spend, credit, count, and informational metrics.
+> Inspired by [OpenUsage](https://github.com/robinebers/openusage). This is an
+> independent project, not affiliated with or endorsed by OpenUsage.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="Docs/images/popover-dark.png">
+    <img src="Docs/images/popover-light.png" width="392" alt="OmoUsage popover listing remaining Claude Code, Codex, and Cursor quota with reset times">
+  </picture>
+</p>
+
+<sub>All screenshots use the app's built-in fixture data, not a real account.</sub>
+
+## Features
+
+- **Menu-bar popover.** A 320 pt native popover with one card per provider:
+  session and weekly windows, credits, spend, and when each one resets.
+- **Side Notch.** An optional edge rail with circular remaining-usage rings.
+  Point at a provider and its detail card slides in from the screen edge.
+- **Several accounts per provider.** Add a second Claude, Codex, or other
+  account and see them side by side.
+- **Reuses existing logins.** Most providers read the credential their official
+  CLI or app already stored. Only OpenRouter and Z.ai need an API key.
+- **Last good numbers stay.** Providers refresh independently every 60 seconds,
+  so one failing service never blanks the others.
+- **Private web dashboard.** The same usage in a browser at
+  `http://127.0.0.1:7827`, reachable from your other devices through
+  Tailscale Serve.
+- **iPhone companion.** A read-only iOS app that receives a sanitized usage
+  snapshot through your private iCloud.
+- **Korean and English.** Korean by default; switch in Settings.
+- **In-app updates** through [Sparkle](https://sparkle-project.org).
+
+## Screenshots
+
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="Docs/images/side-notch-dark.png">
+        <img src="Docs/images/side-notch-light.png" width="344" alt="Side Notch rail with usage rings and an expanded provider card">
+      </picture>
+      <br><sub>Side Notch</sub>
+    </td>
+    <td align="center" width="50%">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="Docs/images/settings-auth-dark.png">
+        <img src="Docs/images/settings-auth-light.png" width="380" alt="Settings Auth pane showing connected accounts per provider">
+      </picture>
+      <br><sub>Settings › Auth</sub>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="Docs/images/web-dashboard-dark.png">
+        <img src="Docs/images/web-dashboard-light.png" alt="Private web dashboard with one card per provider">
+      </picture>
+      <br><sub>Private web dashboard</sub>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="Docs/images/settings-general-dark.png">
+        <img src="Docs/images/settings-general-light.png" width="420" alt="Settings General pane with language, launch at login, and updates">
+      </picture>
+      <br><sub>Settings › General</sub>
+    </td>
+  </tr>
+</table>
+
+## Install
+
+1. Download the latest `OmoUsage-<version>.zip` from
+   [Releases](https://github.com/floweredao/omoUsage/releases/latest).
+2. Unzip it and move `OmoUsage.app` to `/Applications`.
+3. Release builds are not notarized yet. On first launch, if macOS blocks the
+   app, open **System Settings › Privacy & Security** and choose
+   **Open Anyway**.
+
+The app lives in the menu bar (no Dock icon). Click the gauge icon for the
+popover; the gear opens Settings, where each provider shows its connection
+state and can start its official sign-in. Later versions arrive through
+**Settings › General › Check for Updates**.
+
+Requires macOS 15 or later on Apple silicon.
 
 ## Supported providers
 
 | Provider | How you sign in | What OmoUsage reads |
 | --- | --- | --- |
-| Claude Code | `claude auth login` | `Claude Code-credentials` keychain item, `~/.claude/.credentials.json`, or `CLAUDE_CODE_OAUTH_TOKEN`; falls back to a live Claude Desktop session |
-| Codex | `codex login` | `~/.codex/auth.json` (honours `CODEX_HOME`) or the Codex keychain item |
-| Cursor | Cursor app → Account | Cursor's local database |
-| Antigravity | Antigravity app or `agy` | `gemini` keychain item |
-| Copilot | `copilot login` or `gh auth login` | `copilot-cli` keychain item, `~/.config/gh/hosts.yml`, or an editor's OAuth token |
-| Devin | `devin auth login` | `~/.local/share/devin/credentials.toml` (honours `XDG_DATA_HOME`) |
+| Claude Code | `claude auth login`, or sign in with your browser in Settings | `Claude Code-credentials` Keychain item, `~/.claude/.credentials.json`, or `CLAUDE_CODE_OAUTH_TOKEN` |
+| Codex | `codex login` | `~/.codex/auth.json` (honours `CODEX_HOME`) or the Codex Keychain item |
+| Cursor | Cursor app › Account | Cursor's local database |
+| Antigravity | Antigravity app or `agy` | `gemini` Keychain item |
+| Copilot | `copilot login` or `gh auth login` | `copilot-cli` Keychain item, `~/.config/gh/hosts.yml`, or an editor's OAuth token |
+| Devin | `devin auth login`, or browser sign-in in Settings | `~/.local/share/devin/credentials.toml` (honours `XDG_DATA_HOME`) |
 | Grok | `grok login` | `~/.grok/auth.json` |
-| Kiro | Connect in Settings; reuses an existing login or opens browser sign-in | Account-scoped Keychain credential, or `~/Library/Application Support/kiro-cli/data.sqlite3` (honours absolute `KIRO_DATA_DIR`) |
-| OpenCode | `opencode auth login` or API key in Settings | OpenCode's `auth.json` plus local usage records, or an OmoUsage-owned Keychain item |
+| Kiro | Connect in Settings (reuses an existing login or opens browser sign-in) | Account-scoped Keychain credential or Kiro CLI's `data.sqlite3` |
+| OpenCode | `opencode auth login` or an API key in Settings | OpenCode's `auth.json` plus local usage records |
 | OpenRouter | API key in Settings | OmoUsage-owned Keychain item |
 | Z.ai | API key in Settings | OmoUsage-owned Keychain item |
 
-OpenRouter and Z.ai use keys entered in Settings; OpenCode can optionally use
-one. Legacy OmoUsage plaintext key files migrate transactionally to Keychain
-and are deleted only after registry and Keychain state converge. Everything
-else can reuse an existing login. Kiro opens browser sign-in automatically
-when you choose Connect without a usable existing credential.
-Providers you are not signed in to are omitted.
+Providers you are not signed in to are hidden. Accounts you add in Settings get
+their own Keychain item, so a second account never rewrites the official CLI's
+credential.
 
-## Requirements
+## Privacy
 
-Kiro first uses the selected account's saved credential or an existing CLI
-login. If it is absent, expired, or rejected, Connect opens Kiro's browser
-sign-in directly, without requiring the CLI or a separate import action.
-The callback binds only to loopback port 3128 and validates PKCE and state.
-OmoUsage validates usage before saving the credential to Keychain and renews
-only its own OAuth tokens. It never rotates copied CLI tokens, substitutes a
-different profile on reconnect, or opens login windows during background refresh.
-Network and response errors do not trigger browser login.
+- Everything runs on your Mac. The app talks only to each provider's own usage
+  API. There is no analytics, telemetry, or backend.
+- API keys you enter are stored in the macOS Keychain and are never shown
+  again, synced to iCloud, or written to diagnostics.
+- The web dashboard listens on loopback only and serves the same sanitized
+  snapshot as the iPhone app: totals, plan labels, and reset times. It never
+  sends credentials, cookies, or file paths. To use it from another device,
+  proxy `127.0.0.1:7827` with Tailscale Serve inside your tailnet; do not
+  expose it with Tailscale Funnel or on a LAN interface.
+- The iPhone companion never sees provider credentials and never calls
+  provider APIs.
 
-Kiro's regional usage and desktop OAuth services are undocumented integration
-surfaces and may change. Supported profile regions are `us-east-1` and
-`eu-central-1`; the browser flow uses Kiro's hosted Google/GitHub sign-in
-or continues Builder ID through AWS's browser approval flow. Builder ID's
-OIDC registration secrets are kept with that account in Keychain.
-Organization-specific external identity providers are not supported by
-the integrated browser flow; existing supported CLI credentials still work.
-When the response mixes bonus or trial credits with plan usage, OmoUsage
-shows the balance as unavailable instead of inventing a remaining percentage.
+## Build from source
 
-- macOS 15 or later
-- Swift 6.1 toolchain (Xcode 26) to build
-- iOS 18 for the optional iPhone companion target
-
-## Build and run
+Requires the Swift 6.1 toolchain (Xcode 26).
 
 ```sh
 swift build                 # debug build
 swift test                  # full test suite
 sh Scripts/package-app.sh   # → dist/OmoUsage.app
+open dist/OmoUsage.app
 ```
 
-`package-app.sh` produces a signed-for-local-use `.app`. When your keychain
-holds an Apple Development certificate, it signs with that certificate, so
-rebuilt installs keep their Keychain "Always Allow" grants and approval
-prompts appear only once. Without one it falls back to ad-hoc signing; pass
-`--adhoc` (or set `OMO_USAGE_CODESIGN_IDENTITY=-`) to force ad-hoc.
-Copy it wherever you keep apps:
+`package-app.sh` signs with an Apple Development certificate when your Keychain
+has one, so rebuilt copies keep their Keychain "Always Allow" grants. Without
+one it falls back to ad-hoc signing; pass `--adhoc` to force it.
+
+Run with fake data, for example to take screenshots:
 
 ```sh
-cp -R dist/OmoUsage.app /Applications/
-open -a /Applications/OmoUsage.app
+OMO_USAGE_FIXTURE_MODE=1 swift run OmoUsage
 ```
 
-The app runs as a status item using the `gauge.with.dots.needle.50percent` SF
-Symbol. Click it for the 320 pt popover; the gear opens Settings, where every
-provider reports its connection state and can launch its official login flow.
-
-`project.yml` (XcodeGen) and the checked-in `OmoUsage.xcodeproj` exist for the
-iOS/Catalyst companion target, which SwiftPM does not build.
-
-## How it works
-
-Usage refreshes every 60 seconds, and each provider is fetched independently so
-one failure never blanks the others. A provider that fails transiently keeps
-showing its last good numbers rather than disappearing.
-
-### Claude token refresh
-
-Claude Code's OAuth access token lives about eight hours. When it has expired,
-OmoUsage performs a `refresh_token` exchange against
-`https://platform.claude.com/v1/oauth/token` and writes the rotated credential
-back to the same `Claude Code-credentials` keychain item, preserving every
-field the CLI owns (`scopes`, `subscriptionType`, `rateLimitTier`,
-`refreshTokenExpiresAt`) so Claude Code keeps working afterwards.
-
-Two details that are easy to get wrong:
-
-- That token endpoint sorts clients by `User-Agent` *before* it validates the
-  grant. An unrecognised agent gets `429 rate_limit_error`, which looks like
-  throttling but means "unknown client".
-- A failed refresh is placed under a 10 minute cooldown. Without it the
-  60 second refresh loop would retry a dead token endlessly.
-
-## iPhone companion
-
-`OmoUsageMobile` is a read-only companion. The Mac stays the only credential
-owner and publishes a usage snapshot — totals, plan labels, reset times — to
-your private iCloud key-value store. Credentials, cookies, API keys, and file
-paths never leave the Mac. Both targets must share a development team and team-prefixed iCloud key-value
-identifier. See [`RELEASE.md`](RELEASE.md) for provisioning and trusted macOS
-distribution requirements.
-
-## Private web dashboard
-
-While OmoUsage is running, it serves a private dashboard at
-`http://127.0.0.1:7827`. The browser receives only the same sanitized usage
-snapshot used by the iPhone companion. It can refresh usage, reorder providers,
-hide or show providers, and choose an independent Korean or English web
-language; credential setup remains native-only.
-
-The server accepts loopback connections only. To reach it from another device,
-configure Tailscale Serve to proxy `127.0.0.1:7827` inside your authenticated
-tailnet. Do not expose it with Tailscale Funnel or bind it directly to a LAN or
-public interface.
-
-## Privacy
-
-Everything runs locally. OmoUsage talks only to each provider's own API, has no
-analytics or telemetry, and no backend of its own. Its web server is an
-always-on loopback-only companion surface while the app is running. API keys
-entered in Settings are stored in OmoUsage's exact macOS Keychain items and
-are never rendered again after save, copied to iCloud, or written to
-diagnostics.
-
-## Layout
-
-```
-Sources/OmoUsage/
-  Credentials/   local credential discovery per provider
-  Providers/     one UsageProvider per service + response parsing
-  Dashboard/     view model, refresh scheduler, provider protocol
-  WebDashboard/  loopback HTTP server, commands, packaged assets
-  Views/         popover, settings, meters, provider icons
-  Localization/  Korean (default) and English strings
-  Resources/     app icon, provider icons, web dashboard shell
-  Mobile/        iOS companion
-Sources/OmoUsageCore/
-  Models/        shared typed usage and snapshot models
-  Localization/  shared Korean/English strings and presentation
-  Sync/          schema-v4 private iCloud codec and mobile state
-Tests/OmoUsageTests/
-Scripts/         app packaging and icon generation
-Config/          Info.plist and entitlements
-```
-
-The UI ships in Korean by default; English is selectable in Settings.
+The iOS and Mac Catalyst companion targets are defined in `project.yml`
+(XcodeGen) and the checked-in `OmoUsage.xcodeproj`; SwiftPM builds only the
+macOS app and tests.
 
 ## Documentation
 
-- [`DESIGN.md`](DESIGN.md) — the design contract: visual tokens, layout,
-  motion, accessibility, and the constraints the implementation must honour.
-- [`RELEASE.md`](RELEASE.md) — trusted macOS signing, notarization, and iCloud
-  team setup.
+- [`DESIGN.md`](DESIGN.md): visual tokens, layout, motion, accessibility, and
+  the privacy contract the implementation follows.
+- [`RELEASE.md`](RELEASE.md): signing, notarization, Sparkle updates, and
+  iCloud team setup.
 - [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)
+
+## Acknowledgements
+
+- [OpenUsage](https://github.com/robinebers/openusage) for the idea and for
+  showing how each provider reports usage.
+- [Sparkle](https://sparkle-project.org) for in-app updates.
