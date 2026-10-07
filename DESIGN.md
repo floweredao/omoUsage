@@ -117,6 +117,20 @@ other privileged controls remain native-only.
 - The hidden side-notch handle is 6 pt wide with an 8 pt edge tracking region.
   The revealed rail uses 20 pt leading corners and square screen-edge corners;
   its ring track reuses `UsageMeterVisualTokens.trackOpacity`.
+- The two compact scroll regions, the popover body and the side-notch rail,
+  pin the overlay scroller style through `DashboardScrollerPolicy` regardless
+  of the system Show scroll bars preference. The scroller reserves no width,
+  appears while scrolling, and flashes only when content overflows; a legacy
+  scroller took a 15 pt gutter out of the 320 pt popover and the 56 pt rail
+  and stayed visible for as long as content overflowed. The Settings window
+  keeps the system preference.
+- The rail account badge, `SideNotchAccountBadgeTokens`, is a 9 pt semibold
+  rounded initial on a 16 pt inverted plate: full primary behind
+  window-background text, offset 14 pt toward the ring's bottom-trailing
+  edge. Composited over the panel it measures at least 4.5:1 in both
+  appearances. The rail's checking caption reads the same full-primary
+  foreground as provider metadata through `SideNotchRailVisualTokens`,
+  for the same dimmed-panel reason.
 - Mobile canvas and cards use semantic system backgrounds. Mobile meters read
   `UsageMeterVisualTokens` from Core, the same eucalyptus/amber fills and
   track opacity the popover and Side Notch use, so no second palette exists.
@@ -181,6 +195,13 @@ other privileged controls remain native-only.
   in full semantic primary.
 - Popover height calculation uses the same account-alias visibility rule as
   provider headers, including a lone non-default account and repeated providers.
+- The popover body is the one scroll owner: provider sections stack inside it
+  separated by native `Divider`s with 10 pt vertical padding, the 44 pt footer
+  stays outside the scroll region, and the body's scroller follows
+  `DashboardScrollerPolicy`, so no gutter narrows the 292 pt content width.
+  The footer timestamp and every provider freshness line come from
+  `RefreshTimestampPresenter`: under ten seconds reads as just now, otherwise
+  a 24-hour `HH:mm` clock formatted in the app language's locale.
 - Settings follows Apple's HIG for a macOS settings window: a noncustomizable
   `.preference`-style toolbar switches five panes in the former section order -
   General (language, Launch at Login, updates), Display, Web Access,
@@ -226,6 +247,15 @@ other privileged controls remain native-only.
   AppKit resizes, so provider rows never shift under the pointer. Both
   states keep the same right edge, and the rail stays within the 128 pt
   minimum and 540 pt maximum height.
+- A menu-bar (programmatic) reveal and an edge-hover reveal size the rail
+  identically: the revealed frame depends only on the provider count and the
+  visible frame, and the anchor changes only its vertical position. A frame
+  computed while the reveal is still animating re-targets that animation
+  through `SideNotchFrameUpdatePolicy`, and the reveal settles on the final
+  provider set once the last keyframe lands, so a cold reveal that began
+  before the first snapshot grows to every provider row instead of staying at
+  the 128 pt minimum with one visible row. The rail scroller appears only
+  when rows overflow the capped rail.
 - The side-notch detail card is 280 pt wide and at most 320 pt high. It uses
   the existing provider section, applies 14 pt content padding, and scrolls
   only when that provider's complete usage content exceeds the cap.
@@ -524,6 +554,12 @@ other privileged controls remain native-only.
   which otherwise paints the provider rail at both old and new heights.
   Reduced Motion still makes hidden-edge geometry immediate while retaining
   opacity/color feedback.
+- A provider update or screen change during that 200 ms reveal re-targets the
+  running frame animation instead of setting the frame underneath it, which
+  the animation's final keyframe would overwrite, and the reveal settles once
+  more when the animation completes. A late completion from a superseded
+  animation cleans up only its own state. Hiding keeps its direct frame set
+  because its completion already restores the full-height hidden trigger.
 - Dashboard-order drag, keyboard move, and reset are one intent with one
   effect. Drag hover changes only a local preview, not persisted state.
   Every completed logical move writes the composite order exactly once, reorders
@@ -572,8 +608,12 @@ other privileged controls remain native-only.
 - Rows are identified by account and provider together, so a screen reader
   reading two accounts of one provider announces two distinct targets.
 - Side-notch rows for non-default or repeated accounts show a compact alias
-  badge on the rail, the full sanitized alias in detail, help, and
+  badge on the rail (a 9 pt semibold initial on an inverted plate measuring
+  at least 4.5:1), the full sanitized alias in detail, help, and
   accessibility text, and remain independently keyed by account and provider.
+- Rail text outside a provider section never uses system `.secondary`: the
+  nonactivating panel would render it permanently dimmed, so the checking
+  caption and the Open Settings action read full primary.
 - Dashboard provider headings include the visible account alias in their
   accessibility label whenever `DashboardAccountIdentityRule` shows it.
 - Account controls have explicit alias, add, and remove labels; API-key
