@@ -31,4 +31,32 @@ struct MobileConfigurationTests {
             )
         }
     }
+
+    @Test
+    func mobileInfoPlistDeclaresALaunchScreenAndOrientations() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let data = try Data(
+            contentsOf: root.appending(path: "Config/MobileInfo.plist")
+        )
+        let plist = try #require(
+            PropertyListSerialization.propertyList(
+                from: data,
+                format: nil
+            ) as? [String: Any]
+        )
+        let phone = try #require(
+            plist["UISupportedInterfaceOrientations"] as? [String]
+        )
+        let pad = try #require(
+            plist["UISupportedInterfaceOrientations~ipad"] as? [String]
+        )
+
+        #expect(plist["UILaunchScreen"] is [String: Any])
+        #expect(phone.contains("UIInterfaceOrientationPortrait"))
+        #expect(!phone.contains("UIInterfaceOrientationPortraitUpsideDown"))
+        #expect(pad.count == 4)
+    }
 }
