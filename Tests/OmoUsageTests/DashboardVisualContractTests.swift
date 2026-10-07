@@ -23,7 +23,13 @@ struct DashboardVisualContractTests {
                 == VisualRGB(red: 0xB7, green: 0x79, blue: 0x3F)
         )
         #expect(UsageMeterVisualTokens.trackOpacity == 0.16)
-        #expect(SettingsRowVisualTokens.usesSemanticSystemColors)
+    }
+
+    @Test
+    func settingsPanesAreGroupedFormsWithoutCustomRowChrome() {
+        #expect(SettingsFormVisualTokens.usesGroupedFormStyle)
+        #expect(!SettingsFormVisualTokens.drawsCustomRowBackgrounds)
+        #expect(SettingsFormVisualTokens.usesSemanticSystemColors)
     }
 
     @Test

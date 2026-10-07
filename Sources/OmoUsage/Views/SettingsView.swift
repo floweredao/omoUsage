@@ -200,6 +200,20 @@ func resetKeychainAuthorizationForUserAction() {
     UnifiedProviderKeychain().resetAuthorization()
 }
 
+/// macOS grouped forms place section footers trailing; settings explanations
+/// and status text read as leading secondary text under their section.
+struct SettingsSectionFooter<Content: View>: View {
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            content()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .multilineTextAlignment(.leading)
+    }
+}
+
 struct SettingsView: View {
     @Bindable var viewModel: UsageDashboardViewModel
     let localization: LocalizationController
@@ -248,7 +262,6 @@ struct SettingsView: View {
     @State private var dashboardLinkPresentation =
         WebDashboardLinkPresentationState()
     @State private var launchAtLogin = LaunchAtLoginController()
-    @State private var paneContentHeight: CGFloat = 0
 
     init(
         viewModel: UsageDashboardViewModel,
@@ -388,336 +401,52 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            ScrollView(.vertical, showsIndicators: true) {
-                VStack(spacing: 8) {
-                    if accountRegistryController.recoveryState != .ready {
-                        AccountRegistryRecoveryBanner(
-                            state: accountRegistryController.recoveryState,
-                            onRestore: restoreRegistryBackup,
-                            onReset: {
-                                showsRegistryResetConfirmation = true
-                            }
-                        )
+        Form {
+            if accountRegistryController.recoveryState != .ready {
+                AccountRegistryRecoverySection(
+                    state: accountRegistryController.recoveryState,
+                    onRestore: restoreRegistryBackup,
+                    onReset: {
+                        showsRegistryResetConfirmation = true
                     }
-
-                    switch paneSelection.pane {
-                    case .general:
-                        HStack {
-                            Text(localization.text(.language))
-                                .font(.system(size: 13.5, weight: .semibold))
-                            Spacer()
-                            Picker(
-                                localization.text(.language),
-                                selection: Binding(
-                                    get: { localization.language },
-                                    set: { language in
-                                        localization.select(language)
-                                        onLanguageChange()
-                                    }
-                                )
-                            ) {
-                                Text(localization.text(.korean))
-                                    .tag(AppLanguage.korean)
-                                Text(localization.text(.english))
-                                    .tag(AppLanguage.english)
-                            }
-                            .labelsHidden()
-                            .pickerStyle(.segmented)
-                            .fixedSize(horizontal: true, vertical: false)
-                        }
-                        .padding(10)
-                        .background(
-                            Color(nsColor: .controlBackgroundColor),
-                            in: RoundedRectangle(
-                                cornerRadius: 10,
-                                style: .continuous
-                            )
-                        )
-
-                        LaunchAtLoginSettingsRow(controller: launchAtLogin)
-
-                        AppUpdateSettingsRow(controller: appUpdateController)
-
-                    case .display:
-                        HStack {
-                            Text(localization.text(.dashboardPresentation))
-                                .font(.system(size: 13.5, weight: .semibold))
-                            Spacer()
-                            Picker(
-                                localization.text(.dashboardPresentation),
-                                selection: Binding(
-                                    get: { presentationStyle },
-                                    set: { style in
-                                        presentationStyle = style
-                                        onPresentationStyleChange(style)
-                                    }
-                                )
-                            ) {
-                                Text(localization.text(.popoverPresentation))
-                                    .tag(DashboardPresentationStyle.popover)
-                                Text(localization.text(.sideNotchPresentation))
-                                    .tag(DashboardPresentationStyle.sideNotch)
-                            }
-                            .labelsHidden()
-                            .pickerStyle(.segmented)
-                            .fixedSize(horizontal: true, vertical: false)
-                        }
-                        .padding(10)
-                        .background(
-                            Color(nsColor: .controlBackgroundColor),
-                            in: RoundedRectangle(
-                                cornerRadius: 10,
-                                style: .continuous
-                            )
-                        )
-
-                        if presentationStyle == .sideNotch {
-                            HStack {
-                                Text(
-                                    localization.text(
-                                        .sideNotchHideDelay
-                                    )
-                                )
-                                    .font(
-                                        .system(
-                                            size: 13.5,
-                                            weight: .semibold
-                                        )
-                                    )
-                                Spacer()
-                                Picker(
-                                    localization.text(
-                                        .sideNotchHideDelay
-                                    ),
-                                    selection: Binding(
-                                        get: { sideNotchHideDelay },
-                                        set: { delay in
-                                            sideNotchHideDelay = delay
-                                            onSideNotchHideDelayChange(
-                                                delay
-                                            )
-                                        }
-                                    )
-                                ) {
-                                    ForEach(
-                                        SideNotchHideDelay.allCases
-                                    ) { delay in
-                                        Text(
-                                            localization.format(
-                                                .sideNotchHideDelayOption,
-                                                delay.rawValue
-                                            )
-                                        )
-                                            .tag(delay)
-                                    }
-                                }
-                                .labelsHidden()
-                                .pickerStyle(.menu)
-                                .frame(width: 128)
-                                .accessibilityLabel(
-                                    localization.text(
-                                        .sideNotchHideDelay
-                                    )
-                                )
-                            }
-                            .padding(10)
-                            .background(
-                                Color(
-                                    nsColor:
-                                        .controlBackgroundColor
-                                ),
-                                in: RoundedRectangle(
-                                    cornerRadius: 10,
-                                    style: .continuous
-                                )
-                            )
-                        }
-
-                    case .webAccess:
-                        WebDashboardSettingsRow(
-                            status: webDashboardStatusStore.status,
-                            tailscaleController:
-                                tailscaleDashboardController,
-                            onOpen: {
-                                if !onOpenWebDashboard() {
-                                    feedback = .key(.webDashboardOpenFailed)
-                                }
-                            },
-                            onOpenQRCode: {
-                                if let failureKey =
-                                    dashboardLinkPresentation.openQRCode(
-                                        onCreateWebDashboardURL
-                                    )
-                                {
-                                    feedback = .key(failureKey)
-                                }
-                            },
-                            onShareLink: { anchorView in
-                                if let failureKey =
-                                    dashboardLinkPresentation.shareLink(
-                                        makeURL: onCreateWebDashboardURL,
-                                        present: {
-                                            onShareWebDashboardURL(
-                                                $0,
-                                                anchorView
-                                            )
-                                        }
-                                    )
-                                {
-                                    feedback = .key(failureKey)
-                                }
-                            },
-                            onRetry: onRetryWebDashboard
-                        )
-
-                    case .dashboardOrder:
-                        if accountRegistryController.registry != nil {
-                            ProviderOrderingView(viewModel: viewModel)
-                        }
-                    case .accounts:
-                        if accountRegistryController.registry != nil {
-                            ForEach(viewModel.providerOrder, id: \.self) {
-                                provider in
-                                ProviderSettingsRow(
-                                    provider: provider,
-                                    viewModel: viewModel,
-                                    connectionPresentation:
-                                        connectionCoordinator.state(for: provider),
-                                    connectionControlsDisabled:
-                                        connectionControlsDisabled(for: provider),
-                                    keyDraft: binding(for: provider),
-                                    keySource: accountRegistryController
-                                        .keyStorageSource(for: provider),
-                                    needsLegacyCleanup: accountRegistryController
-                                        .pendingLegacyCleanup.contains {
-                                            $0.accountID == .legacy
-                                                && $0.providerID == provider
-                                        },
-                                    onCleanupLegacy: retryLegacyKeyCleanup,
-                                    onSetup: {
-                                        connectProvider(provider)
-                                    },
-                                    onSave: { saveKey(for: provider) },
-                                    onRemove: { removeKey(for: provider) },
-                                    onDisconnect: {
-                                        disconnectProvider(provider)
-                                    },
-                                    onReconnect: {
-                                        reconnectProvider(provider)
-                                    },
-                                    onRetry: {
-                                        retryProvider(provider)
-                                    },
-                                    accounts: ProviderAccountRowPresentation.rows(
-                                        from: accountRegistryController
-                                            .settingsAccounts(for: provider)
-                                    ),
-                                    newAccountLabel: accountLabelBinding(
-                                        for: provider
-                                    ),
-                                    newAccountKey: accountKeyBinding(
-                                        for: provider
-                                    ),
-                                    onAddAccount: {
-                                        addAccount(for: provider)
-                                    },
-                                    onRemoveAccount: removeAccount,
-                                    onRenameAccount: renameAccount,
-                                    onAliasOutcome: reportAliasOutcome,
-                                    additionAvailability:
-                                        ProviderAccountAdditionAvailability.resolve(
-                                            provider: provider,
-                                            viewModel: viewModel,
-                                            additionState: additionState(for: provider)
-                                        ),
-                                    onCheckAgain: checkForCompanionCredential,
-                                    onCancelAddition: cancelAddition,
-                                    isAwaitingConnectionCredential:
-                                        provider == .codex
-                                            && codexReconnectCoordinator
-                                                .isWaiting,
-                                    onCheckAgainConnection:
-                                        checkForCodexReconnectCredential,
-                                    onCancelConnection: {
-                                        if provider == .kiro { cancelKiroConnection() }
-                                        else if provider == .devin { cancelDevinConnection() }
-                                        else if provider == .claude { cancelClaudeConnection() }
-                                        else { cancelCodexReconnect() }
-                                    },
-                                    browserConnectionTarget: devinConnection.pending,
-                                    kiroConnectionTarget: kiroConnection.pending,
-                                    claudeConnectionTarget: claudeConnection.pending,
-                                    onBrowserConnect: {
-                                        resetKeychainAuthorizationForUserAction()
-                                        startDevinConnection(.existing($0))
-                                    },
-                                    onKiroConnect: {
-                                        resetKeychainAuthorizationForUserAction()
-                                        startKiroConnection(.existing($0))
-                                    },
-                                    onClaudeConnect: {
-                                        resetKeychainAuthorizationForUserAction()
-                                        startClaudeConnection(.existing($0.accountID))
-                                    },
-                                    codexPlanMultiplier:
-                                        codexPlanMultiplierBinding(
-                                            for: provider
-                                        )
-                                )
-                            }
-                        }
+                ) {
+                    if feedbackBelongsToRecoverySection {
+                        feedbackText
                     }
-                }
-                .padding(.vertical, 2)
-                .onGeometryChange(for: CGFloat.self) { proxy in
-                    proxy.size.height
-                } action: { height in
-                    paneContentHeight = height
                 }
             }
-            .frame(
-                height: min(
-                    max(paneContentHeight, 1),
-                    SettingsWindowContract.maximumPaneBodyHeight
+
+            switch paneSelection.pane {
+            case .general:
+                generalSections
+            case .display:
+                displaySections
+            case .webAccess:
+                webAccessSections
+            case .dashboardOrder:
+                if accountRegistryController.registry != nil {
+                    ProviderOrderingView(
+                        viewModel: viewModel,
+                        feedback: paneFeedback
+                    )
+                }
+            case .accounts:
+                authSections
+            }
+        }
+        .formStyle(.grouped)
+        .frame(width: SettingsWindowContract.contentWidth)
+        .onScrollGeometryChange(for: CGFloat.self) { geometry in
+            geometry.contentSize.height
+                + geometry.contentInsets.top
+                + geometry.contentInsets.bottom
+        } action: { _, formContentHeight in
+            onPreferredContentHeightChange(
+                SettingsWindowContract.preferredContentHeight(
+                    forFormContentHeight: formContentHeight
                 )
             )
-
-            if feedback != nil || paneSelection.pane == .accounts {
-                HStack {
-                    if let feedback {
-                        Text(localization.resolve(feedback))
-                            .font(.system(size: 11.5))
-                            .foregroundStyle(.primary)
-                            .lineLimit(2)
-                            .accessibilityIdentifier("settings-feedback")
-                    }
-                    Spacer()
-                    if paneSelection.pane == .accounts {
-                        Button(localization.text(.refresh)) {
-                            resetKeychainAuthorizationForUserAction()
-                            Task { await viewModel.refresh() }
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .disabled(viewModel.isRefreshing)
-                    }
-                }
-            }
         }
-        .padding(20)
-        .frame(width: SettingsWindowContract.contentWidth)
-        .fixedSize(horizontal: false, vertical: true)
-        .onGeometryChange(for: CGFloat.self) { proxy in
-            proxy.size.height
-        } action: { height in
-            onPreferredContentHeightChange(height)
-        }
-        .frame(
-            maxWidth: .infinity,
-            maxHeight: .infinity,
-            alignment: .top
-        )
         .environment(\.appLocalization, localization.context)
         .sheet(item: $dashboardLinkPresentation.presentedItem) { item in
             WebDashboardQRCodeView(url: item.url)
@@ -781,7 +510,7 @@ struct SettingsView: View {
             cancelKiroConnection()
         }
         .onChange(of: feedback) { _, newFeedback in
-            // The footer line is a status message: announce each new one
+            // The feedback line is a status message: announce each new one
             // without moving VoiceOver focus away from the control used.
             guard let newFeedback else { return }
             NSAccessibility.post(
@@ -792,6 +521,283 @@ struct SettingsView: View {
                     .priority: NSAccessibilityPriorityLevel.high.rawValue
                 ]
             )
+        }
+    }
+
+    /// The status line for the last action, shown in the footer of the
+    /// section whose controls produced it.
+    @ViewBuilder
+    private var feedbackText: some View {
+        if let feedback {
+            SettingsFeedbackText(text: localization.resolve(feedback))
+        }
+    }
+
+    /// General, Display, and Order only produce feedback through the
+    /// registry recovery controls, so while that section is on screen it
+    /// owns the line; Web Access and Auth always report in their own
+    /// sections.
+    private var feedbackBelongsToRecoverySection: Bool {
+        accountRegistryController.recoveryState != .ready
+            && paneSelection.pane != .webAccess
+            && paneSelection.pane != .accounts
+    }
+
+    private var paneFeedback: String? {
+        feedbackBelongsToRecoverySection
+            ? nil : feedback.map(localization.resolve)
+    }
+
+    @ViewBuilder
+    private var generalSections: some View {
+        Section {
+            Picker(
+                localization.text(.language),
+                selection: Binding(
+                    get: { localization.language },
+                    set: { language in
+                        localization.select(language)
+                        onLanguageChange()
+                    }
+                )
+            ) {
+                Text(localization.text(.korean))
+                    .tag(AppLanguage.korean)
+                Text(localization.text(.english))
+                    .tag(AppLanguage.english)
+            }
+            .pickerStyle(.segmented)
+
+            LaunchAtLoginSettingsRow(controller: launchAtLogin)
+
+            if launchAtLogin.errorMessage != nil {
+                Label(
+                    localization.text(.launchChangeFailed),
+                    systemImage: "exclamationmark.triangle"
+                )
+                .foregroundStyle(.secondary)
+            }
+        }
+
+        Section {
+            AppUpdateSettingsRow(controller: appUpdateController)
+        } footer: {
+            SettingsSectionFooter {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(localization.text(
+                        appUpdateController.isAvailable
+                            ? .appUpdatesDescription
+                            : .appUpdatesUnavailable
+                    ))
+                    if !feedbackBelongsToRecoverySection {
+                        feedbackText
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var displaySections: some View {
+        Section {
+            Picker(
+                localization.text(.dashboardPresentation),
+                selection: Binding(
+                    get: { presentationStyle },
+                    set: { style in
+                        presentationStyle = style
+                        onPresentationStyleChange(style)
+                    }
+                )
+            ) {
+                Text(localization.text(.popoverPresentation))
+                    .tag(DashboardPresentationStyle.popover)
+                Text(localization.text(.sideNotchPresentation))
+                    .tag(DashboardPresentationStyle.sideNotch)
+            }
+            .pickerStyle(.segmented)
+
+            if presentationStyle == .sideNotch {
+                Picker(
+                    localization.text(.sideNotchHideDelay),
+                    selection: Binding(
+                        get: { sideNotchHideDelay },
+                        set: { delay in
+                            sideNotchHideDelay = delay
+                            onSideNotchHideDelayChange(delay)
+                        }
+                    )
+                ) {
+                    ForEach(SideNotchHideDelay.allCases) { delay in
+                        Text(
+                            localization.format(
+                                .sideNotchHideDelayOption,
+                                delay.rawValue
+                            )
+                        )
+                        .tag(delay)
+                    }
+                }
+            }
+        } footer: {
+            SettingsSectionFooter {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(localization.text(.dashboardPresentationDescription))
+                    if !feedbackBelongsToRecoverySection {
+                        feedbackText
+                    }
+                }
+            }
+        }
+    }
+
+    private var webAccessSections: some View {
+        WebDashboardSettingsSections(
+            status: webDashboardStatusStore.status,
+            tailscaleController: tailscaleDashboardController,
+            feedback: feedback.map(localization.resolve),
+            onOpen: {
+                if !onOpenWebDashboard() {
+                    feedback = .key(.webDashboardOpenFailed)
+                }
+            },
+            onOpenQRCode: {
+                if let failureKey =
+                    dashboardLinkPresentation.openQRCode(
+                        onCreateWebDashboardURL
+                    )
+                {
+                    feedback = .key(failureKey)
+                }
+            },
+            onShareLink: { anchorView in
+                if let failureKey =
+                    dashboardLinkPresentation.shareLink(
+                        makeURL: onCreateWebDashboardURL,
+                        present: {
+                            onShareWebDashboardURL($0, anchorView)
+                        }
+                    )
+                {
+                    feedback = .key(failureKey)
+                }
+            },
+            onRetry: onRetryWebDashboard
+        )
+    }
+
+    @ViewBuilder
+    private var authSections: some View {
+        if accountRegistryController.registry != nil {
+            ForEach(viewModel.providerOrder, id: \.self) { provider in
+                ProviderSettingsSection(
+                    provider: provider,
+                    viewModel: viewModel,
+                    connectionPresentation:
+                        connectionCoordinator.state(for: provider),
+                    connectionControlsDisabled:
+                        connectionControlsDisabled(for: provider),
+                    keyDraft: binding(for: provider),
+                    keySource: accountRegistryController
+                        .keyStorageSource(for: provider),
+                    needsLegacyCleanup: accountRegistryController
+                        .pendingLegacyCleanup.contains {
+                            $0.accountID == .legacy
+                                && $0.providerID == provider
+                        },
+                    onCleanupLegacy: retryLegacyKeyCleanup,
+                    onSetup: {
+                        connectProvider(provider)
+                    },
+                    onSave: { saveKey(for: provider) },
+                    onRemove: { removeKey(for: provider) },
+                    onDisconnect: {
+                        disconnectProvider(provider)
+                    },
+                    onReconnect: {
+                        reconnectProvider(provider)
+                    },
+                    onRetry: {
+                        retryProvider(provider)
+                    },
+                    accounts: ProviderAccountRowPresentation.rows(
+                        from: accountRegistryController
+                            .settingsAccounts(for: provider)
+                    ),
+                    newAccountLabel: accountLabelBinding(
+                        for: provider
+                    ),
+                    newAccountKey: accountKeyBinding(
+                        for: provider
+                    ),
+                    onAddAccount: {
+                        addAccount(for: provider)
+                    },
+                    onRemoveAccount: removeAccount,
+                    onRenameAccount: renameAccount,
+                    onAliasOutcome: reportAliasOutcome,
+                    additionAvailability:
+                        ProviderAccountAdditionAvailability.resolve(
+                            provider: provider,
+                            viewModel: viewModel,
+                            additionState: additionState(for: provider)
+                        ),
+                    onCheckAgain: checkForCompanionCredential,
+                    onCancelAddition: cancelAddition,
+                    isAwaitingConnectionCredential:
+                        provider == .codex
+                            && codexReconnectCoordinator
+                                .isWaiting,
+                    onCheckAgainConnection:
+                        checkForCodexReconnectCredential,
+                    onCancelConnection: {
+                        if provider == .kiro { cancelKiroConnection() }
+                        else if provider == .devin { cancelDevinConnection() }
+                        else if provider == .claude { cancelClaudeConnection() }
+                        else { cancelCodexReconnect() }
+                    },
+                    browserConnectionTarget: devinConnection.pending,
+                    kiroConnectionTarget: kiroConnection.pending,
+                    claudeConnectionTarget: claudeConnection.pending,
+                    onBrowserConnect: {
+                        resetKeychainAuthorizationForUserAction()
+                        startDevinConnection(.existing($0))
+                    },
+                    onKiroConnect: {
+                        resetKeychainAuthorizationForUserAction()
+                        startKiroConnection(.existing($0))
+                    },
+                    onClaudeConnect: {
+                        resetKeychainAuthorizationForUserAction()
+                        startClaudeConnection(.existing($0.accountID))
+                    },
+                    codexPlanMultiplier:
+                        codexPlanMultiplierBinding(
+                            for: provider
+                        )
+                )
+            }
+
+            Section {
+                LabeledContent {
+                    Button(localization.text(.refresh)) {
+                        resetKeychainAuthorizationForUserAction()
+                        Task { await viewModel.refresh() }
+                    }
+                    .disabled(viewModel.isRefreshing)
+                    .accessibilityIdentifier("check-connections-again")
+                } label: {
+                    Text(localization.text(.checkConnectionsAgain))
+                }
+            } footer: {
+                SettingsSectionFooter {
+                    if feedback != nil {
+                        feedbackText
+                    } else {
+                        Text(localization.text(.checkConnectionsAgainDescription))
+                    }
+                }
+            }
         }
     }
 
@@ -1382,59 +1388,75 @@ struct SettingsView: View {
     }
 }
 
-private struct AccountRegistryRecoveryBanner: View {
+/// The status line for the last Settings action. It lives in a section
+/// footer, so the grouped form already styles it as secondary text.
+private struct SettingsFeedbackText: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .accessibilityIdentifier("settings-feedback")
+    }
+}
+
+/// The first section of whichever pane is shown while the account
+/// registry needs recovery. The warning symbol carries the severity;
+/// no color does.
+private struct AccountRegistryRecoverySection<Footer: View>: View {
     let state: ProviderAccountRecoveryState
     let onRestore: () -> Void
     let onReset: () -> Void
+    @ViewBuilder let footer: () -> Footer
     @Environment(\.appLocalization) private var localization
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label(
-                localization.text(
-                    state.isRecoveredFromBackup
-                        ? .registryRecoveredTitle
-                        : .registryBlockedTitle
-                ),
-                systemImage: "exclamationmark.triangle.fill"
-            )
-            .font(.system(size: 13.5, weight: .bold))
-            .foregroundStyle(.orange)
-
-            Text(
-                localization.text(
-                    state.isRecoveredFromBackup
-                        ? .registryRecoveredDescription
-                        : .registryBlockedDescription
+        Section {
+            VStack(alignment: .leading, spacing: 8) {
+                Label(
+                    localization.text(
+                        state.isRecoveredFromBackup
+                            ? .registryRecoveredTitle
+                            : .registryBlockedTitle
+                    ),
+                    systemImage: "exclamationmark.triangle.fill"
                 )
-            )
-            .font(.system(size: 12))
-            .foregroundStyle(.secondary)
+                .font(.system(size: 13, weight: .semibold))
 
-            HStack {
-                if state.isRecoveredFromBackup {
-                    Button(
-                        localization.text(.restoreRegistryBackup),
-                        action: onRestore
+                Text(
+                    localization.text(
+                        state.isRecoveredFromBackup
+                            ? .registryRecoveredDescription
+                            : .registryBlockedDescription
                     )
-                    .buttonStyle(.borderedProminent)
-                }
-                Button(
-                    localization.text(.resetRegistry),
-                    role: .destructive,
-                    action: onReset
                 )
-                .buttonStyle(.bordered)
+                .font(.system(size: 11.5))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+                HStack {
+                    if state.isRecoveredFromBackup {
+                        Button(
+                            localization.text(.restoreRegistryBackup),
+                            action: onRestore
+                        )
+                        .buttonStyle(.borderedProminent)
+                    }
+                    Button(
+                        localization.text(.resetRegistry),
+                        role: .destructive,
+                        action: onReset
+                    )
+                    .buttonStyle(.bordered)
+                }
+                .controlSize(.small)
             }
-            .controlSize(.small)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("account-registry-recovery")
+        } footer: {
+            SettingsSectionFooter {
+                footer()
+            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(10)
-        .background(
-            Color.orange.opacity(0.1),
-            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
-        )
-        .accessibilityIdentifier("account-registry-recovery")
     }
 }
 
@@ -1682,173 +1704,167 @@ private struct ProviderAccountsSection<
     @FocusState private var focusedAliasEdit: AccountProviderID?
     @Environment(\.appLocalization) private var localization
 
+    /// The provider section's rows: one per account, then the Add Account
+    /// affordance in whichever state it is in. The primary row is the one
+    /// row every provider always has, so it hosts the section's state
+    /// observers and the removal dialog.
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(rows) { row in
+        if let primary = rows.first {
+            accountRow(primary)
+                .onChange(of: rows.count) { oldCount, newCount in
+                    if newCount > oldCount {
+                        isAddingAccount = false
+                    }
+                }
+                .onChange(of: rows.map(\.id)) { _, identities in
+                    if let aliasEdit,
+                       !identities.contains(aliasEdit.identity) {
+                        self.aliasEdit = nil
+                    }
+                    if let pendingRemoval,
+                       !identities.contains(pendingRemoval.identity) {
+                        self.pendingRemoval = nil
+                    }
+                }
+                .onChange(of: additionAvailability) { _, availability in
+                    if availability == .hidden {
+                        isAddingAccount = false
+                    }
+                }
+                .confirmationDialog(
+                    localization.format(
+                        .removeAccount,
+                        pendingRemoval?.label ?? ""
+                    ),
+                    isPresented: Binding(
+                        get: { pendingRemoval != nil },
+                        set: { if !$0 { pendingRemoval = nil } }
+                    ),
+                    titleVisibility: .visible,
+                    presenting: pendingRemoval
+                ) { row in
+                    Button(localization.text(.delete), role: .destructive) {
+                        onRemove(row.identity)
+                    }
+                    Button(localization.text(.cancel), role: .cancel) {}
+                }
+            ForEach(rows.dropFirst()) { row in
                 accountRow(row)
             }
+        }
 
-            if additionAvailability == .pending {
-                VStack(alignment: .leading, spacing: 10) {
-                    Label(
-                        localization.format(.accountLoginPending, label),
-                        systemImage: "person.crop.circle.badge.clock"
-                    )
-                    .font(.system(size: 12, weight: .semibold))
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier(
-                        "account-waiting-\(provider.rawValue)"
-                    )
-                    Text(localization.text(provider.usesBrowserSignIn
-                        ? .waitingForBrowserLogin : .companionCredentialMissing))
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    HStack(spacing: 8) {
-                        Spacer(minLength: 0)
-                        Button(
-                            localization.text(.cancel),
-                            action: onCancelAddition
-                        )
-                        .buttonStyle(.bordered)
-                        .accessibilityIdentifier(
-                            "cancel-addition-\(provider.rawValue)"
-                        )
-                        if !provider.usesBrowserSignIn { Button(
-                            localization.text(
-                                .checkAgainForCompanionCredentials
-                            ),
-                            action: onCheckAgain
-                        )
-                        .buttonStyle(.borderedProminent)
-                        .accessibilityIdentifier(
-                            "check-again-\(provider.rawValue)"
-                        )
-                        }
-                    }
-                    .controlSize(.small)
-                }
-                .padding(.vertical, 4)
-            } else if additionAvailability == .hidden {
-                EmptyView()
-            } else if isAddingAccount {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text(localization.text(
-                        acceptsAPIKey
-                            ? .additionalAPIKeyInstructions
-                            : .additionalAccountInstructions
-                    ))
+        if additionAvailability == .pending {
+            VStack(alignment: .leading, spacing: 8) {
+                Label(
+                    localization.format(.accountLoginPending, label),
+                    systemImage: "person.crop.circle.badge.clock"
+                )
+                .font(.system(size: 12, weight: .semibold))
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier(
+                    "account-waiting-\(provider.rawValue)"
+                )
+                Text(localization.text(provider.usesBrowserSignIn
+                    ? .waitingForBrowserLogin : .companionCredentialMissing))
                     .font(.system(size: 11.5))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 8) {
+                    Spacer(minLength: 0)
+                    Button(
+                        localization.text(.cancel),
+                        action: onCancelAddition
+                    )
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier(
+                        "cancel-addition-\(provider.rawValue)"
+                    )
+                    if !provider.usesBrowserSignIn { Button(
+                        localization.text(
+                            .checkAgainForCompanionCredentials
+                        ),
+                        action: onCheckAgain
+                    )
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier(
+                        "check-again-\(provider.rawValue)"
+                    )
+                    }
+                }
+                .controlSize(.small)
+            }
+        } else if additionAvailability == .hidden {
+            EmptyView()
+        } else if isAddingAccount {
+            Text(localization.text(
+                acceptsAPIKey
+                    ? .additionalAPIKeyInstructions
+                    : .additionalAccountInstructions
+            ))
+            .font(.system(size: 11.5))
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
 
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(localization.text(.accountAlias))
-                            .font(.system(size: 11.5, weight: .medium))
-                        TextField(
-                            localization.text(.accountAliasExample),
-                            text: $label
-                        )
-                        .textFieldStyle(.roundedBorder)
-                        .focused($isAliasFocused)
-                        .accessibilityLabel(localization.text(.accountAlias))
-                        .accessibilityIdentifier(
-                            "account-alias-\(provider.rawValue)"
-                        )
-                    }
-                    if acceptsAPIKey {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(localization.text(.apiKey))
-                                .font(.system(size: 11.5, weight: .medium))
-                            SecureField(localization.text(.apiKey), text: $key)
-                                .textFieldStyle(.roundedBorder)
-                                .accessibilityLabel(localization.text(.apiKey))
-                                .accessibilityIdentifier(
-                                    "account-key-\(provider.rawValue)"
-                                )
-                        }
-                    }
-                    HStack(spacing: 8) {
-                        Spacer(minLength: 0)
-                        Button(localization.text(.cancel)) {
-                            isAddingAccount = false
-                            key = ""
-                        }
-                        .buttonStyle(.bordered)
-                        .accessibilityIdentifier(
-                            "close-add-account-\(provider.rawValue)"
-                        )
-                        Button(
-                            localization.text(
-                                acceptsAPIKey
-                                    ? .addAccount
-                                    : .additionalAccountLogin
-                            ),
-                            action: onAdd
-                        )
-                        .buttonStyle(.borderedProminent)
-                        .disabled(!canAdd)
-                        .accessibilityIdentifier(
-                            "add-account-\(provider.rawValue)"
-                        )
-                    }
-                    .controlSize(.small)
+            TextField(
+                localization.text(.accountAlias),
+                text: $label,
+                prompt: Text(localization.text(.accountAliasExample))
+            )
+            .focused($isAliasFocused)
+            .accessibilityIdentifier(
+                "account-alias-\(provider.rawValue)"
+            )
+            if acceptsAPIKey {
+                SecureField(localization.text(.apiKey), text: $key)
+                    .accessibilityLabel(localization.text(.apiKey))
+                    .accessibilityIdentifier(
+                        "account-key-\(provider.rawValue)"
+                    )
+            }
+            HStack(spacing: 8) {
+                Spacer(minLength: 0)
+                Button(localization.text(.cancel)) {
+                    isAddingAccount = false
+                    key = ""
                 }
-                .padding(.vertical, 4)
-            } else {
-                Button {
-                    isAddingAccount = true
-                    isAliasFocused = true
-                } label: {
-                    Label(localization.text(.addAccount), systemImage: "plus")
-                }
-                .buttonStyle(.borderless)
-                .font(.system(size: 11.5, weight: .medium))
-                .padding(.vertical, 4)
-                .disabled(additionAvailability != .offered)
+                .buttonStyle(.bordered)
                 .accessibilityIdentifier(
-                    "begin-add-account-\(provider.rawValue)"
+                    "close-add-account-\(provider.rawValue)"
+                )
+                Button(
+                    localization.text(
+                        acceptsAPIKey
+                            ? .addAccount
+                            : .additionalAccountLogin
+                    ),
+                    action: onAdd
+                )
+                .buttonStyle(.borderedProminent)
+                .disabled(!canAdd)
+                .accessibilityIdentifier(
+                    "add-account-\(provider.rawValue)"
                 )
             }
-        }
-        .onChange(of: rows.count) { oldCount, newCount in
-            if newCount > oldCount {
-                isAddingAccount = false
+            .controlSize(.small)
+        } else {
+            Button {
+                isAddingAccount = true
+                isAliasFocused = true
+            } label: {
+                Label(localization.text(.addAccount), systemImage: "plus")
             }
-        }
-        .onChange(of: rows.map(\.id)) { _, identities in
-            if let aliasEdit, !identities.contains(aliasEdit.identity) {
-                self.aliasEdit = nil
-            }
-            if let pendingRemoval,
-               !identities.contains(pendingRemoval.identity) {
-                self.pendingRemoval = nil
-            }
-        }
-        .onChange(of: additionAvailability) { _, availability in
-            if availability == .hidden {
-                isAddingAccount = false
-            }
-        }
-        .confirmationDialog(
-            localization.format(.removeAccount, pendingRemoval?.label ?? ""),
-            isPresented: Binding(
-                get: { pendingRemoval != nil },
-                set: { if !$0 { pendingRemoval = nil } }
-            ),
-            titleVisibility: .visible,
-            presenting: pendingRemoval
-        ) { row in
-            Button(localization.text(.delete), role: .destructive) {
-                onRemove(row.identity)
-            }
-            Button(localization.text(.cancel), role: .cancel) {}
+            .buttonStyle(.borderless)
+            .disabled(additionAvailability != .offered)
+            .accessibilityIdentifier(
+                "begin-add-account-\(provider.rawValue)"
+            )
         }
     }
 
-    /// One explicit row per account. The primary row never repeats the
-    /// header's connection controls: it names the account, shows the masked
-    /// identity when one is known, and hosts the account-scoped Codex tier.
+    /// One row per account. The primary row never repeats the header's
+    /// connection controls: it names the account, shows the masked identity
+    /// when one is known, and hosts the account-scoped Codex tier. The
+    /// grouped form draws the row; the row draws no chrome of its own.
     @ViewBuilder
     private func accountRow(
         _ row: ProviderAccountRowPresentation
@@ -1900,7 +1916,7 @@ private struct ProviderAccountsSection<
                 HStack(spacing: 8) {
                     roleBadge(row, roleText: roleText)
                     Text(row.label)
-                        .font(.system(size: 13.5, weight: .semibold))
+                        .font(.system(size: 13, weight: .semibold))
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .accessibilityLabel(row.label)
@@ -2011,16 +2027,7 @@ private struct ProviderAccountsSection<
                 }
             }
         }
-        .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            Color(nsColor: .controlBackgroundColor),
-            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
-        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(
             AccountSettingsAccessibility.accessibleName(
@@ -2043,17 +2050,7 @@ private struct ProviderAccountsSection<
             .foregroundStyle(.secondary)
             .padding(.horizontal, 7)
             .padding(.vertical, 3)
-            .background(
-                Color(nsColor: .controlBackgroundColor),
-                in: Capsule()
-            )
-            .overlay {
-                Capsule()
-                    .stroke(
-                        Color(nsColor: .separatorColor),
-                        lineWidth: 0.5
-                    )
-            }
+            .background(.quaternary, in: Capsule())
             .fixedSize()
             .accessibilityIdentifier(
                 AccountSettingsAccessibility.identifier(
@@ -2252,9 +2249,13 @@ private struct WebDashboardShareAnchor: NSViewRepresentable {
     }
 }
 
-private struct WebDashboardSettingsRow: View {
+/// The Web Access pane: the local dashboard's status and address, then
+/// the Tailscale exposure with its ready-state sharing actions. Every
+/// status pairs a symbol with secondary text, so no state is color alone.
+private struct WebDashboardSettingsSections: View {
     let status: WebDashboardStatus
     @Bindable var tailscaleController: TailscaleDashboardController
+    let feedback: String?
     let onOpen: () -> Void
     let onOpenQRCode: () -> Void
     let onShareLink: (NSView) -> Void
@@ -2263,119 +2264,85 @@ private struct WebDashboardSettingsRow: View {
     @State private var shareAnchorView: NSView?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: statusIcon)
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(statusColor)
-                    .frame(width: 24, height: 24)
-                    .accessibilityHidden(true)
+        Section {
+            LabeledContent {
+                Label(statusLabel, systemImage: statusIcon)
+                    .foregroundStyle(.secondary)
+            } label: {
+                Text(localization.text(.webDashboard))
+            }
 
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 6) {
-                        Text(localization.text(.webDashboard))
-                            .font(.system(size: 13.5, weight: .semibold))
-                        Text(statusLabel)
-                            .font(.system(size: 10.5, weight: .semibold))
-                            .foregroundStyle(statusColor)
-                    }
+            LabeledContent {
+                Button(buttonTitle, action: buttonAction)
+                    .disabled(status.state == .starting)
+                    .accessibilityIdentifier("open-web-dashboard")
+            } label: {
+                Text(status.url.absoluteString)
+                    .font(.system(size: 12, design: .monospaced))
+                    .textSelection(.enabled)
+            }
+        } footer: {
+            SettingsSectionFooter {
+                VStack(alignment: .leading, spacing: 4) {
                     Text(localization.text(.webDashboardDescription))
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text(status.url.absoluteString)
-                        .font(.system(size: 11.5, design: .monospaced))
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
                     Text(endpointDetails)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text(verbatim: "Tailscale · \(tailscaleStatusLabel)")
-                        .font(.system(size: 11))
-                        .foregroundStyle(tailscaleStatusColor)
-                        .fixedSize(horizontal: false, vertical: true)
                     if let failure = status.failure {
                         Text(failureMessage(failure))
-                            .font(.system(size: 11.5))
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if let feedback {
+                        SettingsFeedbackText(text: feedback)
                     }
                 }
+            }
+        }
 
-                Spacer(minLength: 8)
-
-                VStack(alignment: .trailing, spacing: 6) {
-                    Button(buttonTitle, action: buttonAction)
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .disabled(status.state == .starting)
-                        .accessibilityIdentifier(
-                            "open-web-dashboard"
-                        )
+        Section {
+            LabeledContent {
+                HStack(spacing: 8) {
+                    Label(
+                        tailscaleStatusLabel,
+                        systemImage: tailscaleStatusIcon
+                    )
+                    .foregroundStyle(.secondary)
 
                     if let tailscaleButtonTitle {
                         Button(
                             tailscaleButtonTitle,
                             action: tailscaleButtonAction
                         )
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
                         .disabled(isTailscaleBusy)
-                        .accessibilityLabel(tailscaleButtonTitle)
+                        .accessibilityLabel(
+                            "Tailscale, \(tailscaleButtonTitle)"
+                        )
                         .accessibilityIdentifier(
                             "toggle-tailscale-dashboard-access"
                         )
                     }
-                }
-            }
 
-            if status.state == .ready,
-               isTailscaleReady
-            {
-                HStack(spacing: 6) {
-                    Spacer()
-                    Button(
-                        localization.text(.openQRCode),
-                        action: onOpenQRCode
-                    )
-                    .accessibilityIdentifier(
-                        "open-dashboard-qr-code"
-                    )
+                    if status.state == .ready, isTailscaleReady {
+                        Button(
+                            localization.text(.openQRCode),
+                            action: onOpenQRCode
+                        )
+                        .accessibilityIdentifier("open-dashboard-qr-code")
 
-                    Button(
-                        localization.text(.shareLink),
-                        action: {
+                        Button(localization.text(.shareLink)) {
                             guard let shareAnchorView else { return }
                             onShareLink(shareAnchorView)
                         }
-                    )
-                    .accessibilityIdentifier(
-                        "share-dashboard-link"
-                    )
-                    .background {
-                        WebDashboardShareAnchor { view in
-                            if shareAnchorView !== view {
-                                shareAnchorView = view
+                        .accessibilityIdentifier("share-dashboard-link")
+                        .background {
+                            WebDashboardShareAnchor { view in
+                                if shareAnchorView !== view {
+                                    shareAnchorView = view
+                                }
                             }
                         }
                     }
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
+            } label: {
+                Text(verbatim: "Tailscale")
             }
-        }
-        .padding(10)
-        .background(
-            Color(nsColor: .controlBackgroundColor),
-            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(
-                    Color(nsColor: .separatorColor),
-                    lineWidth: 0.5
-                )
         }
     }
 
@@ -2401,14 +2368,6 @@ private struct WebDashboardSettingsRow: View {
         }
     }
 
-    private var statusColor: Color {
-        switch status.state {
-        case .disabled, .starting: .secondary
-        case .ready: .green
-        case .failed: .orange
-        }
-    }
-
     private var tailscaleStatusLabel: String {
         switch tailscaleController.state {
         case .checking:
@@ -2428,29 +2387,29 @@ private struct WebDashboardSettingsRow: View {
         }
     }
 
-    private var tailscaleStatusColor: Color {
+    private var tailscaleStatusIcon: String {
         switch tailscaleController.state {
-        case .ready: .green
-        case .failed: .orange
-        case .checking, .unavailable, .signedOut, .available,
-             .enabling, .disabling:
-            .secondary
+        case .ready: "checkmark.circle.fill"
+        case .failed: "exclamationmark.triangle.fill"
+        case .checking, .enabling, .disabling: "hourglass"
+        case .available: "circle"
+        case .unavailable, .signedOut: "minus.circle"
         }
     }
 
+    /// The action for the current Tailscale state; the row itself names
+    /// Tailscale, so the title is the verb alone.
     private var tailscaleButtonTitle: String? {
-        let action: String
         switch tailscaleController.state {
         case .available:
-            action = localization.text(.startConnection)
+            localization.text(.startConnection)
         case .ready:
-            return nil
+            nil
         case .checking, .enabling, .disabling:
-            action = localization.text(.inProgress)
+            localization.text(.inProgress)
         case .unavailable, .signedOut, .failed:
-            action = localization.text(.retry)
+            localization.text(.retry)
         }
-        return "Tailscale · \(action)"
     }
 
     private var tailscaleButtonAction: () -> Void {
@@ -2528,72 +2487,32 @@ private struct WebDashboardSettingsRow: View {
     }
 }
 
+/// Launch at Login as a native switch row whose subtitle is the current
+/// status; the approval shortcut follows as its own row only while macOS
+/// is waiting for approval.
 private struct LaunchAtLoginSettingsRow: View {
     @Bindable var controller: LaunchAtLoginController
     @Environment(\.appLocalization) private var localization
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 10) {
-                Image(systemName: "power.circle")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 24, height: 24)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(localization.text(.launchAtLogin))
-                        .font(.system(size: 13.5, weight: .semibold))
-                    Text(localization.launchStatus(controller.state))
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                Spacer(minLength: 8)
-
-                Toggle(
-                    localization.text(.launchAtLogin),
-                    isOn: Binding(
-                        get: { controller.isEnabled },
-                        set: { controller.setEnabled($0) }
-                    )
-                )
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
-                    .accessibilityIdentifier("launch-at-login-toggle")
-            }
-
-            if controller.errorMessage != nil {
-                Text(localization.text(.launchChangeFailed))
-                    .font(.system(size: 11.5, weight: .medium))
-                    .foregroundStyle(.red)
-            }
-
-            if controller.showsSystemSettingsButton {
-                Button(
-                    localization.text(.openLoginItems),
-                    action: controller.openSystemSettings
-                )
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-            }
+        Toggle(
+            isOn: Binding(
+                get: { controller.isEnabled },
+                set: { controller.setEnabled($0) }
+            )
+        ) {
+            Text(localization.text(.launchAtLogin))
+            Text(localization.launchStatus(controller.state))
         }
-        .padding(10)
-        .background(
-            Color(nsColor: .controlBackgroundColor),
-            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(
-                    Color(nsColor: .separatorColor),
-                    lineWidth: 0.5
-                )
+        .toggleStyle(.switch)
+        .accessibilityIdentifier("launch-at-login-toggle")
+
+        if controller.showsSystemSettingsButton {
+            Button(
+                localization.text(.openLoginItems) + "\u{2026}",
+                action: controller.openSystemSettings
+            )
         }
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("launch-at-login-settings")
     }
 }
 
@@ -2602,64 +2521,33 @@ private struct AppUpdateSettingsRow: View {
     @Environment(\.appLocalization) private var localization
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "arrow.down.circle")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .frame(width: 24, height: 24)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(localization.text(.appUpdates))
-                    .font(.system(size: 13.5, weight: .semibold))
-                if let version = controller.installedVersion {
-                    Text(localization.format(.appUpdateVersion, version))
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(.secondary)
-                }
-                Text(localization.text(
-                    controller.isAvailable
-                        ? .appUpdatesDescription
-                        : .appUpdatesUnavailable
-                ))
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Spacer(minLength: 8)
-
+        LabeledContent {
+            // Sparkle opens its own window, hence the ellipsis.
             Button(
-                localization.text(.checkForAppUpdates),
+                localization.text(.checkForAppUpdates) + "\u{2026}",
                 action: controller.checkForUpdates
             )
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(!controller.canCheckForUpdates)
-                .accessibilityIdentifier("check-for-app-updates")
-        }
-        .padding(10)
-        .background(
-            Color(nsColor: .controlBackgroundColor),
-            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(
-                    Color(nsColor: .separatorColor),
-                    lineWidth: 0.5
-                )
+            .disabled(!controller.canCheckForUpdates)
+            .accessibilityIdentifier("check-for-app-updates")
+        } label: {
+            Text(localization.text(.appUpdates))
+            if let version = controller.installedVersion {
+                Text(localization.format(.appUpdateVersion, version))
+            }
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("app-update-settings")
     }
 }
 
-enum SettingsRowVisualTokens {
+/// Machine-checked facts behind the Settings prose in `DESIGN.md`: every
+/// pane is one grouped `Form`, and rows draw no chrome of their own.
+enum SettingsFormVisualTokens {
+    static let usesGroupedFormStyle = true
+
+    static let drawsCustomRowBackgrounds = false
+
     static let usesSemanticSystemColors = true
-
-    static let background = Color(nsColor: .controlBackgroundColor)
-
-    static let border = Color(nsColor: .separatorColor)
 }
 
 enum ProviderConnectionControl: Equatable, Hashable {
@@ -2753,7 +2641,10 @@ enum ProviderConnectionControl: Equatable, Hashable {
     }
 }
 
-private struct ProviderSettingsRow: View {
+/// One Auth pane section per provider: the header names the provider and
+/// offers its help, the rows are its accounts, and the footer carries the
+/// connection instruction.
+private struct ProviderSettingsSection: View {
     let provider: ProviderID
     let viewModel: UsageDashboardViewModel
     let connectionPresentation: ProviderConnectionPresentationState?
@@ -2796,38 +2687,7 @@ private struct ProviderSettingsRow: View {
     private var localization
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 10) {
-                ProviderIcon(provider: provider)
-                    .frame(width: 24, height: 24)
-                Text(provider.displayName)
-                    .font(.system(size: 13.5, weight: .semibold))
-                Spacer()
-                Button {
-                    isHelpPresented = true
-                } label: {
-                    Image(systemName: "questionmark.circle")
-                }
-                .buttonStyle(.borderless)
-                .help(helpName)
-                .accessibilityLabel(helpName)
-                .popover(isPresented: $isHelpPresented, arrowEdge: .trailing) {
-                    ProviderHelpPopover(
-                        provider: provider,
-                        help: descriptor.help
-                    )
-                }
-            }
-
-            Text(
-                localization.providerText(
-                    descriptor.instruction
-                )
-            )
-                .font(.system(size: 11.5))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
+        Section {
             ProviderAccountsSection(
                 provider: provider,
                 rows: accounts,
@@ -2844,15 +2704,31 @@ private struct ProviderSettingsRow: View {
                 connectionControls: accountConnectionControls,
                 primaryCredentials: { primaryCredentialControls }
             )
-        }
-        .padding(10)
-        .background(
-            SettingsRowVisualTokens.background,
-            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(SettingsRowVisualTokens.border, lineWidth: 0.5)
+        } header: {
+            HStack(spacing: 8) {
+                ProviderIcon(provider: provider)
+                    .frame(width: 20, height: 20)
+                Text(provider.displayName)
+                Spacer()
+                Button {
+                    isHelpPresented = true
+                } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+                .buttonStyle(.borderless)
+                .help(helpName)
+                .accessibilityLabel(helpName)
+                .popover(isPresented: $isHelpPresented, arrowEdge: .trailing) {
+                    ProviderHelpPopover(
+                        provider: provider,
+                        help: descriptor.help
+                    )
+                }
+            }
+        } footer: {
+            SettingsSectionFooter {
+                Text(localization.providerText(descriptor.instruction))
+            }
         }
     }
 
@@ -2920,7 +2796,6 @@ private struct ProviderSettingsRow: View {
                         else { viewModel.disconnectAccountProvider(row.identity) }
                     }
                     .buttonStyle(.bordered)
-                    .tint(.red)
                     .accessibilityIdentifier("account-disconnect-\(suffix)")
                 case .reconnect:
                     Button(localization.text(.reconnectProvider)) {
@@ -2994,6 +2869,7 @@ private struct ProviderSettingsRow: View {
             HStack(spacing: 8) {
                 SecureField(localization.text(.apiKey), text: $keyDraft)
                     .textFieldStyle(.roundedBorder)
+                    .accessibilityLabel(localization.text(.apiKey))
                 Button(localization.text(.save), action: onSave)
                     .buttonStyle(.borderedProminent)
                     .disabled(
@@ -3162,29 +3038,20 @@ private struct ConnectionBadge: View {
             waitingForBrowser: waitingForBrowser
         )
         let label = localization.text(state.labelKey)
+        // The symbol shape and the text carry the state; a failed check
+        // additionally reads in primary so it is not visually demoted.
         HStack(spacing: 4) {
             Image(systemName: state.symbolName)
                 .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(color(for: state))
             Text(label)
                 .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(
-                    state == .checkFailed
-                        ? HierarchicalShapeStyle.primary : .secondary
-                )
         }
+        .foregroundStyle(
+            state == .checkFailed
+                ? HierarchicalShapeStyle.primary : .secondary
+        )
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
-    }
-
-    private func color(for state: ConnectionBadgeState) -> Color {
-        switch state {
-        case .connected: .green
-        case .checkFailed: .orange
-        case .notConnected, .companionRequired, .checking,
-             .waitingForSignIn, .waitingForCompanion:
-            .secondary
-        }
     }
 }
 

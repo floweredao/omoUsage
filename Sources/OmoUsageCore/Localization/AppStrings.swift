@@ -190,6 +190,11 @@ public enum AppStringKey: String, CaseIterable, Sendable {
     case mobileRetainedAfterSyncFailure
     case checkICloud
     case mobileICloudCheckExplanation
+    // settings
+    case checkConnectionsAgain
+    case checkConnectionsAgainDescription
+    case dashboardPresentationDescription
+    case dashboardOrderDescription
 }
 
 public struct AppStrings: Sendable {
@@ -421,7 +426,15 @@ public struct AppStrings: Sendable {
             "iCloud 확인에 실패해 마지막으로 받은 데이터를 그대로 표시합니다.",
         .checkICloud: "iCloud 확인",
         .mobileICloudCheckExplanation:
-            "Mac이 iCloud에 올린 최신 데이터만 확인합니다. 이 기기는 프로바이더에 직접 연결하지 않습니다."
+            "Mac이 iCloud에 올린 최신 데이터만 확인합니다. 이 기기는 프로바이더에 직접 연결하지 않습니다.",
+        // settings
+        .checkConnectionsAgain: "연결 다시 확인",
+        .checkConnectionsAgainDescription:
+            "연결된 모든 계정의 인증을 다시 읽고 사용량을 새로고침합니다.",
+        .dashboardPresentationDescription:
+            "팝오버는 메뉴 막대 아이콘에서 열립니다. 사이드 노치는 화면 오른쪽 가장자리에 얇은 손잡이를 두고, 손잡이에 포인터를 가져가거나 메뉴 막대 아이콘을 클릭하면 사용량을 보여줍니다.",
+        .dashboardOrderDescription:
+            "행의 손잡이를 드래그하거나 Command-위/아래 화살표 키를 눌러 대시보드에 표시되는 순서를 바꿉니다."
     ]
 
     private static let english: [AppStringKey: String] = [
@@ -637,6 +650,14 @@ public struct AppStrings: Sendable {
             "The iCloud check failed, so the last data received is still shown.",
         .checkICloud: "Check iCloud",
         .mobileICloudCheckExplanation:
-            "Checks iCloud for the newest data your Mac published. This device never contacts providers."
+            "Checks iCloud for the newest data your Mac published. This device never contacts providers.",
+        // settings
+        .checkConnectionsAgain: "Check connections again",
+        .checkConnectionsAgainDescription:
+            "Reads every connected account's credential again and refreshes its usage.",
+        .dashboardPresentationDescription:
+            "Popover opens from the menu bar icon. Side Notch keeps a thin handle at the right edge of the screen and shows usage when you point at the handle or click the menu bar icon.",
+        .dashboardOrderDescription:
+            "Drag a row's handle, or press Command-Up Arrow and Command-Down Arrow, to change the order shown in the dashboard."
     ]
 }
