@@ -82,6 +82,122 @@ struct DashboardVisualContractTests {
     }
 
     @Test
+    func compactSurfacesKeepOverlayScrollers() {
+        let scrollView = NSScrollView()
+        scrollView.scrollerStyle = .legacy
+        scrollView.autohidesScrollers = false
+
+        DashboardScrollerPolicy.apply(to: scrollView)
+
+        #expect(DashboardScrollerPolicy.style == .overlay)
+        #expect(scrollView.scrollerStyle == .overlay)
+        #expect(scrollView.autohidesScrollers)
+    }
+
+    @Test
+    func popoverBodyScrollerUsesTheOverlayStyle() async throws {
+        let suite = "DashboardPopoverScrollerTests-\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let viewModel = UsageDashboardViewModel(
+            providers: [ProviderID.claude, .codex].map {
+                FixtureUsageProvider(id: $0, defaults: defaults)
+            },
+            now: { Date(timeIntervalSince1970: 1_785_675_000) }
+        )
+        await viewModel.refresh()
+        #expect(viewModel.snapshot.providers.count == 2)
+        let panelHeight = DashboardLayout.panelHeight(
+            for: viewModel.snapshot.providers
+        )
+        let host = NSHostingView(
+            rootView: DashboardView(
+                viewModel: viewModel,
+                localization: LocalizationController(
+                    store: AppLanguageStore(defaults: defaults)
+                ),
+                onSettings: {},
+                onQuit: {},
+                onPanelHeightChange: { _ in }
+            )
+        )
+        let window = NSWindow(
+            contentRect: NSRect(
+                x: 0,
+                y: 0,
+                width: 320,
+                height: panelHeight
+            ),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        defer { window.close() }
+        host.layoutSubtreeIfNeeded()
+
+        let scrollView = try #require(
+            firstDescendant(ofType: NSScrollView.self, in: host)
+        )
+        #expect(scrollView.scrollerStyle == DashboardScrollerPolicy.style)
+        #expect(scrollView.autohidesScrollers)
+        #expect(scrollView.hasVerticalScroller)
+        #expect(scrollView.frame.width == 320)
+        #expect(scrollView.contentSize.width == scrollView.frame.width)
+
+        // The configurator sits inside the popover body's scroll view, so a
+        // legacy style reset by AppKit is undone on that same view and the
+        // content keeps the full 320 pt width.
+        let configurator = try #require(
+            firstDescendant(
+                ofType: DashboardScrollerConfigurator.ConfiguratorView.self,
+                in: host
+            )
+        )
+        #expect(configurator.enclosingScrollView === scrollView)
+        scrollView.scrollerStyle = .legacy
+        configurator.applyPolicy()
+        #expect(scrollView.scrollerStyle == .overlay)
+        #expect(scrollView.contentSize.width == scrollView.frame.width)
+    }
+
+    @Test
+    func sideNotchAccountBadgeIsLegibleOnTheDimmedRail() throws {
+        #expect(SideNotchAccountBadgeTokens.fontSize >= 9)
+        #expect(SideNotchAccountBadgeTokens.fontWeight == .semibold)
+        #expect(SideNotchAccountBadgeTokens.diameter >= 16)
+        #expect(
+            SideNotchAccountBadgeTokens.diameter
+                > SideNotchAccountBadgeTokens.fontSize
+        )
+        #expect(SideNotchRailVisualTokens.emptyStateForegroundRole == .primaryDerived)
+        #expect(SideNotchRailVisualTokens.emptyStateForeground == Color.primary)
+
+        for name in [NSAppearance.Name.aqua, .darkAqua] {
+            let appearance = try #require(NSAppearance(named: name))
+            var ratio = 0.0
+            appearance.performAsCurrentDrawingAppearance {
+                guard
+                    let backdrop = NSColor.windowBackgroundColor
+                        .usingColorSpace(.sRGB),
+                    let plate = NSColor(SideNotchAccountBadgeTokens.fill)
+                        .usingColorSpace(.sRGB),
+                    let glyph = NSColor(SideNotchAccountBadgeTokens.foreground)
+                        .usingColorSpace(.sRGB)
+                else {
+                    return
+                }
+                ratio = Self.contrastRatio(
+                    Self.composite(plate, over: backdrop),
+                    Self.composite(glyph, over: backdrop)
+                )
+            }
+            #expect(ratio >= 4.5, "\(name.rawValue) badge contrast \(ratio)")
+        }
+    }
+
+    @Test
     func sideNotchDetailUsesRestrainedDownwardElevation() throws {
         // The captured recipe was black 0.16 / radius 10 / y 4: a blur two
         // and a half times the offset, so it read as an omnidirectional
@@ -110,6 +226,57 @@ struct DashboardVisualContractTests {
         #expect(shadow.redComponent <= 0.05)
         #expect(shadow.greenComponent <= 0.05)
         #expect(shadow.blueComponent <= 0.05)
+    }
+
+    private func firstDescendant<ViewType: NSView>(
+        ofType type: ViewType.Type,
+        in view: NSView
+    ) -> ViewType? {
+        if let match = view as? ViewType {
+            return match
+        }
+        for subview in view.subviews {
+            if let match = firstDescendant(ofType: type, in: subview) {
+                return match
+            }
+        }
+        return nil
+    }
+
+    private static func composite(
+        _ color: NSColor,
+        over backdrop: NSColor
+    ) -> (red: Double, green: Double, blue: Double) {
+        let alpha = color.alphaComponent
+        func blend(_ top: CGFloat, _ bottom: CGFloat) -> Double {
+            Double(top * alpha + bottom * (1 - alpha))
+        }
+        return (
+            blend(color.redComponent, backdrop.redComponent),
+            blend(color.greenComponent, backdrop.greenComponent),
+            blend(color.blueComponent, backdrop.blueComponent)
+        )
+    }
+
+    private static func contrastRatio(
+        _ first: (red: Double, green: Double, blue: Double),
+        _ second: (red: Double, green: Double, blue: Double)
+    ) -> Double {
+        func linear(_ channel: Double) -> Double {
+            channel <= 0.03928
+                ? channel / 12.92
+                : pow((channel + 0.055) / 1.055, 2.4)
+        }
+        func luminance(
+            _ color: (red: Double, green: Double, blue: Double)
+        ) -> Double {
+            0.2126 * linear(color.red)
+                + 0.7152 * linear(color.green)
+                + 0.0722 * linear(color.blue)
+        }
+        let lighter = max(luminance(first), luminance(second))
+        let darker = min(luminance(first), luminance(second))
+        return (lighter + 0.05) / (darker + 0.05)
     }
 
     @Test

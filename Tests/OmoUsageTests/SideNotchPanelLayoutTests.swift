@@ -758,6 +758,170 @@ struct SideNotchPanelLayoutTests {
         )
     }
 
+    @Test(arguments: [1, 2, 6, 11])
+    func programmaticRevealMatchesHoverRevealHeight(providerCount: Int) {
+        let visibleFrame = NSRect(
+            x: 0,
+            y: 25,
+            width: 1_920,
+            height: 1_055
+        )
+        let rowGroups = capturedTwoProviderUsage()[0].groups
+        let providers = (0..<providerCount).map { index in
+            ProviderUsage(
+                provider: ProviderID.allCases[
+                    index % ProviderID.allCases.count
+                ],
+                accountLabel: "Account \(index)",
+                planName: "Plus",
+                groups: rowGroups,
+                availability: .available,
+                updatedAt: nil
+            )
+        }
+        let pointerY: CGFloat = 780
+
+        let programmatic = SideNotchPanelLayout.presentationFrame(
+            in: visibleFrame,
+            providers: providers,
+            mode: .revealed,
+            anchorY: SideNotchRevealAnchorPolicy.anchorY(
+                current: pointerY,
+                for: .programmatic
+            )
+        )
+        let hover = SideNotchPanelLayout.presentationFrame(
+            in: visibleFrame,
+            providers: providers,
+            mode: .revealed,
+            anchorY: SideNotchRevealAnchorPolicy.anchorY(
+                current: nil,
+                for: .pointerEntered(mode: .hidden, screenY: pointerY)
+            )
+        )
+
+        #expect(programmatic.height == hover.height)
+        #expect(programmatic.width == hover.width)
+        #expect(programmatic.maxX == hover.maxX)
+        #expect(
+            programmatic.height
+                == min(
+                    SideNotchPanelLayout.maximumPanelHeight,
+                    SideNotchPanelLayout.naturalRailHeight(
+                        providerCount: providerCount
+                    )
+                )
+        )
+        #expect(programmatic.height > SideNotchPanelLayout.minimumHeight)
+        #expect(programmatic.midY == visibleFrame.midY)
+        #expect(hover.midY == pointerY)
+    }
+
+    @Test
+    func frameUpdatesDuringAnInFlightRevealRetargetTheAnimation() {
+        #expect(
+            SideNotchFrameUpdatePolicy.animates(
+                requested: false,
+                animationInFlight: true,
+                mode: .revealed
+            )
+        )
+        #expect(
+            SideNotchFrameUpdatePolicy.animates(
+                requested: false,
+                animationInFlight: true,
+                mode: .detail(.codex)
+            )
+        )
+        #expect(
+            !SideNotchFrameUpdatePolicy.animates(
+                requested: false,
+                animationInFlight: false,
+                mode: .revealed
+            )
+        )
+        #expect(
+            !SideNotchFrameUpdatePolicy.animates(
+                requested: false,
+                animationInFlight: true,
+                mode: .hidden
+            )
+        )
+        #expect(
+            SideNotchFrameUpdatePolicy.animates(
+                requested: true,
+                animationInFlight: false,
+                mode: .hidden
+            )
+        )
+    }
+
+    @Test
+    func railScrollerKeepsTheOverlayStyle() async throws {
+        let suite = "SideNotchRailScrollerTests-\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let viewModel = UsageDashboardViewModel(
+            providers: [ProviderID.codex, .claude].map {
+                FixtureUsageProvider(id: $0, defaults: defaults)
+            },
+            now: { Date(timeIntervalSince1970: 1_785_675_000) }
+        )
+        await viewModel.refresh()
+        #expect(viewModel.snapshot.providers.count == 2)
+        let state = SideNotchPanelState()
+        state.toggleRevealed()
+        let host = NSHostingView(
+            rootView: SideNotchPanelView(
+                viewModel: viewModel,
+                localization: LocalizationController(
+                    store: AppLanguageStore(defaults: defaults)
+                ),
+                state: state,
+                onSelectionIntent: { _, _ in },
+                onKeyboardFocusTarget: { _ in },
+                onProviderCountChange: { _ in },
+                onPointerEntered: { _ in },
+                onPointerExited: {},
+                onRefresh: {},
+                onSettings: {},
+                onQuit: {}
+            )
+            .frame(width: 56, height: 196)
+        )
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 56, height: 196),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        defer { window.close() }
+        host.layoutSubtreeIfNeeded()
+
+        let scrollView = try #require(
+            firstDescendant(ofType: NSScrollView.self, in: host)
+        )
+        #expect(scrollView.scrollerStyle == DashboardScrollerPolicy.style)
+        #expect(scrollView.scrollerStyle == .overlay)
+        #expect(scrollView.autohidesScrollers)
+        #expect(scrollView.hasVerticalScroller)
+
+        // The configurator sits inside the rail's scroll view, so a style
+        // reset by AppKit is undone by the same object on the same view.
+        let configurator = try #require(
+            firstDescendant(
+                ofType: DashboardScrollerConfigurator.ConfiguratorView.self,
+                in: host
+            )
+        )
+        #expect(configurator.enclosingScrollView === scrollView)
+        scrollView.scrollerStyle = .legacy
+        configurator.applyPolicy()
+        #expect(scrollView.scrollerStyle == .overlay)
+    }
+
     @Test
     func hiddenActivationFrameSpansTheFullVisibleHeight() {
         let visibleFrame = NSRect(
@@ -1389,6 +1553,21 @@ struct SideNotchPanelLayoutTests {
             || view.subviews.contains {
                 containsDescendant(ofType: type, in: $0)
             }
+    }
+
+    private func firstDescendant<ViewType: NSView>(
+        ofType type: ViewType.Type,
+        in view: NSView
+    ) -> ViewType? {
+        if let match = view as? ViewType {
+            return match
+        }
+        for subview in view.subviews {
+            if let match = firstDescendant(ofType: type, in: subview) {
+                return match
+            }
+        }
+        return nil
     }
 }
 

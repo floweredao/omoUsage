@@ -304,7 +304,9 @@ private struct SideNotchRailView: View {
                             .font(.system(size: 22, weight: .medium))
                         Text(localization.text(.checking))
                             .font(.system(size: 10.5, weight: .medium))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(
+                                SideNotchRailVisualTokens.emptyStateForeground
+                            )
                     }
                     .frame(maxHeight: .infinity)
                     .accessibilityElement(children: .combine)
@@ -377,8 +379,9 @@ private struct SideNotchRailView: View {
                         }
                     }
                     .padding(.vertical, 7)
+                    .dashboardOverlayScrollers()
                 }
-                .scrollIndicators(.hidden)
+                .scrollIndicators(.automatic)
             }
 
             VStack(spacing: 2) {
@@ -602,18 +605,28 @@ private struct SideNotchProviderButton: View {
                         )
                     {
                         Text(badge)
-                            .font(.system(size: 8, weight: .bold))
-                            .foregroundStyle(.primary)
-                            .frame(width: 14, height: 14)
-                            .background(.regularMaterial, in: Circle())
-                            .overlay {
-                                Circle()
-                                    .stroke(
-                                        Color(nsColor: .separatorColor),
-                                        lineWidth: 0.5
-                                    )
-                            }
-                            .offset(x: 14, y: 14)
+                            .font(
+                                .system(
+                                    size: SideNotchAccountBadgeTokens.fontSize,
+                                    weight: SideNotchAccountBadgeTokens.fontWeight,
+                                    design: .rounded
+                                )
+                            )
+                            .foregroundStyle(
+                                SideNotchAccountBadgeTokens.foreground
+                            )
+                            .frame(
+                                width: SideNotchAccountBadgeTokens.diameter,
+                                height: SideNotchAccountBadgeTokens.diameter
+                            )
+                            .background(
+                                SideNotchAccountBadgeTokens.fill,
+                                in: Circle()
+                            )
+                            .offset(
+                                x: SideNotchAccountBadgeTokens.offset,
+                                y: SideNotchAccountBadgeTokens.offset
+                            )
                     }
 
                     if SideNotchFreshnessPolicy.showsFailureMarker(
@@ -842,6 +855,31 @@ struct SideNotchDetailView: View {
             y: SideNotchDetailElevationTokens.shadowOffsetY
         )
     }
+}
+
+/// Rail text that is not part of a provider section. The panel never becomes
+/// key, so system `.secondary` renders permanently dimmed there; the caption
+/// reads the same primary-derived foreground as provider metadata.
+enum SideNotchRailVisualTokens {
+    static let emptyStateForegroundRole =
+        ProviderMetadataForegroundRole.primaryDerived
+
+    static var emptyStateForeground: Color {
+        ProviderMetadataVisualTokens.foreground
+    }
+}
+
+/// The account initial on a rail ring. An 8 pt glyph over translucent
+/// material was illegible beside the 4 pt ring stroke, so the badge is an
+/// inverted plate: full primary behind window-background text, which stays
+/// above 7:1 in both appearances and on the dimmed panel.
+enum SideNotchAccountBadgeTokens {
+    static let fontSize: CGFloat = 9
+    static let fontWeight = Font.Weight.semibold
+    static let diameter: CGFloat = 16
+    static let offset: CGFloat = 14
+    static let fill = Color.primary
+    static let foreground = Color(nsColor: .windowBackgroundColor)
 }
 
 enum SideNotchAccountIdentity {
