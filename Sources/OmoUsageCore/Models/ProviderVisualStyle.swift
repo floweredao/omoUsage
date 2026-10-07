@@ -53,6 +53,42 @@ public enum MobileFreshnessVisualTokens {
     public static let badgeBorderOpacity = StaleUsageVisualTokens.badgeBorderOpacity
 }
 
+/// Meter fill and track tokens shared by every native surface, so the
+/// popover, Side Notch, and mobile cards draw usage with one palette.
+public enum UsageMeterVisualTokens {
+    public static let displaysMenuBarBadge = false
+    public static let standardFill = VisualRGB(
+        red: 0x4C,
+        green: 0x85,
+        blue: 0x77
+    )
+    public static let extraFill = VisualRGB(
+        red: 0xB7,
+        green: 0x79,
+        blue: 0x3F
+    )
+    public static let trackOpacity = 0.16
+
+    public static func fillRGB(for period: UsagePeriod) -> VisualRGB {
+        period == .extra ? extraFill : standardFill
+    }
+}
+
+/// `ProviderIcon` draws a 20 pt tile with a 5 pt corner, a 3 pt artwork
+/// inset, an 11 pt heavy rounded monogram, and a 0.12-opacity 1 pt shadow.
+/// The ratios let the 32 pt mobile tile keep those proportions while it
+/// scales with Dynamic Type up to its cap.
+public enum ProviderMarkVisualTokens {
+    public static let cornerRadiusRatio = 0.25
+    public static let artworkInsetRatio = 0.15
+    public static let monogramPointRatio = 0.55
+    public static let shadowOpacity = 0.12
+    public static let shadowRadius: CGFloat = 1
+    public static let shadowOffsetY: CGFloat = 1
+    public static let mobileSize: CGFloat = 32
+    public static let mobileMaximumSize: CGFloat = 48
+}
+
 public struct ProviderVisualStyle {
     public let background: AnyShapeStyle
     public let foreground: Color

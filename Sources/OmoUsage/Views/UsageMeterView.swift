@@ -1,25 +1,6 @@
 import OmoUsageCore
 import SwiftUI
 
-enum UsageMeterVisualTokens {
-    static let displaysMenuBarBadge = false
-    static let standardFill = VisualRGB(
-        red: 0x4C,
-        green: 0x85,
-        blue: 0x77
-    )
-    static let extraFill = VisualRGB(
-        red: 0xB7,
-        green: 0x79,
-        blue: 0x3F
-    )
-    static let trackOpacity = 0.16
-
-    static func fillRGB(for period: UsagePeriod) -> VisualRGB {
-        period == .extra ? extraFill : standardFill
-    }
-}
-
 struct UsageMeterView: View {
     let meter: UsageMeter
     @Environment(\.appLocalization)

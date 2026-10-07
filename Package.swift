@@ -52,6 +52,7 @@ let package = Package(
                 "Localization/ProviderTextLocalization.swift",
                 "Models/DashboardSnapshot.swift",
                 "Models/ProviderID.swift",
+                "Models/ProviderMark.swift",
                 "Models/ProviderVisualStyle.swift",
                 "Models/UsageModels.swift",
                 "Models/ProviderDisplayOrder.swift",
