@@ -8,8 +8,8 @@ struct VersionConfigurationTests {
     func versionConfigurationIsTheOnlyVersionAndBuildSource() throws {
         let configuration = try versionConfiguration()
 
-        #expect(configuration["MARKETING_VERSION"] == "0.1.26")
-        #expect(configuration["CURRENT_PROJECT_VERSION"] == "20")
+        #expect(configuration["MARKETING_VERSION"] == "0.2.0")
+        #expect(configuration["CURRENT_PROJECT_VERSION"] == "21")
 
         for infoPlist in ["Info.plist", "MobileInfo.plist"] {
             let info = try propertyList(named: infoPlist)
