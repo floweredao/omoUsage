@@ -20,7 +20,7 @@
       --text: #18201c;
       --muted: #68716c;
       --border: rgba(24, 32, 28, 0.11);
-      --track: rgba(24, 32, 28, 0.16);
+      --track: rgba(24, 32, 28, 0.10);
       --standard: #4c8577;
       --extra: #b7793f;
       --standard-text: #3f7568;
@@ -30,8 +30,6 @@
       --card-shadow: 0 8px 26px rgba(24, 32, 28, 0.045);
       --mark-shadow: 0 1px 1px rgba(0, 0, 0, 0.12);
       --identity-gradient: linear-gradient(145deg, #568f80, #386d60);
-      --stale-surface: color-mix(in srgb, var(--extra) 12%, var(--surface-strong));
-      --stale-border: color-mix(in srgb, var(--extra) 34%, var(--border));
       --system-orange: #ff9500;
       --system-indigo: #5856d6;
       --system-blue: #007aff;
@@ -47,14 +45,11 @@
       --space-6: 24px;
       --space-7: 28px;
       --space-8: 32px;
-      --content-max: 1200px;
       --radius-mark: 8px;
       --radius-control: 12px;
       --radius-row: 14px;
       --radius-card: 20px;
-      --text-title: 17px;
-      --text-body: 16px;
-      --text-meta: 13px;
+      --radius-summary: 24px;
       --motion-fast: 120ms ease-out;
     }
 
@@ -66,7 +61,7 @@
         --text: #f2f5f1;
         --muted: #a6afa8;
         --border: rgba(242, 245, 241, 0.11);
-        --track: rgba(242, 245, 241, 0.16);
+        --track: rgba(242, 245, 241, 0.12);
         --standard-text: #79b5a5;
         --extra-text: #e0a064;
         --focus: #79b5a5;
@@ -78,13 +73,6 @@
         --system-pink: #ff375f;
         --system-red: #ff453a;
         --system-cyan: #5ac8f5;
-      }
-    }
-
-    @media (min-width: 640px) {
-      :root {
-        --text-body: 14px;
-        --text-meta: 12px;
       }
     }
 
@@ -112,43 +100,34 @@
     }
 
     .shell {
-      width: min(100%, var(--content-max));
+      width: min(100%, 720px);
       min-width: 0;
       margin-inline: auto;
       padding:
-        max(12px, env(safe-area-inset-top))
-        max(12px, env(safe-area-inset-right))
+        max(16px, env(safe-area-inset-top))
+        max(16px, env(safe-area-inset-right))
         max(32px, env(safe-area-inset-bottom))
-        max(12px, env(safe-area-inset-left));
+        max(16px, env(safe-area-inset-left));
     }
 
     .summary {
       position: sticky;
       z-index: 10;
       top: max(8px, env(safe-area-inset-top));
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px var(--space-3);
-      margin-bottom: var(--space-4);
-      padding: 10px var(--space-3);
+      display: grid;
+      gap: var(--space-3);
+      margin-bottom: var(--space-5);
+      padding: var(--space-4);
       border: 1px solid var(--border);
-      border-radius: var(--radius-card);
+      border-radius: var(--radius-summary);
       background: var(--surface);
       box-shadow: var(--shadow);
       backdrop-filter: blur(18px) saturate(140%);
       -webkit-backdrop-filter: blur(18px) saturate(140%);
     }
 
-    .identity {
-      display: flex;
-      flex: 1 1 auto;
-      align-items: center;
-      gap: var(--space-3);
-      min-width: 0;
-    }
-
+    .identity,
+    .status-line,
     .provider-heading,
     .meter-heading {
       display: flex;
@@ -160,19 +139,19 @@
 
     .identity-mark {
       display: grid;
-      flex: 0 0 36px;
-      width: 36px;
-      height: 36px;
+      flex: 0 0 42px;
+      width: 42px;
+      height: 42px;
       place-items: center;
-      border-radius: 10px;
+      border-radius: var(--radius-row);
       color: #f7fbf9;
       background: var(--identity-gradient);
       box-shadow: inset 0 1px rgba(255, 255, 255, 0.24);
     }
 
     .identity-mark svg {
-      width: 22px;
-      height: 22px;
+      width: var(--space-6);
+      height: var(--space-6);
     }
 
     .title-block {
@@ -188,38 +167,47 @@
     }
 
     h1 {
-      font-size: 20px;
-      font-weight: 700;
-      letter-spacing: -0.02em;
-      line-height: 1.15;
+      font-size: clamp(24px, 8vw, 28px);
+      font-weight: 730;
+      letter-spacing: -0.035em;
+      line-height: 1.06;
     }
 
-    .header-meta {
-      display: flex;
+    .eyebrow,
+    .metadata,
+    .group-title,
+    .reset-text,
+    .status-text {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .eyebrow {
+      margin-bottom: 3px;
+      font-weight: 650;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .status-line {
+      display: grid;
+      justify-items: start;
+      gap: 4px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+    }
+
+    .connection {
+      display: inline-flex;
       align-items: center;
       gap: 7px;
       min-width: 0;
-      margin-top: 2px;
-      color: var(--muted);
-      font-size: var(--text-meta);
-      line-height: 1.35;
     }
 
-    .status-text,
-    .page-context,
-    .refreshed-at {
-      min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
+    .connection,
+    #refreshed-at {
       white-space: nowrap;
-    }
-
-    .metadata,
-    .group-title,
-    .reset-text {
-      color: var(--muted);
-      font-size: var(--text-meta);
-      line-height: 1.4;
     }
 
     .status-dot {
@@ -241,15 +229,9 @@
       box-shadow: 0 0 0 4px color-mix(in srgb, var(--extra) 16%, transparent);
     }
 
-    .header-meta[data-page="settings"] .status-dot,
-    .header-meta[data-page="settings"] .refreshed-at {
-      display: none;
-    }
-
     .cards {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
-      align-items: start;
+      grid-template-columns: minmax(0, 1fr);
       gap: var(--space-3);
       min-width: 0;
     }
@@ -267,8 +249,8 @@
     .provider-card {
       display: grid;
       align-content: start;
-      gap: var(--space-3);
-      padding: 14px;
+      gap: var(--space-4);
+      padding: var(--space-4);
     }
 
     .provider-identity,
@@ -372,14 +354,14 @@
     }
 
     .provider-title {
-      font-size: var(--text-title);
+      font-size: 17px;
       font-weight: 650;
       letter-spacing: -0.018em;
     }
 
     .account-alias {
       color: var(--muted);
-      font-size: var(--text-meta);
+      font-size: 12px;
       line-height: 1.35;
     }
 
@@ -399,10 +381,16 @@
     }
 
     .availability {
-      color: var(--extra-text);
-      font-size: var(--text-meta);
+      color: var(--standard-text);
+      font-size: 12px;
       font-weight: 600;
       line-height: 1.35;
+    }
+
+    .availability[data-availability="authenticationRequired"],
+    .availability[data-availability="unavailable"],
+    .availability[data-availability="failed"] {
+      color: var(--extra-text);
     }
 
     .stale-badge {
@@ -411,32 +399,25 @@
       gap: var(--space-1);
       justify-self: start;
       margin: 0;
-      padding: 3px 7px;
-      border: 1px solid var(--stale-border);
+      padding: 5px 9px;
+      border: 1px solid color-mix(in srgb, var(--extra) 34%, var(--border));
       border-radius: 999px;
       color: var(--extra-text);
-      background: var(--stale-surface);
+      background: color-mix(in srgb, var(--extra) 12%, var(--surface-strong));
       font-size: 11px;
       font-weight: 650;
-      line-height: 13px;
     }
 
-    .stale-badge svg {
-      flex: 0 0 auto;
-      width: 11px;
-      height: 11px;
-      fill: currentColor;
-    }
-
-    .stale-badge-cutout {
-      fill: none;
-      stroke: var(--stale-surface);
-      stroke-width: 1.7;
-      stroke-linecap: round;
-    }
-
-    .stale-badge-dot {
-      fill: var(--stale-surface);
+    .stale-badge::before {
+      display: grid;
+      width: 13px;
+      height: 13px;
+      border: 1px solid currentColor;
+      border-radius: 999px;
+      content: "!";
+      font-size: 9px;
+      line-height: 1;
+      place-items: center;
     }
 
     .group {
@@ -464,7 +445,7 @@
 
     .meter-title,
     .meter-value {
-      font-size: var(--text-body);
+      font-size: 14px;
       font-weight: 600;
       line-height: 1.25;
     }
@@ -518,7 +499,7 @@
       border-radius: 12px;
       color: var(--muted);
       background: color-mix(in srgb, var(--standard) 8%, transparent);
-      font-size: var(--text-meta);
+      font-size: 12px;
       line-height: 1.4;
     }
 
@@ -530,12 +511,12 @@
 
     .state-card h2 {
       margin-bottom: 7px;
-      font-size: var(--text-title);
+      font-size: 17px;
     }
 
     .state-card p {
       color: var(--muted);
-      font-size: var(--text-meta);
+      font-size: 13px;
       line-height: 1.5;
     }
 
@@ -578,10 +559,9 @@
 
     .header-actions {
       display: flex;
-      flex: 1 1 100%;
       align-items: center;
-      gap: var(--space-2);
-      min-width: 0;
+      gap: 8px;
+      width: 100%;
     }
 
     .header-actions a,
@@ -590,12 +570,12 @@
       flex: 1;
       display: inline-grid;
       place-items: center;
-      padding-inline: 14px;
+      padding-inline: 13px;
       border: 1px solid var(--border);
-      border-radius: var(--radius-control);
+      border-radius: 12px;
       color: var(--text);
       background: var(--surface-strong);
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 650;
       text-decoration: none;
       transition:
@@ -786,27 +766,35 @@
 
     @media (min-width: 640px) {
       .shell {
-        padding-top: 16px;
         padding-inline: 24px;
       }
 
       .summary {
-        padding: var(--space-3) var(--space-4);
+        grid-template-columns: 1fr auto;
+        align-items: center;
+      }
+
+      .cards {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .status-line {
+        display: grid;
+        justify-items: end;
+        gap: 12px;
+        padding-top: 0;
+        padding-left: 18px;
+        border-top: 0;
+        border-left: 1px solid var(--border);
       }
 
       .header-actions {
-        flex: 0 0 auto;
+        justify-content: flex-end;
       }
 
       .header-actions a,
       .header-actions button {
-        min-height: 36px;
         flex: 0 0 auto;
-      }
-
-      .provider-card {
-        gap: var(--space-4);
-        padding: var(--space-4);
       }
 
       .settings-page {
@@ -845,35 +833,31 @@
     <header class="summary">
       <div class="identity">
         <div class="identity-mark" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true" focusable="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
             <path d="M4 15a8 8 0 1 1 16 0"></path>
             <path d="M12 12l4-4"></path>
             <path d="M6.5 18h11"></path>
           </svg>
         </div>
         <div class="title-block">
+          <p class="eyebrow" id="page-eyebrow">Private dashboard</p>
           <h1>OmoUsage</h1>
-          <p class="header-meta" id="header-meta" data-page="dashboard">
-            <span class="status-dot" id="status-dot"></span>
-            <span class="status-text" id="status-text" aria-live="polite"></span>
-            <span
-              class="page-context"
-              id="page-context"
-              data-i18n="privateSettings"
-              hidden
-            >Private settings</span>
-            <time class="refreshed-at" id="refreshed-at" hidden></time>
-          </p>
         </div>
       </div>
-      <div class="header-actions">
-        <button
-          id="refresh-button"
-          type="button"
-          data-refresh-state="idle"
-          data-i18n="refresh"
-        >Refresh</button>
-        <a id="page-link" href="/settings" data-i18n="settings">Settings</a>
+      <div class="status-line" aria-live="polite">
+        <span class="connection">
+          <span class="status-dot" id="status-dot"></span>
+          <span class="status-text" id="status-text">Loading usage</span>
+        </span>
+        <span class="metadata" id="refreshed-at">Connecting to your Mac</span>
+        <div class="header-actions">
+          <a id="page-link" href="/settings">Settings</a>
+          <button
+            id="refresh-button"
+            type="button"
+            data-refresh-state="idle"
+          >Refresh</button>
+        </div>
       </div>
     </header>
 
@@ -958,16 +942,7 @@
     </main>
   </div>
 
-  <template id="stale-badge-icon">
-    <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-      <path d="M7.14 2.5a1 1 0 0 1 1.72 0l5.6 9.75a1 1 0 0 1-.86 1.5H2.4a1 1 0 0 1-.86-1.5z"></path>
-      <path class="stale-badge-cutout" d="M8 6.2v3.2"></path>
-      <circle class="stale-badge-dot" cx="8" cy="11.5" r="0.95"></circle>
-    </svg>
-  </template>
-
   <script>
-    const isSettingsPage = location.pathname === "/settings";
     // These two maps must equal OmoUsageCore ProviderID.displayName and
     // ProviderID.monogram; WebDashboardServerTests fails on drift.
     const providerNames = {
@@ -1004,12 +979,14 @@
     const legacyAccountID = "00000000-0000-0000-0000-000000000001";
     const localizedCopy = {
       english: {
+        privateDashboard: "Private dashboard",
         privateSettings: "Private settings",
         dashboard: "Dashboard",
         settings: "Settings",
         loadingUsage: "Loading usage",
         loadingSnapshot:
           "The latest private snapshot is being read from your Mac.",
+        connectingMac: "Connecting to your Mac",
         providerUsage: "Provider usage",
         webDisplay: "Web display",
         webDisplayDescription:
@@ -1024,13 +1001,10 @@
             + "on this page.",
         loadingLocalSettings: "Loading local settings",
         unknownRefreshTime: "Unknown refresh time",
-        justNow: "just now",
-        minutesAgo: "{count} min ago",
-        hoursAgo: "{count} hr ago",
-        updated: "Updated {time}",
         remaining: "remaining",
         resets: "Resets {date}",
-        providerLastAttempt: "Last refreshed {time}",
+        providerUpdated: "Provider updated {date}",
+        providerLastAttempt: "Last refreshed {date}",
         available: "Available",
         authenticationRequired: "Authentication required",
         unavailable: "Unavailable",
@@ -1039,6 +1013,8 @@
         noUsage: "No usage yet",
         noUsageDescription:
           "Open OmoUsage on your Mac and let it complete a refresh.",
+        privateCurrent: "Private and current",
+        refreshed: "Refreshed {date}",
         macUnavailable: "Mac unavailable",
         dashboardUnavailable: "Dashboard unavailable",
         dashboardUnavailableDescription:
@@ -1064,11 +1040,13 @@
         refreshDidNotComplete: "The local refresh did not complete."
       },
       korean: {
+        privateDashboard: "비공개 대시보드",
         privateSettings: "비공개 설정",
         dashboard: "대시보드",
         settings: "설정",
         loadingUsage: "사용량 불러오는 중",
         loadingSnapshot: "Mac에서 최신 비공개 사용량을 읽고 있습니다.",
+        connectingMac: "Mac에 연결하는 중",
         providerUsage: "제공자 사용량",
         webDisplay: "웹 표시",
         webDisplayDescription:
@@ -1083,13 +1061,10 @@
             + "표시되지 않습니다.",
         loadingLocalSettings: "로컬 설정 불러오는 중",
         unknownRefreshTime: "새로고침 시간 알 수 없음",
-        justNow: "방금 전",
-        minutesAgo: "{count}분 전",
-        hoursAgo: "{count}시간 전",
-        updated: "{time} 업데이트",
         remaining: "남음",
         resets: "{date}에 초기화",
-        providerLastAttempt: "마지막 갱신 {time}",
+        providerUpdated: "제공자 업데이트 {date}",
+        providerLastAttempt: "마지막 갱신 {date}",
         available: "사용 가능",
         authenticationRequired: "인증 필요",
         unavailable: "사용할 수 없음",
@@ -1098,6 +1073,8 @@
         noUsage: "아직 사용량 없음",
         noUsageDescription:
           "Mac에서 OmoUsage를 열고 새로고침이 끝날 때까지 기다리세요.",
+        privateCurrent: "비공개 최신 상태",
+        refreshed: "새로고침 {date}",
         macUnavailable: "Mac에 연결할 수 없음",
         dashboardUnavailable: "대시보드를 사용할 수 없음",
         dashboardUnavailableDescription:
@@ -1161,7 +1138,6 @@
     const statusText = document.querySelector("#status-text");
     const refreshedAt = document.querySelector("#refreshed-at");
     const stateCard = document.querySelector("#state-card");
-    const staleBadgeIcon = document.querySelector("#stale-badge-icon");
     let hasRevealedProviderCards = false;
 
     function element(tag, className, text) {
@@ -1221,49 +1197,6 @@
         timeStyle: "short"
         }
       ).format(date);
-    }
-
-    function relativeTimeText(milliseconds, now = Date.now()) {
-      const date = new Date(milliseconds);
-      if (Number.isNaN(date.getTime())) {
-        return localized("unknownRefreshTime");
-      }
-      const elapsedMinutes = Math.floor(
-        Math.max(0, now - date.getTime()) / 60_000
-      );
-      if (elapsedMinutes < 1) return localized("justNow");
-      if (elapsedMinutes < 60) {
-        return localized("minutesAgo", { count: elapsedMinutes });
-      }
-      if (elapsedMinutes < 24 * 60) {
-        return localized("hoursAgo", { count: Math.floor(elapsedMinutes / 60) });
-      }
-      return formatDate(milliseconds);
-    }
-
-    function renderTimestamp(node, key, milliseconds) {
-      const date = new Date(milliseconds);
-      const isValid = !Number.isNaN(date.getTime());
-      node.textContent = localized(
-        key,
-        { time: relativeTimeText(milliseconds) }
-      );
-      node.dateTime = isValid ? date.toISOString() : "";
-      node.title = isValid ? formatDate(milliseconds) : "";
-      return node;
-    }
-
-    function timestampNode(className, key, milliseconds) {
-      return renderTimestamp(element("time", className), key, milliseconds);
-    }
-
-    function staleBadgeNode() {
-      const badge = element("p", "stale-badge");
-      badge.append(
-        staleBadgeIcon.content.cloneNode(true),
-        element("span", "", localized("refreshFailed"))
-      );
-      return badge;
     }
 
     function metricValue(metric) {
@@ -1387,39 +1320,50 @@
       article.append(heading);
       const isStale = Boolean(provider.refreshFailure);
       article.dataset.freshness = isStale ? "stale" : "current";
-      // Availability is written only when it names a problem; a stale card
-      // already carries the failed refresh in its badge.
-      const availability = provider.availability || "unavailable";
-      if (
-        availability !== "available"
-        && !(isStale && availability === "failed")
-      ) {
-        const availabilityNode = element(
+      // A stale card states one status: the failed refresh replaces the
+      // "Available" line it would otherwise contradict.
+      if (!isStale || provider.availability !== "available") {
+        const availability = element(
           "p",
           "availability",
-          localized(availabilityLabels[availability] || "unavailable")
+          localized(
+            availabilityLabels[provider.availability] || "unavailable"
+          )
         );
-        availabilityNode.dataset.availability = availability;
-        article.append(availabilityNode);
+        availability.dataset.availability = provider.availability
+          || "unavailable";
+        article.append(availability);
       }
       if (isStale) {
         article.dataset.refreshFailure = provider.refreshFailure;
-        article.append(staleBadgeNode());
+        article.append(
+          element("p", "stale-badge", localized("refreshFailed"))
+        );
       }
       for (const group of provider.groups || []) {
         article.append(groupNode(group));
       }
       if (provider.lastSuccessfulAt) {
         article.append(
-          timestampNode("metadata", "updated", provider.lastSuccessfulAt)
+          element(
+            "p",
+            "metadata",
+            localized(
+              "providerUpdated",
+              { date: formatDate(provider.lastSuccessfulAt) }
+            )
+          )
         );
       }
       if (isStale && provider.lastRefreshAttemptAt) {
         article.append(
-          timestampNode(
+          element(
+            "p",
             "metadata",
-            "providerLastAttempt",
-            provider.lastRefreshAttemptAt
+            localized(
+              "providerLastAttempt",
+              { date: formatDate(provider.lastRefreshAttemptAt) }
+            )
           )
         );
       }
@@ -1435,12 +1379,8 @@
     }
 
     async function refresh() {
-      const showsHeaderStatus = !isSettingsPage;
       statusDot.dataset.state = "loading";
-      if (showsHeaderStatus && refreshedAt.hidden) {
-        statusText.hidden = false;
-        statusText.textContent = localized("loadingUsage");
-      }
+      statusText.textContent = localized("refreshing");
       try {
         const response = await fetch("/api/snapshot", {
           cache: "no-store",
@@ -1493,22 +1433,18 @@
           ));
         }
         statusDot.dataset.state = "current";
-        if (showsHeaderStatus) {
-          statusText.hidden = true;
-          statusText.textContent = "";
-          renderTimestamp(
-            refreshedAt,
-            "updated",
-            snapshot.lastRefreshAttemptAt ?? snapshot.generatedAt
-          );
-          refreshedAt.hidden = false;
-        }
+        statusText.textContent = localized("privateCurrent");
+        refreshedAt.textContent = localized(
+          "refreshed",
+          {
+            date: formatDate(
+              snapshot.lastRefreshAttemptAt ?? snapshot.generatedAt
+            )
+          }
+        );
       } catch (error) {
         statusDot.dataset.state = "unavailable";
-        if (showsHeaderStatus) {
-          statusText.hidden = false;
-          statusText.textContent = localized("macUnavailable");
-        }
+        statusText.textContent = localized("macUnavailable");
         showState(
           localized("dashboardUnavailable"),
           localized("dashboardUnavailableDescription")
@@ -1525,10 +1461,10 @@
     const csrfToken = document
       .querySelector('meta[name="omo-csrf"]')
       .content;
+    const isSettingsPage = location.pathname === "/settings";
     const dashboardPage = document.querySelector("#dashboard-page");
     const settingsPage = document.querySelector("#settings-page");
-    const headerMeta = document.querySelector("#header-meta");
-    const pageContext = document.querySelector("#page-context");
+    const pageEyebrow = document.querySelector("#page-eyebrow");
     const pageLink = document.querySelector("#page-link");
     const refreshButton = document.querySelector("#refresh-button");
     const webLanguageSelect = document.querySelector(
@@ -1547,11 +1483,13 @@
     function configurePage() {
       dashboardPage.hidden = isSettingsPage;
       settingsPage.hidden = !isSettingsPage;
-      headerMeta.dataset.page = isSettingsPage ? "settings" : "dashboard";
-      pageContext.hidden = !isSettingsPage;
+      pageEyebrow.textContent = isSettingsPage
+        ? localized("privateSettings")
+        : localized("privateDashboard");
       pageLink.href = isSettingsPage ? "/" : "/settings";
-      pageLink.dataset.i18n = isSettingsPage ? "dashboard" : "settings";
-      pageLink.textContent = localized(pageLink.dataset.i18n);
+      pageLink.textContent = isSettingsPage
+        ? localized("dashboard")
+        : localized("settings");
       document.title = isSettingsPage
         ? `${localized("settings")} · OmoUsage`
         : "OmoUsage";
@@ -1566,8 +1504,9 @@
         || localSettingsState?.isRefreshing === true;
       refreshButton.disabled = isBusy;
       refreshButton.dataset.refreshState = isBusy ? "busy" : "idle";
-      refreshButton.dataset.i18n = isBusy ? "refreshing" : "refresh";
-      refreshButton.textContent = localized(refreshButton.dataset.i18n);
+      refreshButton.textContent = isBusy
+        ? localized("refreshing")
+        : localized("refresh");
     }
 
     function settingsOrderKey(state) {

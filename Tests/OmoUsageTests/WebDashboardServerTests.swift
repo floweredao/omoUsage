@@ -1568,37 +1568,7 @@ struct WebDashboardServerTests {
     }
 
     @Test
-    func cardGridAndMeterTrackMatchNativeContract() {
-        let html = String(
-            decoding: WebDashboardAssets.indexHTML(
-                mutationNonce: "test-nonce"
-            ),
-            as: UTF8.self
-        )
-        let trackOpacity = String(
-            format: "%.2f",
-            UsageMeterVisualTokens.trackOpacity
-        )
-
-        #expect(
-            html.contains("--track: rgba(24, 32, 28, \(trackOpacity));")
-        )
-        #expect(
-            html.contains("--track: rgba(242, 245, 241, \(trackOpacity));")
-        )
-        #expect(html.contains("--content-max: 1200px;"))
-        #expect(
-            html.contains(
-                ".cards {\n      display: grid;\n"
-                    + "      grid-template-columns: "
-                    + "repeat(auto-fill, minmax(min(100%, 320px), 1fr));\n"
-                    + "      align-items: start;"
-            )
-        )
-    }
-
-    @Test
-    func shellTextWaitsForWebLanguageAndStaleBadgeUsesSymbol() {
+    func shellTextWaitsForWebLanguage() {
         let html = String(
             decoding: WebDashboardAssets.indexHTML(
                 mutationNonce: "test-nonce"
@@ -1617,9 +1587,6 @@ struct WebDashboardServerTests {
                 #"document.documentElement.dataset.i18nReady = "true";"#
             )
         )
-        #expect(html.contains(#"<template id="stale-badge-icon">"#))
-        #expect(html.contains("staleBadgeIcon.content.cloneNode(true)"))
-        #expect(!html.contains(#"content: "!";"#))
     }
 
     private func webObjectBody(
