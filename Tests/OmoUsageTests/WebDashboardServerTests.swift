@@ -1377,6 +1377,23 @@ struct WebDashboardServerTests {
     }
 
     @Test
+    func providerCardsKeepTheirContentHeightInSharedGridRows() throws {
+        let html = String(
+            decoding: WebDashboardAssets.indexHTML(
+                mutationNonce: "test-nonce"
+            ),
+            as: UTF8.self
+        )
+        let ruleStart = try #require(html.range(of: "\n    .cards {\n"))
+        let ruleEnd = try #require(
+            html.range(of: "}", range: ruleStart.upperBound..<html.endIndex)
+        )
+        let cardsRule = html[ruleStart.upperBound..<ruleEnd.lowerBound]
+
+        #expect(cardsRule.contains("align-items: start;"))
+    }
+
+    @Test
     func legacyDashboardAccountDoesNotRenderDefaultAlias() {
         let html = String(
             decoding: WebDashboardAssets.indexHTML(

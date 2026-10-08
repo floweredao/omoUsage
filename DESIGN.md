@@ -407,8 +407,9 @@ other privileged controls remain native-only.
   devices must use the same Apple ID.
 - Web owns one page-level vertical scroll. The sticky summary header remains
   compact; account-provider cards follow StyleGallery `card-grid`, forming a
-  single column below 640 px and a fluid two-column grid above it. Each card is
-  keyed by `AccountProviderID`; DOM, reading, focus, and account order stay
+  single column below 640 px and a fluid two-column grid above it. Cards align
+  to the top of their row and keep their own content height, so a short card
+  never stretches to match a taller neighbor. Each card is keyed by `AccountProviderID`; DOM, reading, focus, and account order stay
   aligned, and no card has internal scrolling.
 - Repeated provider cards and settings rows pair the provider brand mark with
   an alias whenever the account is non-default or that provider occurs more
