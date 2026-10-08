@@ -717,6 +717,7 @@ final class SideNotchPanelController: NSObject {
     private var frameAnimationGeneration = 0
     private var isAnimatingPanelFrame = false
     private var configuredAutoHideDelay: TimeInterval
+    private let pointerLocation: @MainActor () -> NSPoint
     static let autoHideDelay =
         SideNotchHideDelay.standard.rawValue
     static let revealDelay: TimeInterval = 0.18
@@ -728,6 +729,9 @@ final class SideNotchPanelController: NSObject {
             DispatchSideNotchAutoHideScheduler(),
         autoHideDelay: TimeInterval =
             SideNotchHideDelay.standard.rawValue,
+        pointerLocation: @escaping @MainActor () -> NSPoint = {
+            NSEvent.mouseLocation
+        },
         onExpansionChange: @escaping @MainActor (Bool) -> Void,
         onSettings: @escaping @MainActor () -> Void,
         onQuit: @escaping @MainActor () -> Void
@@ -736,6 +740,7 @@ final class SideNotchPanelController: NSObject {
         self.localization = localization
         self.autoHideScheduler = autoHideScheduler
         configuredAutoHideDelay = autoHideDelay
+        self.pointerLocation = pointerLocation
         self.onExpansionChange = onExpansionChange
         panel = Self.makePanel(
             contentRect: NSRect(
@@ -960,7 +965,7 @@ final class SideNotchPanelController: NSObject {
         }
     }
 
-    private func apply(
+    func apply(
         _ intent: SideNotchSelectionIntent,
         animated: Bool
     ) {
@@ -1010,6 +1015,12 @@ final class SideNotchPanelController: NSObject {
         // Selection changes therefore resize atomically; hidden-edge
         // reveal/hide remains the only panel-frame animation.
         reposition(animated: false)
+        // A click on the detail's transparent area collapses the panel out
+        // from under a stationary pointer, and AppKit sends no exit for it.
+        pointerInside = !SideNotchHoverBoundaryPolicy.confirmsExit(
+            pointer: pointerLocation(),
+            panelFrame: panel.frame
+        )
         activate(plan)
         if state.selection == nil, !pointerInside {
             scheduleAutoHide()
@@ -1023,7 +1034,7 @@ final class SideNotchPanelController: NSObject {
     ) -> Bool {
         guard intent == .exitPanel else { return true }
         return SideNotchHoverBoundaryPolicy.confirmsExit(
-            pointer: NSEvent.mouseLocation,
+            pointer: pointerLocation(),
             panelFrame: panel.frame
         )
     }

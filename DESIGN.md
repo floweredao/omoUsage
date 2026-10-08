@@ -575,7 +575,9 @@ other privileged controls remain native-only.
   previewed card can always be reached and scrolled.
 - Clicking the pinned active row collapses it. Pressing Escape, or clicking
   outside the panel, also collapses the detail while leaving the rail
-  available.
+  available. When that collapse leaves the pointer outside the shrunken
+  rail, including a click on the transparent area beside the detail card,
+  the configured rail auto-hide delay starts at once.
 - Leaving the whole panel clears a transient preview and starts the configured
   rail auto-hide delay. A pinned detail survives pointer exit.
 - When the selected provider disappears from a refresh, the composite
