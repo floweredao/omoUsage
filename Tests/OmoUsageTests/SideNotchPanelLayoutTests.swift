@@ -1118,6 +1118,38 @@ struct SideNotchPanelLayoutTests {
     }
 
     @Test
+    func collapsingDetailOutFromUnderThePointerStillAutoHides() throws {
+        let pointer = SideNotchFakePointer()
+        let fixture = try controllerFixture(
+            pointerLocation: { pointer.location }
+        )
+        defer { fixture.controller.stop() }
+        let target = AccountProviderID(
+            accountID: try #require(
+                AccountID(
+                    rawValue: "11111111-1111-1111-1111-111111111111"
+                )
+            ),
+            providerID: .claude
+        )
+
+        fixture.controller.pointerEntered()
+        fixture.scheduler.fire(0)
+        fixture.controller.apply(.commit(target), animated: false)
+        // A click on the detail panel's transparent area collapses it, and
+        // the panel shrinks out from under the stationary pointer without
+        // AppKit reporting an exit.
+        pointer.location = NSPoint(x: -10_000, y: -10_000)
+        fixture.controller.apply(.collapse, animated: false)
+
+        #expect(fixture.controller.mode == .revealed)
+        let hideIndex = fixture.scheduler.jobs.count - 1
+        #expect(fixture.scheduler.jobs[hideIndex].delay == 0.8)
+        fixture.scheduler.fire(hideIndex)
+        #expect(fixture.controller.mode == .hidden)
+    }
+
+    @Test
     func compactRailUsesReducedGeometry() {
         let visibleFrame = NSRect(
             x: 0,
@@ -1521,7 +1553,10 @@ struct SideNotchPanelLayoutTests {
     }
 
     private func controllerFixture(
-        autoHideDelay: TimeInterval = 0.8
+        autoHideDelay: TimeInterval = 0.8,
+        pointerLocation: @escaping @MainActor () -> NSPoint = {
+            NSEvent.mouseLocation
+        }
     ) throws -> (
         controller: SideNotchPanelController,
         scheduler: SideNotchFakeAutoHideScheduler
@@ -1538,6 +1573,7 @@ struct SideNotchPanelLayoutTests {
             ),
             autoHideScheduler: scheduler,
             autoHideDelay: autoHideDelay,
+            pointerLocation: pointerLocation,
             onExpansionChange: { _ in },
             onSettings: {},
             onQuit: {}
@@ -1580,6 +1616,11 @@ private final class SideNotchFakeAutoHideTask:
     func cancel() {
         isCancelled = true
     }
+}
+
+@MainActor
+private final class SideNotchFakePointer {
+    var location = NSPoint.zero
 }
 
 @MainActor
