@@ -76,6 +76,7 @@ Paths below are repository-relative. Other macOS paths in the lookup table are r
 - Korean is the persisted default language. Machine values use typed IDs/enums; provider-generated display text is localized separately.
 - SwiftPM builds `OmoUsageCore`, the macOS executable, and tests. XcodeGen/Xcode builds macOS, iOS, and Catalyst targets.
 - macOS fixture hooks require `OMO_USAGE_FIXTURES` (debug by default); release QA packaging uses `--fixtures`. `OMO_USAGE_FIXTURE_MODE=1` selects fixtures, including on Mobile.
+- 한국어 문서 이름은 README-ko.md로 통일한다.
 
 ## ANTI-PATTERNS (THIS PROJECT)
 
