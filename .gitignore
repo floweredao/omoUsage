@@ -19,3 +19,4 @@ xcuserdata/
 # These contain raw tool output, including credentials read during debugging.
 .omo/
 .senpi/
+.work/
