@@ -5,24 +5,28 @@ struct UsageMeterView: View {
     let meter: UsageMeter
     @Environment(\.appLocalization)
     private var localization
+    @Environment(\.dashboardTextScale)
+    private var scale
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: 3 * scale) {
+            HStack(spacing: 6 * scale) {
                 Text(localization.providerText(meter.title))
                     .font(
                         .system(
-                            size: DashboardTypographyTokens.meterLabel,
+                            size: DashboardTypographyTokens.meterLabel
+                                * scale,
                             weight: .medium
                         )
                     )
 
-                Spacer(minLength: 8)
+                Spacer(minLength: 8 * scale)
 
                 Text(localization.metricValue(meter.metric))
                     .font(
                         .system(
-                            size: DashboardTypographyTokens.meterValue,
+                            size: DashboardTypographyTokens.meterValue
+                                * scale,
                             weight: .semibold
                         )
                     )
@@ -51,7 +55,7 @@ struct UsageMeterView: View {
                                 .frame(width: geometry.size.width * fraction)
                         }
                     }
-                    .frame(height: 4)
+                    .frame(height: 4 * scale)
                 }
             case .spend, .credit, .count, .informational:
                 EmptyView()
@@ -59,7 +63,11 @@ struct UsageMeterView: View {
 
             if meter.resetText != nil || meter.resetsAt != nil {
                 Text(resetText)
-                    .font(.system(size: DashboardTypographyTokens.metadata))
+                    .font(
+                        .system(
+                            size: DashboardTypographyTokens.metadata * scale
+                        )
+                    )
                     .foregroundStyle(
                         ProviderMetadataVisualTokens.foreground
                     )

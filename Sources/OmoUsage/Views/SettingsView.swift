@@ -222,6 +222,7 @@ struct SettingsView: View {
     let onLanguageChange: () -> Void
     let onPresentationStyleChange: (DashboardPresentationStyle) -> Void
     let onSideNotchHideDelayChange: (SideNotchHideDelay) -> Void
+    let onDashboardTextSizeChange: (DashboardTextSize) -> Void
     @Bindable var webDashboardStatusStore: WebDashboardStatusStore
     @Bindable var tailscaleDashboardController:
         TailscaleDashboardController
@@ -259,6 +260,7 @@ struct SettingsView: View {
         [AccountID: CodexPlanMultiplier] = [:]
     @State private var presentationStyle: DashboardPresentationStyle
     @State private var sideNotchHideDelay: SideNotchHideDelay
+    @State private var dashboardTextSize: DashboardTextSize
     @State private var dashboardLinkPresentation =
         WebDashboardLinkPresentationState()
     @State private var launchAtLogin = LaunchAtLoginController()
@@ -268,6 +270,7 @@ struct SettingsView: View {
         localization: LocalizationController,
         presentationStyle: DashboardPresentationStyle,
         sideNotchHideDelay: SideNotchHideDelay,
+        dashboardTextSize: DashboardTextSize = .standard,
         accountRegistryController: ProviderAccountRegistryController,
         codexPlanDefaults: UserDefaults = .standard,
         captureCompanionCredential: @escaping (ProviderID) throws -> String =
@@ -314,6 +317,8 @@ struct SettingsView: View {
             @escaping (DashboardPresentationStyle) -> Void,
         onSideNotchHideDelayChange:
             @escaping (SideNotchHideDelay) -> Void,
+        onDashboardTextSizeChange:
+            @escaping (DashboardTextSize) -> Void = { _ in },
         webDashboardStatusStore: WebDashboardStatusStore,
         tailscaleDashboardController:
             TailscaleDashboardController,
@@ -334,6 +339,7 @@ struct SettingsView: View {
         self.onPresentationStyleChange = onPresentationStyleChange
         self.onSideNotchHideDelayChange =
             onSideNotchHideDelayChange
+        self.onDashboardTextSizeChange = onDashboardTextSizeChange
         self.webDashboardStatusStore = webDashboardStatusStore
         self.tailscaleDashboardController =
             tailscaleDashboardController
@@ -361,6 +367,7 @@ struct SettingsView: View {
         )
         _presentationStyle = State(initialValue: presentationStyle)
         _sideNotchHideDelay = State(initialValue: sideNotchHideDelay)
+        _dashboardTextSize = State(initialValue: dashboardTextSize)
         _additionCoordinator = State(
             initialValue: ProviderAccountAdditionCoordinator(
                 controller: accountRegistryController,
@@ -647,6 +654,34 @@ struct SettingsView: View {
                         feedbackText
                     }
                 }
+            }
+        }
+
+        Section {
+            Picker(
+                localization.text(.dashboardTextSize),
+                selection: Binding(
+                    get: { dashboardTextSize },
+                    set: { size in
+                        dashboardTextSize = size
+                        onDashboardTextSizeChange(size)
+                    }
+                )
+            ) {
+                ForEach(DashboardTextSize.allCases) { size in
+                    Text(
+                        localization.format(
+                            .dashboardTextSizeOption,
+                            size.rawValue
+                        )
+                    )
+                    .tag(size)
+                }
+            }
+            .accessibilityIdentifier("settings-dashboard-text-size")
+        } footer: {
+            SettingsSectionFooter {
+                Text(localization.text(.dashboardTextSizeDescription))
             }
         }
     }

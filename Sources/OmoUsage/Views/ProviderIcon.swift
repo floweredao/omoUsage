@@ -4,11 +4,13 @@ import SwiftUI
 
 struct ProviderIcon: View {
     let provider: ProviderID
+    @Environment(\.dashboardTextScale)
+    private var scale
 
     var body: some View {
         let style = ProviderVisualStyle.style(for: provider)
         ZStack {
-            RoundedRectangle(cornerRadius: 5)
+            RoundedRectangle(cornerRadius: 5 * scale)
                 .fill(style.background)
                 .shadow(color: .black.opacity(0.12), radius: 1, y: 1)
 
@@ -17,10 +19,16 @@ struct ProviderIcon: View {
                     .resizable()
                     .renderingMode(provider == .antigravity ? .original : .template)
                     .foregroundStyle(.white)
-                    .padding(3)
+                    .padding(3 * scale)
             } else {
                 Text(provider.monogram)
-                    .font(.system(size: 11, weight: .heavy, design: .rounded))
+                    .font(
+                        .system(
+                            size: 11 * scale,
+                            weight: .heavy,
+                            design: .rounded
+                        )
+                    )
                     .foregroundStyle(style.foreground)
             }
         }

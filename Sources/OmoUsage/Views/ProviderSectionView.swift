@@ -45,6 +45,12 @@ enum DashboardTypographyTokens {
     static let metadata: CGFloat = 11
 }
 
+extension EnvironmentValues {
+    /// Multiplier for the popover's type, icon, and spacing scale, taken
+    /// from `DashboardTextSize`. The Side Notch and Settings keep 1.
+    @Entry var dashboardTextScale: CGFloat = 1
+}
+
 enum DashboardProviderSectionAccessibility {
     static func identifier(for usage: ProviderUsage) -> String {
         "dashboard-provider-\(usage.provider.rawValue)-\(AccountLabel.sanitized(usage.accountLabel))"
@@ -57,24 +63,28 @@ struct ProviderSectionView: View {
     var usesCircularProviderIcon = false
     @Environment(\.appLocalization)
     private var localization
+    @Environment(\.dashboardTextScale)
+    private var scale
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 9) {
+        VStack(alignment: .leading, spacing: 8 * scale) {
+            HStack(spacing: 9 * scale) {
                 ProviderIcon(provider: usage.provider)
-                    .frame(width: 20, height: 20)
+                    .frame(width: 20 * scale, height: 20 * scale)
                     .clipShape(
                         RoundedRectangle(
-                            cornerRadius: usesCircularProviderIcon ? 10 : 0,
+                            cornerRadius: usesCircularProviderIcon
+                                ? 10 * scale : 0,
                             style: .continuous
                         )
                     )
 
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: 1 * scale) {
                     Text(usage.provider.displayName)
                         .font(
                             .system(
-                                size: DashboardTypographyTokens.providerName,
+                                size: DashboardTypographyTokens.providerName
+                                    * scale,
                                 weight: .bold
                             )
                         )
@@ -82,7 +92,7 @@ struct ProviderSectionView: View {
                         .lineLimit(1)
                     if showsAccountLabel {
                         Text(AccountLabel.sanitized(usage.accountLabel))
-                            .font(.system(size: 10.5, weight: .medium))
+                            .font(.system(size: 10.5 * scale, weight: .medium))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                             .help(AccountLabel.sanitized(usage.accountLabel))
@@ -94,15 +104,16 @@ struct ProviderSectionView: View {
                     Text(usage.planName)
                         .font(
                             .system(
-                                size: DashboardTypographyTokens.planPill,
+                                size: DashboardTypographyTokens.planPill
+                                    * scale,
                                 weight: .semibold
                             )
                         )
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .help(usage.planName)
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 3)
+                        .padding(.horizontal, 7 * scale)
+                        .padding(.vertical, 3 * scale)
                         .background(
                             Color(nsColor: .controlBackgroundColor),
                             in: Capsule()
@@ -121,10 +132,10 @@ struct ProviderSectionView: View {
                 usage.availability
             ) {
                 Text(label)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 12 * scale, weight: .medium))
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 8)
+                    .padding(.vertical, 8 * scale)
             } else {
                 let freshness = DashboardLayout.freshnessDisplay(for: usage)
 
@@ -142,7 +153,10 @@ struct ProviderSectionView: View {
                         style: .provider
                     )
                         .font(
-                            .system(size: DashboardTypographyTokens.metadata)
+                            .system(
+                                size: DashboardTypographyTokens.metadata
+                                    * scale
+                            )
                         )
                         .foregroundStyle(
                             ProviderMetadataVisualTokens.foreground
@@ -155,7 +169,10 @@ struct ProviderSectionView: View {
                         style: .footer
                     )
                         .font(
-                            .system(size: DashboardTypographyTokens.metadata)
+                            .system(
+                                size: DashboardTypographyTokens.metadata
+                                    * scale
+                            )
                         )
                         .foregroundStyle(
                             ProviderMetadataVisualTokens.foreground
@@ -168,7 +185,10 @@ struct ProviderSectionView: View {
                         systemImage: "clock.arrow.circlepath"
                     )
                         .font(
-                            .system(size: DashboardTypographyTokens.metadata)
+                            .system(
+                                size: DashboardTypographyTokens.metadata
+                                    * scale
+                            )
                         )
                         .foregroundStyle(
                             ProviderMetadataVisualTokens.foreground
@@ -189,20 +209,23 @@ struct ProviderSectionView: View {
 struct StaleUsageBadge: View {
     @Environment(\.appLocalization)
     private var localization
+    @Environment(\.dashboardTextScale)
+    private var scale
 
     var body: some View {
-        HStack(spacing: StaleUsageVisualTokens.badgeSpacing) {
+        HStack(spacing: StaleUsageVisualTokens.badgeSpacing * scale) {
             Image(systemName: StaleUsageVisualTokens.symbolName)
                 .font(
                     .system(
-                        size: StaleUsageVisualTokens.badgeSymbolPointSize,
+                        size: StaleUsageVisualTokens.badgeSymbolPointSize
+                            * scale,
                         weight: .bold
                     )
                 )
             Text(localization.staleBadgeText())
                 .font(
                     .system(
-                        size: StaleUsageVisualTokens.badgeFontSize,
+                        size: StaleUsageVisualTokens.badgeFontSize * scale,
                         weight: .semibold
                     )
                 )
@@ -210,9 +233,12 @@ struct StaleUsageBadge: View {
         .foregroundStyle(StaleUsageVisualTokens.accent.color)
         .padding(
             .horizontal,
-            StaleUsageVisualTokens.badgeHorizontalPadding
+            StaleUsageVisualTokens.badgeHorizontalPadding * scale
         )
-        .padding(.vertical, StaleUsageVisualTokens.badgeVerticalPadding)
+        .padding(
+            .vertical,
+            StaleUsageVisualTokens.badgeVerticalPadding * scale
+        )
         .background(
             StaleUsageVisualTokens.accent.color.opacity(
                 StaleUsageVisualTokens.badgeBackgroundOpacity
@@ -236,14 +262,16 @@ private struct UsageGroupView: View {
     let group: UsageGroup
     @Environment(\.appLocalization)
     private var localization
+    @Environment(\.dashboardTextScale)
+    private var scale
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: 7 * scale) {
             if let title = group.title {
                 Text(localization.providerText(title))
-                    .font(.system(size: 12, weight: .bold))
+                    .font(.system(size: 12 * scale, weight: .bold))
                     .foregroundStyle(.secondary)
-                    .padding(.top, 1)
+                    .padding(.top, 1 * scale)
             }
 
             ForEach(group.meters) { meter in
@@ -252,9 +280,9 @@ private struct UsageGroupView: View {
 
             if let creditText = group.creditText {
                 Text(localization.providerText(creditText))
-                    .font(.system(size: 11.5, weight: .medium))
+                    .font(.system(size: 11.5 * scale, weight: .medium))
                     .foregroundStyle(.secondary)
-                    .padding(.top, 1)
+                    .padding(.top, 1 * scale)
             }
         }
     }

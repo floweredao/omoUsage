@@ -36,6 +36,55 @@ struct DashboardPresentationStyleStore {
     }
 }
 
+/// The popover's own text size. macOS gives menu-bar extras no system text
+/// size, so the compact popover scales its whole type, icon, and spacing
+/// scale together up to 200% and widens with it instead of clipping.
+enum DashboardTextSize:
+    Int,
+    CaseIterable,
+    Identifiable,
+    Sendable
+{
+    case standard = 100
+    case large = 125
+    case larger = 150
+    case largest = 200
+
+    var id: Int { rawValue }
+
+    var scale: CGFloat { CGFloat(rawValue) / 100 }
+}
+
+struct DashboardTextSizeStore {
+    static let defaultsKey = "dashboardTextSize"
+
+    let defaults: UserDefaults
+
+    func load() -> DashboardTextSize {
+        guard
+            let stored = defaults.object(forKey: Self.defaultsKey)
+                as? NSNumber
+        else {
+            return .standard
+        }
+        guard
+            let size = DashboardTextSize(rawValue: stored.intValue)
+        else {
+            defaults.removeObject(forKey: Self.defaultsKey)
+            return .standard
+        }
+        return size
+    }
+
+    func save(_ size: DashboardTextSize) {
+        if size == .standard {
+            defaults.removeObject(forKey: Self.defaultsKey)
+        } else {
+            defaults.set(size.rawValue, forKey: Self.defaultsKey)
+        }
+    }
+}
+
 enum SideNotchHideDelay:
     Double,
     CaseIterable,

@@ -3,7 +3,11 @@ import CoreGraphics
 import Foundation
 
 enum DashboardLayout {
+    static let panelWidth: CGFloat = 320
     static let maximumPanelHeight: CGFloat = 632
+    /// Larger popover text sizes grow the panel only up to this height so it
+    /// still fits a 13-inch display; the body scrolls beyond it.
+    static let maximumScaledPanelHeight: CGFloat = 800
     static let footerHeight: CGFloat = 44
     static let contentBottomPadding: CGFloat = 8
     private static let meterValueRowHeight: CGFloat = 15
@@ -11,10 +15,41 @@ enum DashboardLayout {
     private static let meterResetRowHeight: CGFloat = 16
     private static let metadataRowHeight: CGFloat = 16
 
+    static func panelWidth(scale: CGFloat) -> CGFloat {
+        panelWidth * scale
+    }
+
+    /// The popover scales every type, icon, and spacing value by the same
+    /// factor, so its natural height scales linearly with it.
+    static func panelHeight(
+        for providers: [ProviderUsage],
+        scale: CGFloat
+    ) -> CGFloat {
+        let height = panelHeight(for: providers)
+        guard scale > 1 else { return height }
+        let cap = max(
+            maximumPanelHeight,
+            min(maximumPanelHeight * scale, maximumScaledPanelHeight)
+        )
+        let natural = providers.isEmpty
+            ? height
+            : unclampedPanelHeight(for: providers)
+        return min(cap, natural * scale)
+    }
+
     static func panelHeight(
         for providers: [ProviderUsage]
     ) -> CGFloat {
         guard !providers.isEmpty else { return 190 }
+        return min(
+            maximumPanelHeight,
+            unclampedPanelHeight(for: providers)
+        )
+    }
+
+    private static func unclampedPanelHeight(
+        for providers: [ProviderUsage]
+    ) -> CGFloat {
         let providerCounts = Dictionary(grouping: providers, by: \.provider)
             .mapValues(\.count)
         let separators = CGFloat(max(0, providers.count - 1)) * 21
@@ -31,10 +66,7 @@ enum DashboardLayout {
             + sections
             + separators
             + contentBottomPadding
-        return min(
-            maximumPanelHeight,
-            max(150, listHeight + footerHeight)
-        )
+        return max(150, listHeight + footerHeight)
     }
 
     static func showsProviderTimestamp(

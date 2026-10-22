@@ -68,6 +68,72 @@ struct DashboardLayoutTests {
         )
     }
 
+    @Test(arguments: [DashboardTextSize.large, .larger, .largest])
+    @MainActor
+    func scaledPopoverHeightTracksScaledRenderedContent(
+        size: DashboardTextSize
+    ) {
+        let providers = screenshotProviders()
+        let scale = size.scale
+        let contentWidth = DashboardLayout.panelWidth(scale: scale)
+            - 28 * scale
+        let hostingView = NSHostingView(
+            rootView:
+                VStack(spacing: 0) {
+                    ProviderSectionView(usage: providers[0])
+                    Divider()
+                        .padding(.vertical, 10 * scale)
+                    ProviderSectionView(usage: providers[1])
+                }
+                .frame(width: contentWidth)
+                .environment(
+                    \.appLocalization,
+                    LocalizationContext(language: .english)
+                )
+                .environment(\.dashboardTextScale, scale)
+        )
+        let renderedContentHeight = hostingView.fittingSize.height
+        let calculatedContentHeight =
+            DashboardLayout.panelHeight(for: providers, scale: scale)
+            - DashboardLayout.footerHeight * scale
+        let expectedContentHeight =
+            12 * scale
+            + renderedContentHeight
+            + DashboardLayout.contentBottomPadding * scale
+
+        #expect(DashboardLayout.panelWidth(scale: scale) == 320 * scale)
+        // Rendered text rounds its line heights at each size, so the scaled
+        // estimate may leave a small band below the content but must never
+        // be shorter than it.
+        #expect(
+            calculatedContentHeight >= expectedContentHeight,
+            "calculated \(calculatedContentHeight), rendered \(expectedContentHeight)"
+        )
+        #expect(
+            calculatedContentHeight - expectedContentHeight
+                <= expectedContentHeight * 0.04,
+            "calculated \(calculatedContentHeight), rendered \(expectedContentHeight)"
+        )
+    }
+
+    @Test
+    func scaledPopoverCapsAtTheScaledMaximumAndKeepsDefaultUnchanged() {
+        let many = ProviderID.allCases.map {
+            usage(provider: $0, meterCount: 3)
+        }
+        #expect(DashboardLayout.panelHeight(for: many, scale: 1) == 632)
+        #expect(
+            DashboardLayout.panelHeight(for: many, scale: 2)
+                == DashboardLayout.maximumScaledPanelHeight
+        )
+        #expect(DashboardLayout.panelHeight(for: [], scale: 2) == 380)
+    }
+
+    @Test
+    func popoverFooterControlsSitSixtyPointsApart() {
+        #expect(PopoverFooterLayout.controlCenterDistance >= 60)
+    }
+
     @Test
     func codexTimestampUsesCompactSectionHeight() {
         let codex = usage(provider: .codex, meterCount: 1)
