@@ -28,6 +28,22 @@ enum ProviderOrderingAccessibility {
     }
 }
 
+/// Marks the ordering row that owns keyboard focus. The row-wide focus ring
+/// stays suppressed, so a slim leading bar in the system keyboard-focus color
+/// shows which account Command-Up/Down will move without boxing the row.
+struct ProviderOrderingFocusIndicator: View {
+    static let width: CGFloat = 3
+    static let leadingInset: CGFloat = 7
+
+    var body: some View {
+        Capsule()
+            .fill(Color(nsColor: .keyboardFocusIndicatorColor))
+            .frame(width: Self.width)
+            .padding(.vertical, 2)
+            .accessibilityHidden(true)
+    }
+}
+
 struct ProviderOrderingMovePlan: Equatable {
     let fromOffsets: IndexSet
     let toOffset: Int
@@ -326,6 +342,12 @@ struct ProviderOrderingView: View {
             Spacer()
             moveButton(item, offset: -1, symbol: "arrow.up", index: index)
             moveButton(item, offset: 1, symbol: "arrow.down", index: index)
+        }
+        .padding(.leading, ProviderOrderingFocusIndicator.leadingInset)
+        .overlay(alignment: .leading) {
+            if focused == item.id {
+                ProviderOrderingFocusIndicator()
+            }
         }
         .contentShape(Rectangle())
         .focusable()

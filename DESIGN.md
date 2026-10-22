@@ -681,8 +681,11 @@ other privileged controls remain native-only.
   Command-Up and Command-Down, driving the same semantic move intent as drag.
   Drag is never the only path to reorder.
 - Dashboard Order suppresses the row-wide rectangular focus effect, including
-  after drag, button, and keyboard moves. Keyboard focus and move actions stay
-  functional; the native move buttons retain their own focus feedback.
+  after drag, button, and keyboard moves. The focused row instead shows
+  `ProviderOrderingFocusIndicator`, a 3 pt leading bar in the system
+  keyboard-focus color, which follows the row through Command-Up/Down moves.
+  It is distinct from connection status text and draws no box. The native
+  move buttons retain their own focus feedback.
 - Each ordering row exposes its provider-plus-account label, its position as an
   accessibility value, and Move Up / Move Down as custom accessibility actions.
   After a move completes, an `NSAccessibility` polite announcement states the
