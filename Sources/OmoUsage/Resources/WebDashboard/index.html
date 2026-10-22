@@ -504,6 +504,17 @@
       line-height: 1.4;
     }
 
+    .connection-notice {
+      margin: 0 0 var(--space-3);
+      padding: 10px 12px;
+      border: 1px solid color-mix(in srgb, var(--extra) 34%, var(--border));
+      border-radius: 12px;
+      color: var(--extra-text);
+      background: color-mix(in srgb, var(--extra) 12%, var(--surface-strong));
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
     .state-card {
       grid-column: 1 / -1;
       padding: 28px 20px;
@@ -871,6 +882,12 @@
 
     <main>
       <section id="dashboard-page">
+        <p
+          class="connection-notice"
+          id="connection-notice"
+          role="status"
+          hidden
+        ></p>
         <section class="cards" id="cards" aria-label="Provider usage">
           <div class="state-card" id="state-card">
             <h2 data-i18n="loadingUsage">Loading usage</h2>
@@ -1021,6 +1038,9 @@
         dashboardUnavailableDescription:
           "Keep OmoUsage running on your Mac and check your Tailscale "
             + "connection.",
+        showingLastUsage:
+          "Showing the last usage received from your Mac. Keep OmoUsage "
+            + "running on your Mac and check your Tailscale connection.",
         localRefreshInProgress: "Local refresh in progress",
         synchronized: "Synchronized with local OmoUsage",
         localSettingsUnavailable: "Local settings are unavailable.",
@@ -1081,6 +1101,9 @@
         dashboardUnavailableDescription:
           "Mac에서 OmoUsage가 실행 중인지 확인하고 Tailscale 연결을 "
             + "점검하세요.",
+        showingLastUsage:
+          "Mac에서 마지막으로 받은 사용량을 표시합니다. Mac에서 OmoUsage가 "
+            + "실행 중인지 확인하고 Tailscale 연결을 점검하세요.",
         localRefreshInProgress: "로컬 새로고침 진행 중",
         synchronized: "로컬 OmoUsage와 동기화됨",
         localSettingsUnavailable: "로컬 설정을 불러올 수 없습니다.",
@@ -1139,6 +1162,7 @@
     const statusText = document.querySelector("#status-text");
     const refreshedAt = document.querySelector("#refreshed-at");
     const stateCard = document.querySelector("#state-card");
+    const connectionNotice = document.querySelector("#connection-notice");
     let hasRevealedProviderCards = false;
 
     function element(tag, className, text) {
@@ -1433,6 +1457,8 @@
             )
           ));
         }
+        connectionNotice.hidden = true;
+        connectionNotice.textContent = "";
         statusDot.dataset.state = "current";
         statusText.textContent = localized("privateCurrent");
         refreshedAt.textContent = localized(
@@ -1446,10 +1472,18 @@
       } catch (error) {
         statusDot.dataset.state = "unavailable";
         statusText.textContent = localized("macUnavailable");
-        showState(
-          localized("dashboardUnavailable"),
-          localized("dashboardUnavailableDescription")
-        );
+        // A transient failure keeps the last successful cards and their
+        // refresh time; only a dashboard that never loaded shows the
+        // full unavailable state.
+        if (cards.querySelector(".provider-card")) {
+          connectionNotice.textContent = localized("showingLastUsage");
+          connectionNotice.hidden = false;
+        } else {
+          showState(
+            localized("dashboardUnavailable"),
+            localized("dashboardUnavailableDescription")
+          );
+        }
       }
     }
 
