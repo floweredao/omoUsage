@@ -405,7 +405,9 @@ other privileged controls remain native-only.
   sharing a prefix stay distinguishable. Plan pills wrap inside a rounded
   rectangle the same way. A lone legacy account remains visually unchanged.
 - The mobile empty state explains that the Mac must refresh once and that both
-  devices must use the same Apple ID.
+  devices must use the same Apple ID. The first load reads "Checking iCloud
+  for usage"; a failed first load names the network, Mac refresh, and same
+  Apple ID checks beside Retry.
 - Web owns one page-level vertical scroll. The sticky summary header remains
   compact; account-provider cards follow StyleGallery `card-grid`, forming a
   single column below 640 px and a fluid two-column grid above it. Cards align

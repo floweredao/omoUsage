@@ -183,6 +183,8 @@ public enum AppStringKey: String, CaseIterable, Sendable {
     case mobileNoDataTitle
     case mobileNoDataDescription
     case mobileSyncFailed
+    case mobileSyncFailedDescription
+    case mobileCheckingICloud
     case retry
     case syncedThroughICloud
     case macLastChecked
@@ -418,6 +420,9 @@ public struct AppStrings: Sendable {
         .mobileNoDataDescription:
             "Mac에서 OmoUsage를 새로고침하고 두 기기가 같은 Apple ID를 사용하는지 확인하세요.",
         .mobileSyncFailed: "iCloud 사용량을 불러오지 못했습니다.",
+        .mobileSyncFailedDescription:
+            "네트워크 연결을 확인하고, Mac에서 OmoUsage를 새로고침한 뒤 두 기기가 같은 Apple ID로 iCloud에 로그인했는지 확인하세요.",
+        .mobileCheckingICloud: "iCloud에서 사용량 확인 중…",
         .retry: "다시 시도",
         .syncedThroughICloud: "iCloud로 동기화됨",
         .macLastChecked: "Mac 마지막 확인 %@",
@@ -642,6 +647,9 @@ public struct AppStrings: Sendable {
         .mobileNoDataDescription:
             "Refresh OmoUsage on your Mac and make sure both devices use the same Apple ID.",
         .mobileSyncFailed: "Could not load usage from iCloud.",
+        .mobileSyncFailedDescription:
+            "Check your network connection, refresh OmoUsage on your Mac, and make sure both devices are signed in to iCloud with the same Apple ID.",
+        .mobileCheckingICloud: "Checking iCloud for usage…",
         .retry: "Try Again",
         .syncedThroughICloud: "Synced through iCloud",
         .macLastChecked: "Mac last checked %@",
