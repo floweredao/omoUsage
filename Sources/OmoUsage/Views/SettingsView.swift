@@ -2242,7 +2242,7 @@ private struct WebDashboardQRCodeView: View {
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
 
-                    Button(localization.text(.confirm)) {
+                    Button(localization.text(.close)) {
                         dismiss()
                     }
                     .buttonStyle(.borderedProminent)
