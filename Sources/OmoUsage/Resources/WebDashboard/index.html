@@ -1216,12 +1216,32 @@
         return localized("unknownRefreshTime");
       }
       return new Intl.DateTimeFormat(
-        webLanguage === "korean" ? "ko-KR" : "en",
+        formattingLocale(),
         {
         dateStyle: "medium",
         timeStyle: "short"
         }
       ).format(date);
+    }
+
+    // The display language supplies the words; the browser's region
+    // supplies clock, grouping, and currency conventions.
+    function formattingLocale() {
+      const language = webLanguage === "korean" ? "ko" : "en";
+      let region;
+      try {
+        region = new Intl.Locale(navigator.language).maximize().region;
+      } catch {
+        region = undefined;
+      }
+      return region ? `${language}-${region}` : language;
+    }
+
+    function usd(amount) {
+      return new Intl.NumberFormat(formattingLocale(), {
+        style: "currency",
+        currency: "USD"
+      }).format(amount);
     }
 
     function metricValue(metric) {
@@ -1232,7 +1252,7 @@
           : `${metric.percent}% remaining`;
       case "spend": {
         const amount = metric.currency === "USD"
-          ? `$${metric.amount.toFixed(2)}`
+          ? usd(metric.amount)
           : `${metric.amount} ${metric.currency}`;
         return webLanguage === "korean"
           ? `${amount} 사용`
@@ -1241,12 +1261,14 @@
       case "credit": {
         if (metric.unit === "USD") {
           return webLanguage === "korean"
-            ? `잔액 $${metric.balance.toFixed(2)}`
-            : `$${metric.balance.toFixed(2)} balance`;
+            ? `잔액 ${usd(metric.balance)}`
+            : `${usd(metric.balance)} balance`;
         }
-        const value = Number.isInteger(metric.balance)
-          ? metric.balance.toString()
-          : metric.balance.toFixed(2);
+        const fractionDigits = Number.isInteger(metric.balance) ? 0 : 2;
+        const value = metric.balance.toLocaleString(formattingLocale(), {
+          minimumFractionDigits: fractionDigits,
+          maximumFractionDigits: fractionDigits
+        });
         const unit = webLanguage === "korean"
           ? { credits: "크레딧", requests: "요청", tokens: "토큰", tickets: "티켓" }[metric.unit]
           : metric.balance === 1 ? metric.unit.slice(0, -1) : metric.unit;
@@ -1258,7 +1280,7 @@
         const unit = webLanguage === "korean"
           ? { credits: "크레딧", requests: "요청", tokens: "토큰", tickets: "티켓" }[metric.unit]
           : metric.value === 1 ? metric.unit.slice(0, -1) : metric.unit;
-        return `${metric.value.toLocaleString(webLanguage === "korean" ? "ko-KR" : "en-US")} ${unit}`;
+        return `${metric.value.toLocaleString(formattingLocale())} ${unit}`;
       }
       case "informational":
         return metric.value;

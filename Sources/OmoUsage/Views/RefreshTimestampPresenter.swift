@@ -6,7 +6,8 @@ enum RefreshTimestampPresenter {
         lastRefreshAttemptAt: Date,
         now: Date,
         language: AppLanguage = .korean,
-        timeZone: TimeZone = .current
+        timeZone: TimeZone = .current,
+        regionalPreferences: Locale = .autoupdatingCurrent
     ) -> String {
         if age(of: lastRefreshAttemptAt, at: now) < 10 {
             return AppStrings(language: language).text(.justNow)
@@ -14,7 +15,8 @@ enum RefreshTimestampPresenter {
         return clockText(
             lastRefreshAttemptAt,
             language: language,
-            timeZone: timeZone
+            timeZone: timeZone,
+            regionalPreferences: regionalPreferences
         )
     }
 
@@ -22,13 +24,15 @@ enum RefreshTimestampPresenter {
         refreshedAt: Date,
         now: Date,
         language: AppLanguage = .korean,
-        timeZone: TimeZone = .current
+        timeZone: TimeZone = .current,
+        regionalPreferences: Locale = .autoupdatingCurrent
     ) -> String {
         footerText(
             lastRefreshAttemptAt: refreshedAt,
             now: now,
             language: language,
-            timeZone: timeZone
+            timeZone: timeZone,
+            regionalPreferences: regionalPreferences
         )
     }
 
@@ -36,7 +40,8 @@ enum RefreshTimestampPresenter {
         lastSuccessfulAt: Date,
         now: Date,
         language: AppLanguage = .korean,
-        timeZone: TimeZone = .current
+        timeZone: TimeZone = .current,
+        regionalPreferences: Locale = .autoupdatingCurrent
     ) -> String {
         let strings = AppStrings(language: language)
         if age(of: lastSuccessfulAt, at: now) < 10 {
@@ -48,7 +53,8 @@ enum RefreshTimestampPresenter {
             clockText(
                 lastSuccessfulAt,
                 language: language,
-                timeZone: timeZone
+                timeZone: timeZone,
+                regionalPreferences: regionalPreferences
             )
         )
     }
@@ -57,13 +63,15 @@ enum RefreshTimestampPresenter {
         updatedAt: Date,
         now: Date,
         language: AppLanguage = .korean,
-        timeZone: TimeZone = .current
+        timeZone: TimeZone = .current,
+        regionalPreferences: Locale = .autoupdatingCurrent
     ) -> String {
         providerText(
             lastSuccessfulAt: updatedAt,
             now: now,
             language: language,
-            timeZone: timeZone
+            timeZone: timeZone,
+            regionalPreferences: regionalPreferences
         )
     }
 
@@ -74,16 +82,22 @@ enum RefreshTimestampPresenter {
         max(0, now.timeIntervalSince(updatedAt))
     }
 
+    /// Hours and minutes in the user's own clock: the display language
+    /// supplies the words, the region and system 12/24-hour setting supply
+    /// the hour cycle.
     private static func clockText(
         _ date: Date,
         language: AppLanguage,
-        timeZone: TimeZone
+        timeZone: TimeZone,
+        regionalPreferences: Locale
     ) -> String {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.locale = language.locale
+        formatter.locale = language.formattingLocale(
+            regionalPreferences: regionalPreferences
+        )
         formatter.timeZone = timeZone
-        formatter.dateFormat = "HH:mm"
+        formatter.setLocalizedDateFormatFromTemplate("jmm")
         return formatter.string(from: date)
     }
 }

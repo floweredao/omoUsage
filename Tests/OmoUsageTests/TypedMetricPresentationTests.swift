@@ -18,14 +18,41 @@ struct TypedMetricPresentationTests {
             (.informational(value: "Manual renewal"), "Manual renewal", false)
         ]
 
+        let unitedStates = Locale(identifier: "en_US")
         for (metric, expected, showsProgress) in cases {
-            #expect(localization.metricValue(metric) == expected)
+            #expect(
+                localization.metricValue(
+                    metric,
+                    regionalPreferences: unitedStates
+                ) == expected
+            )
             #expect(metric.presentation.showsProgress == showsProgress)
             if metric.kind != .quotaRemaining {
                 #expect(!localization.metricValue(metric).contains("%"))
                 #expect(!localization.metricValue(metric).contains("remaining"))
             }
         }
+    }
+
+    @Test(arguments: [
+        (AppLanguage.english, "en_US", "$1,234.50 spent"),
+        (AppLanguage.english, "en_GB", "US$1,234.50 spent"),
+        (AppLanguage.english, "de_DE", "1.234,50 US$ spent"),
+        (AppLanguage.korean, "ko_KR", "US$1,234.50 사용"),
+        (AppLanguage.korean, "en_US", "$1,234.50 사용")
+    ])
+    func moneyFollowsTheRegionNotTheDisplayLanguage(
+        language: AppLanguage,
+        region: String,
+        expected: String
+    ) {
+        let localization = LocalizationContext(language: language)
+        #expect(
+            localization.metricValue(
+                .spend(amount: 1_234.5, currency: .usd),
+                regionalPreferences: Locale(identifier: region)
+            ) == expected
+        )
     }
 
     @Test

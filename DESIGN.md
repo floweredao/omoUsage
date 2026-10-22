@@ -211,7 +211,10 @@ other privileged controls remain native-only.
   `DashboardScrollerPolicy`, so no gutter narrows the 292 pt content width.
   The footer timestamp and every provider freshness line come from
   `RefreshTimestampPresenter`: under ten seconds reads as just now, otherwise
-  a 24-hour `HH:mm` clock formatted in the app language's locale.
+  an hour-and-minute clock (`jmm`) in `AppLanguage.formattingLocale`: the app
+  language's words with the user's region and 12/24-hour setting. Reset
+  clocks, numbers, and USD amounts use the same locale on every native
+  surface; the web combines the web language with the browser's region.
 - Settings follows Apple's HIG for a macOS settings window: a noncustomizable
   `.preference`-style toolbar switches five panes in the former section order -
   General (language, Launch at Login, updates), Display, Web Access,

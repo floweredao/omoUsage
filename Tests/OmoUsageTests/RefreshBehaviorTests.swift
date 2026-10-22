@@ -7,6 +7,8 @@ import Testing
 struct RefreshTimestampPresenterTests {
     private let updatedAt = Date(timeIntervalSince1970: 1_785_672_000)
     private let utc = TimeZone(secondsFromGMT: 0)!
+    /// A region whose user turned on the system 24-hour clock.
+    private let twentyFourHour = Locale(identifier: "ko_KR@hours=h23")
 
     @Test
     func showsNowOnlyBeforeTenSeconds() {
@@ -14,28 +16,32 @@ struct RefreshTimestampPresenterTests {
             RefreshTimestampPresenter.footerText(
                 refreshedAt: updatedAt,
                 now: updatedAt.addingTimeInterval(9.999),
-                timeZone: utc
+                timeZone: utc,
+                regionalPreferences: twentyFourHour
             ) == "방금"
         )
         #expect(
             RefreshTimestampPresenter.footerText(
                 refreshedAt: updatedAt,
                 now: updatedAt.addingTimeInterval(10),
-                timeZone: utc
+                timeZone: utc,
+                regionalPreferences: twentyFourHour
             ) == "12:00"
         )
         #expect(
             RefreshTimestampPresenter.providerText(
                 updatedAt: updatedAt,
                 now: updatedAt.addingTimeInterval(9.999),
-                timeZone: utc
+                timeZone: utc,
+                regionalPreferences: twentyFourHour
             ) == "방금 기준"
         )
         #expect(
             RefreshTimestampPresenter.providerText(
                 updatedAt: updatedAt,
                 now: updatedAt.addingTimeInterval(10),
-                timeZone: utc
+                timeZone: utc,
+                regionalPreferences: twentyFourHour
             ) == "12:00 기준"
         )
     }
@@ -47,14 +53,16 @@ struct RefreshTimestampPresenterTests {
             RefreshTimestampPresenter.footerText(
                 refreshedAt: midnight,
                 now: midnight.addingTimeInterval(10),
-                timeZone: utc
+                timeZone: utc,
+                regionalPreferences: twentyFourHour
             ) == "00:00"
         )
         #expect(
             RefreshTimestampPresenter.footerText(
                 refreshedAt: updatedAt,
                 now: updatedAt.addingTimeInterval(10),
-                timeZone: utc
+                timeZone: utc,
+                regionalPreferences: twentyFourHour
             ) == "12:00"
         )
     }
@@ -69,7 +77,8 @@ struct RefreshTimestampPresenterTests {
                 refreshedAt: evening,
                 now: evening.addingTimeInterval(10),
                 language: language,
-                timeZone: utc
+                timeZone: utc,
+                regionalPreferences: twentyFourHour
             ) == "23:00"
         )
         #expect(
@@ -77,8 +86,32 @@ struct RefreshTimestampPresenterTests {
                 updatedAt: evening,
                 now: evening.addingTimeInterval(10),
                 language: language,
-                timeZone: utc
+                timeZone: utc,
+                regionalPreferences: twentyFourHour
             ).contains("23:00")
+        )
+    }
+
+    @Test(arguments: [
+        (AppLanguage.english, "en_US", "11:00\u{202F}PM"),
+        (AppLanguage.english, "en_GB", "23:00"),
+        (AppLanguage.korean, "ko_KR", "오후 11:00"),
+        (AppLanguage.korean, "en_GB", "23:00")
+    ])
+    func clockFollowsTheRegionHourCycleInEveryAppLanguage(
+        language: AppLanguage,
+        region: String,
+        expected: String
+    ) {
+        let evening = updatedAt.addingTimeInterval(11 * 3_600)
+        #expect(
+            RefreshTimestampPresenter.footerText(
+                refreshedAt: evening,
+                now: evening.addingTimeInterval(10),
+                language: language,
+                timeZone: utc,
+                regionalPreferences: Locale(identifier: region)
+            ) == expected
         )
     }
 
