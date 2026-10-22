@@ -17,6 +17,21 @@ public enum AppLanguage: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    /// The locale for dates, clocks, numbers, and currency: the app's display
+    /// language combined with the user's region and 12/24-hour preference, so
+    /// choosing a display language never overrides how the user's region
+    /// writes times and money.
+    public func formattingLocale(
+        regionalPreferences: Locale = .autoupdatingCurrent
+    ) -> Locale {
+        var components = Locale.Components(locale: regionalPreferences)
+        components.languageComponents = Locale.Language.Components(
+            languageCode: locale.language.languageCode,
+            region: regionalPreferences.region ?? locale.region
+        )
+        return Locale(components: components)
+    }
+
     public static func systemDefault(
         preferredLanguages: [String] = Locale.preferredLanguages
     ) -> AppLanguage {

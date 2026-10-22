@@ -8,7 +8,8 @@ extension LocalizationResolving {
     public func resetDescription(
         until resetsAt: Date,
         now: Date = Date(),
-        timeZone: TimeZone = .current
+        timeZone: TimeZone = .current,
+        regionalPreferences: Locale = .autoupdatingCurrent
     ) -> String {
         let seconds = max(0, Int(resetsAt.timeIntervalSince(now)))
         if seconds < 3_600 {
@@ -27,7 +28,14 @@ extension LocalizationResolving {
             )
         }
         return "\(interval) · "
-            + resetClock(resetsAt, now: now, timeZone: timeZone)
+            + resetClock(
+                resetsAt,
+                now: now,
+                timeZone: timeZone,
+                locale: language.formattingLocale(
+                    regionalPreferences: regionalPreferences
+                )
+            )
     }
 
     private func resetDaysText(days: Int, hours: Int) -> String {
@@ -42,7 +50,8 @@ extension LocalizationResolving {
     private func resetClock(
         _ resetsAt: Date,
         now: Date,
-        timeZone: TimeZone
+        timeZone: TimeZone,
+        locale: Locale
     ) -> String {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = timeZone
@@ -54,34 +63,48 @@ extension LocalizationResolving {
             "MMMdjmm"
         }
         let formatter = DateFormatter()
-        formatter.locale = language.locale
+        formatter.locale = locale
         formatter.timeZone = timeZone
         formatter.setLocalizedDateFormatFromTemplate(template)
         return formatter.string(from: resetsAt)
     }
 
-    public func metricValue(_ metric: UsageMetric) -> String {
+    public func metricValue(
+        _ metric: UsageMetric,
+        regionalPreferences: Locale = .autoupdatingCurrent
+    ) -> String {
+        let locale = language.formattingLocale(
+            regionalPreferences: regionalPreferences
+        )
         switch metric {
         case .quotaRemaining(let percent):
             return format(.remaining, percent)
         case .spend(let amount, let currency):
-            let money = Self.metricMoney(amount, currency: currency)
+            let money = Self.metricMoney(
+                amount,
+                currency: currency,
+                locale: locale
+            )
             return language == .english
                 ? "\(money) spent"
                 : "\(money) 사용"
         case .credit(let balance, .usd):
-            let money = Self.metricMoney(balance, currency: .usd)
+            let money = Self.metricMoney(
+                balance,
+                currency: .usd,
+                locale: locale
+            )
             return language == .english
                 ? "\(money) balance"
                 : "잔액 \(money)"
         case .credit(let balance, let unit):
-            let value = Self.metricNumber(balance)
+            let value = Self.metricNumber(balance, locale: locale)
             let unitText = metricUnit(unit, value: balance)
             return language == .english
                 ? "\(value) \(unitText) balance"
                 : "\(unitText) 잔액 \(value)"
         case .count(let value, let unit):
-            return "\(value.formatted(.number.locale(language.locale))) "
+            return "\(value.formatted(.number.locale(locale))) "
                 + metricUnit(unit, value: Double(value))
         case .informational(let value):
             return providerText(value)
@@ -115,18 +138,26 @@ extension LocalizationResolving {
 
     private static func metricMoney(
         _ amount: Double,
-        currency: UsageCurrency
+        currency: UsageCurrency,
+        locale: Locale
     ) -> String {
         switch currency {
         case .usd:
-            "$" + String(format: "%.2f", locale: Locale(identifier: "en_US_POSIX"), amount)
+            amount.formatted(.currency(code: "USD").locale(locale))
         }
     }
 
-    private static func metricNumber(_ value: Double) -> String {
-        value.rounded() == value
-            ? String(Int(value))
-            : String(format: "%.2f", locale: Locale(identifier: "en_US_POSIX"), value)
+    private static func metricNumber(
+        _ value: Double,
+        locale: Locale
+    ) -> String {
+        value.formatted(
+            .number
+                .precision(
+                    .fractionLength(value.rounded() == value ? 0 : 2)
+                )
+                .locale(locale)
+        )
     }
 
     /// Text shown beside the stale symbol so retained usage never relies on

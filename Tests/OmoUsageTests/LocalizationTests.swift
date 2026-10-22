@@ -269,7 +269,11 @@ struct LocalizationTests {
             localization.resetDescription(
                 until: now.addingTimeInterval(seconds),
                 now: now,
-                timeZone: seoul
+                timeZone: seoul,
+                regionalPreferences: Locale(
+                    identifier: localization.language == .english
+                        ? "en_US" : "ko_KR"
+                )
             )
             .replacingOccurrences(of: "\u{202F}", with: " ")
         }
