@@ -1,3 +1,4 @@
+import OmoUsageCore
 import SwiftUI
 
 enum InteractiveControlForegroundRole: Equatable, Sendable {
@@ -42,6 +43,8 @@ struct InteractiveIconButton: View {
     private var reduceMotion
     @Environment(\.appLocalization)
     private var localization
+    @Environment(\.dashboardTextScale)
+    private var scale
     @State private var isHovered = false
 
     var body: some View {
@@ -50,9 +53,12 @@ struct InteractiveIconButton: View {
             action()
         } label: {
             Image(systemName: symbol)
-                .font(.system(size: 13, weight: .semibold))
-                .frame(width: 22, height: 22)
-                .frame(width: hitTargetSize, height: hitTargetSize)
+                .font(.system(size: 13 * scale, weight: .semibold))
+                .frame(width: 22 * scale, height: 22 * scale)
+                .frame(
+                    width: hitTargetSize * scale,
+                    height: hitTargetSize * scale
+                )
         }
         .buttonStyle(
             InteractiveIconButtonStyle(

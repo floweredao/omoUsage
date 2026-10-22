@@ -178,6 +178,13 @@ other privileged controls remain native-only.
   header; truncated aliases and plans expose their complete text in help.
   Identity takes priority over the plan pill when horizontal space is tight.
 - Plan pills: 10.5 pt semibold.
+- Display settings offer a popover text size of 100%, 125%, 150%, or 200%
+  (`DashboardTextSize`, stored as `dashboardTextSize`, default 100%). The
+  popover multiplies every type, icon, hit-target, and spacing value by the
+  same factor and widens to `320 pt x factor`, so wrapping and truncation are
+  unchanged from the default and no horizontal scroll appears. Its natural
+  height scales the same way up to 800 pt; beyond that the body scrolls. The
+  Side Notch keeps its compact 100% geometry.
 - Meter labels: 11.5–12 pt medium.
 - Metadata and reset labels: 11 pt regular/medium.
 - Mobile title: native large navigation title.
@@ -215,6 +222,9 @@ other privileged controls remain native-only.
   language's words with the user's region and 12/24-hour setting. Reset
   clocks, numbers, and USD amounts use the same locale on every native
   surface; the web combines the web language with the browser's region.
+- The popover footer places Refresh, Settings, and Quit in a group whose
+  32 pt targets are 60 pt apart center to center; the timestamp takes the
+  remaining width.
 - Settings follows Apple's HIG for a macOS settings window: a noncustomizable
   `.preference`-style toolbar switches five panes in the former section order -
   General (language, Launch at Login, updates), Display, Web Access,

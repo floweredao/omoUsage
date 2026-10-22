@@ -5,13 +5,16 @@ import SwiftUI
 struct DashboardView: View {
     @Bindable var viewModel: UsageDashboardViewModel
     let localization: LocalizationController
+    var textSize: DashboardTextSize = .standard
     let onSettings: () -> Void
     let onQuit: () -> Void
     let onPanelHeightChange: (CGFloat) -> Void
 
     var body: some View {
+        let scale = textSize.scale
         let panelHeight = DashboardLayout.panelHeight(
-            for: viewModel.snapshot.providers
+            for: viewModel.snapshot.providers,
+            scale: scale
         )
         let providerCounts = Dictionary(
             grouping: viewModel.snapshot.providers,
@@ -21,19 +24,19 @@ struct DashboardView: View {
             ScrollView {
                 VStack(spacing: 0) {
                     if viewModel.snapshot.providers.isEmpty {
-                        VStack(alignment: .leading, spacing: 8) {
+                        VStack(alignment: .leading, spacing: 8 * scale) {
                             Text(localization.text(
                                 viewModel.isRefreshing
                                     ? .dashboardChecking : .dashboardEmptyTitle
                             ))
-                                .font(.system(size: 15, weight: .bold))
+                                .font(.system(size: 15 * scale, weight: .bold))
                             Text(localization.text(.dashboardEmptyDescription))
-                                .font(.system(size: 12))
+                                .font(.system(size: 12 * scale))
                                 .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                             Button(localization.text(.openSettings), action: onSettings)
                                 .buttonStyle(.bordered)
-                                .controlSize(.small)
+                                .controlSize(scale > 1 ? .large : .small)
                                 .accessibilityIdentifier("dashboard-open-settings")
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -43,7 +46,7 @@ struct DashboardView: View {
                         usage in
                         if index > 0 {
                             Divider()
-                                .padding(.vertical, 10)
+                                .padding(.vertical, 10 * scale)
                         }
                         ProviderSectionView(
                             usage: usage,
@@ -58,17 +61,17 @@ struct DashboardView: View {
                         )
                     }
                 }
-                .padding(.horizontal, 14)
-                .padding(.top, 12)
+                .padding(.horizontal, 14 * scale)
+                .padding(.top, 12 * scale)
                 .padding(
                     .bottom,
-                    DashboardLayout.contentBottomPadding
+                    DashboardLayout.contentBottomPadding * scale
                 )
                 .dashboardOverlayScrollers()
             }
             .scrollIndicators(.automatic)
             .frame(
-                height: panelHeight - DashboardLayout.footerHeight
+                height: panelHeight - DashboardLayout.footerHeight * scale
             )
 
             PopoverFooterView(
@@ -81,15 +84,19 @@ struct DashboardView: View {
                 onQuit: onQuit
             )
         }
-        .frame(width: 320, height: panelHeight)
+        .frame(
+            width: DashboardLayout.panelWidth(scale: scale),
+            height: panelHeight
+        )
         .background(.regularMaterial)
         .environment(\.appLocalization, localization.context)
+        .environment(\.dashboardTextScale, scale)
         .onChange(
             of: viewModel.snapshot.providers,
             initial: true
         ) { _, providers in
             onPanelHeightChange(
-                DashboardLayout.panelHeight(for: providers)
+                DashboardLayout.panelHeight(for: providers, scale: scale)
             )
         }
     }

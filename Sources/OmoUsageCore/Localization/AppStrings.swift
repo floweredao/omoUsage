@@ -31,6 +31,9 @@ public enum AppStringKey: String, CaseIterable, Sendable {
     case sideNotchPresentation
     case sideNotchHideDelay
     case sideNotchHideDelayOption
+    case dashboardTextSize
+    case dashboardTextSizeOption
+    case dashboardTextSizeDescription
     case sideNotchShowDetails
     case providerAuthentication
     case dashboardOrder
@@ -251,6 +254,10 @@ public struct AppStrings: Sendable {
         .sideNotchPresentation: "사이드 노치",
         .sideNotchHideDelay: "사이드 노치 숨김 시간",
         .sideNotchHideDelayOption: "%.1f초 후",
+        .dashboardTextSize: "팝오버 글자 크기",
+        .dashboardTextSizeOption: "%d%%",
+        .dashboardTextSizeDescription:
+            "팝오버의 글자와 아이콘을 최대 200%까지 키웁니다. 팝오버는 글자가 잘리지 않도록 함께 넓어집니다.",
         .sideNotchShowDetails: "사용량 상세 보기",
         .providerAuthentication: "인증",
         .dashboardOrder: "순서",
@@ -478,6 +485,10 @@ public struct AppStrings: Sendable {
         .sideNotchPresentation: "Side Notch",
         .sideNotchHideDelay: "Side Notch Hide Delay",
         .sideNotchHideDelayOption: "After %.1f sec",
+        .dashboardTextSize: "Popover text size",
+        .dashboardTextSizeOption: "%d%%",
+        .dashboardTextSizeDescription:
+            "Enlarges popover text and icons up to 200%. The popover widens with them so nothing is clipped.",
         .sideNotchShowDetails: "Show usage details",
         .providerAuthentication: "Auth",
         .dashboardOrder: "Order",

@@ -653,6 +653,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var presentationStyle: DashboardPresentationStyle
     private let sideNotchHideDelayStore: SideNotchHideDelayStore
     private var sideNotchHideDelay: SideNotchHideDelay
+    private let dashboardTextSizeStore: DashboardTextSizeStore
+    private var dashboardTextSize: DashboardTextSize
     private var statusItem: NSStatusItem!
     private let statusPopover = NSPopover()
     private let dismissalController = PopoverDismissalController(
@@ -729,6 +731,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             defaults: defaults
         )
         let sideNotchHideDelay = sideNotchHideDelayStore.load()
+        let dashboardTextSizeStore = DashboardTextSizeStore(
+            defaults: defaults
+        )
+        let dashboardTextSize = dashboardTextSizeStore.load()
         let providerOrder = orderStore.load()
         let disconnectedProviders = disconnectionStore.load()
 #if OMO_USAGE_FIXTURES
@@ -963,6 +969,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         self.presentationStyle = presentationStyle
         self.sideNotchHideDelayStore = sideNotchHideDelayStore
         self.sideNotchHideDelay = sideNotchHideDelay
+        self.dashboardTextSizeStore = dashboardTextSizeStore
+        self.dashboardTextSize = dashboardTextSize
         super.init()
         webDashboardCommandBridge.install { [weak self] command in
             self?.handleWebDashboardCommand(command)
@@ -1102,23 +1110,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             StatusPanelPresentationContract.behavior
         statusPopover.delegate = self
         statusPopover.contentSize = NSSize(
-            width: 320,
+            width: popoverWidth,
             height: popoverHeight
         )
         statusPopover.contentViewController = NSHostingController(
-            rootView: DashboardView(
-                viewModel: viewModel,
-                localization: localization,
-                onSettings: { [weak self] in
-                    self?.showSettings()
-                },
-                onQuit: {
-                    NSApp.terminate(nil)
-                },
-                onPanelHeightChange: { [weak self] height in
-                    self?.resizePopover(to: height)
-                }
-            )
+            rootView: makeDashboardView()
+        )
+    }
+
+    private var popoverWidth: CGFloat {
+        DashboardLayout.panelWidth(scale: dashboardTextSize.scale)
+    }
+
+    private func makeDashboardView() -> DashboardView {
+        DashboardView(
+            viewModel: viewModel,
+            localization: localization,
+            textSize: dashboardTextSize,
+            onSettings: { [weak self] in
+                self?.showSettings()
+            },
+            onQuit: {
+                NSApp.terminate(nil)
+            },
+            onPanelHeightChange: { [weak self] height in
+                self?.resizePopover(to: height)
+            }
         )
     }
 
@@ -1146,10 +1163,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private func showPopover() {
         guard let button = statusItem.button else { return }
         popoverHeight = DashboardLayout.panelHeight(
-            for: viewModel.snapshot.providers
+            for: viewModel.snapshot.providers,
+            scale: dashboardTextSize.scale
         )
         statusPopover.contentSize = NSSize(
-            width: 320,
+            width: popoverWidth,
             height: popoverHeight
         )
 #if OMO_USAGE_FIXTURES
@@ -1182,9 +1200,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     private func resizePopover(to height: CGFloat) {
-        guard abs(popoverHeight - height) > 0.5 else { return }
+        guard
+            abs(popoverHeight - height) > 0.5
+                || abs(statusPopover.contentSize.width - popoverWidth) > 0.5
+        else { return }
         popoverHeight = height
-        statusPopover.contentSize = NSSize(width: 320, height: height)
+        statusPopover.contentSize = NSSize(width: popoverWidth, height: height)
     }
 
     private func showSettings() {
@@ -1222,6 +1243,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 localization: localization,
                 presentationStyle: presentationStyle,
                 sideNotchHideDelay: sideNotchHideDelay,
+                dashboardTextSize: dashboardTextSize,
                 accountRegistryController: accountRegistryController,
                 codexPlanDefaults: accountDefaults,
                 captureCompanionCredential: companionCapture,
@@ -1296,6 +1318,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 },
                 onSideNotchHideDelayChange: { [weak self] delay in
                     self?.setSideNotchHideDelay(delay)
+                },
+                onDashboardTextSizeChange: { [weak self] size in
+                    self?.setDashboardTextSize(size)
                 },
                 webDashboardStatusStore: webDashboardStatusStore,
                 tailscaleDashboardController:
@@ -1530,6 +1555,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         sideNotchHideDelay = delay
         sideNotchHideDelayStore.save(delay)
         sideNotchController.setAutoHideDelay(delay.rawValue)
+    }
+
+    private func setDashboardTextSize(_ size: DashboardTextSize) {
+        guard dashboardTextSize != size else { return }
+        dashboardTextSize = size
+        dashboardTextSizeStore.save(size)
+        (statusPopover.contentViewController
+            as? NSHostingController<DashboardView>)?.rootView =
+            makeDashboardView()
+        resizePopover(
+            to: DashboardLayout.panelHeight(
+                for: viewModel.snapshot.providers,
+                scale: size.scale
+            )
+        )
     }
 
     private func showSelectedPresentation() {
