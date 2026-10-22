@@ -400,9 +400,10 @@ other privileged controls remain native-only.
   The refresh affordance states that it checks iCloud only.
 - Mobile preserves snapshot order and keys every provider card by
   `AccountProviderID`. A non-default account, or any provider repeated in the
-  snapshot, shows its sanitized alias directly below the provider name as one
-  truncating line of native secondary caption text. A lone legacy account
-  remains visually unchanged.
+  snapshot, shows its sanitized alias directly below the provider name in
+  native secondary caption text that wraps rather than truncates, so aliases
+  sharing a prefix stay distinguishable. Plan pills wrap inside a rounded
+  rectangle the same way. A lone legacy account remains visually unchanged.
 - The mobile empty state explains that the Mac must refresh once and that both
   devices must use the same Apple ID.
 - Web owns one page-level vertical scroll. The sticky summary header remains
@@ -708,8 +709,8 @@ other privileged controls remain native-only.
   the badge color alone.
 - When a mobile account alias is visible, it participates in the card's native
   accessibility hierarchy so repeated same-provider cards are distinguishable
-  without relying on order. Truncation is visual only; assistive technologies
-  receive the full sanitized string.
+  without relying on order. Sighted and assistive-technology users both get
+  the full sanitized string.
 - Web markup uses one `main`, semantic provider `article` elements, explicit
   status text with `aria-live="polite"`, and native `progress` semantics.
 - Settings controls have explicit labels, at least 44 px touch targets,
