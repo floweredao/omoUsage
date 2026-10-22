@@ -216,11 +216,12 @@ private struct MobileProviderCard: View {
                 }
 
                 if showsAccountLabel {
+                    // Aliases often share a prefix, so the whole alias
+                    // wraps instead of truncating its distinguishing end.
                     Text(AccountLabel.sanitized(usage.accountLabel))
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
@@ -234,18 +235,20 @@ private struct MobileProviderCard: View {
     @ViewBuilder
     private var planPill: some View {
         if !usage.planName.isEmpty {
+            // A long plan wraps inside its pill rather than truncating, so
+            // the complete plan stays readable at every text size.
             Text(usage.planName)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
-                .lineLimit(1)
+                .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 7)
                 .padding(.vertical, 3)
                 .background(
                     Color(uiColor: .tertiarySystemGroupedBackground),
-                    in: Capsule()
+                    in: RoundedRectangle(cornerRadius: 9, style: .continuous)
                 )
                 .overlay {
-                    Capsule()
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
                         .stroke(Color(uiColor: .separator), lineWidth: 0.5)
                 }
         }
