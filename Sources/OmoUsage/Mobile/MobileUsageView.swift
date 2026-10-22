@@ -50,7 +50,7 @@ struct MobileUsageView: View {
     private var stateContent: some View {
         switch viewModel.loadState {
         case .loading:
-            ProgressView(localization.text(.inProgress))
+            ProgressView(localization.text(.mobileCheckingICloud))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .empty:
             ContentUnavailableView {
@@ -72,6 +72,8 @@ struct MobileUsageView: View {
                     localization.text(.mobileSyncFailed),
                     systemImage: "exclamationmark.icloud"
                 )
+            } description: {
+                Text(localization.text(.mobileSyncFailedDescription))
             } actions: {
                 Button(localization.text(.retry)) {
                     viewModel.reload()
