@@ -416,7 +416,12 @@ other privileged controls remain native-only.
   than once. Alias containers use `min-width: 0`, one-line ellipsis, and a
   native title exposing the full sanitized value without page overflow.
 - The web empty and error states stay inside the main content region and keep
-  the last successful refresh timestamp visible when available.
+  the last successful refresh timestamp visible when available. Once any
+  provider card has rendered, a failed `/api/snapshot` request keeps those
+  cards and their times unchanged and adds only a non-modal
+  `#connection-notice` status line above them; the full unavailable state is
+  used only when the dashboard has never loaded. The next success removes the
+  notice.
 - `/settings` reuses the same 720 px shell and sticky identity header. Its
   controls form one column below 640 px and grouped cards above it. Provider
   order controls remain in DOM order and never create nested scrolling.
