@@ -295,6 +295,81 @@ enum ClaudeUsageParser {
         return nil
     }
 
+    /// Claude Console organizations on the account, read from
+    /// `GET /api/oauth/account`: memberships whose organization carries the
+    /// `api` capability. Monthly API credits for Max and Team plans land in
+    /// the Console organization linked to the plan.
+    static func consoleOrganizationIDs(_ data: Data) throws -> [String] {
+        let object = try UsageJSON.object(data)
+        guard let memberships = UsageJSON.array(object["memberships"]) else {
+            throw UsageParsingError.invalidPayload
+        }
+        return memberships.compactMap { membership in
+            guard
+                let organization = UsageJSON.object(
+                    membership["organization"]
+                ),
+                let id = organization["uuid"] as? String,
+                !id.isEmpty,
+                let capabilities = organization["capabilities"] as? [String],
+                capabilities.contains("api")
+            else {
+                return nil
+            }
+            return id
+        }
+    }
+
+    /// Claude-granted API credits: the `promo_tranches` of each Console
+    /// organization's `prepaid/credits` (the Console's "Promotional
+    /// credits"). Purchased balance is excluded. Only unexpired USD tranches
+    /// with a positive remainder count; the meter's label is the earliest
+    /// expiry.
+    static func apiCreditMeter(
+        _ payloads: [Data],
+        now: Date
+    ) -> UsageMeter? {
+        var remainingMinorUnits = 0.0
+        var earliestExpiry: Date?
+        for payload in payloads {
+            guard
+                let object = try? UsageJSON.object(payload),
+                let tranches = UsageJSON.array(object["promo_tranches"])
+            else {
+                continue
+            }
+            for tranche in tranches {
+                guard
+                    let remaining = UsageJSON.number(
+                        tranche["remaining_amount_minor_units"]
+                    ),
+                    remaining.isFinite,
+                    remaining > 0,
+                    (tranche["currency"] as? String)?.uppercased() == "USD",
+                    let expiresAt = tranche["expires_at"].flatMap(
+                        UsageJSON.date
+                    ),
+                    expiresAt > now
+                else {
+                    continue
+                }
+                remainingMinorUnits += remaining
+                if let current = earliestExpiry, current <= expiresAt {
+                } else {
+                    earliestExpiry = expiresAt
+                }
+            }
+        }
+        guard remainingMinorUnits > 0 else { return nil }
+        return UsageMeter(
+            id: "claude.api-credits",
+            title: "API 크레딧",
+            period: .extra,
+            metric: .credit(balance: remainingMinorUnits / 100, unit: .usd),
+            resetText: ProviderPayload.expiryText(earliestExpiry, now: now)
+        )
+    }
+
     private static func scopedWeeklyMeters(
         _ value: Any?
     ) -> [UsageMeter] {

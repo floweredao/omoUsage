@@ -366,6 +366,7 @@ public enum ProviderTextLocalization {
                 of: "클라우드 세션 크레딧",
                 with: "Cloud session credits"
             )
+            .replacingOccurrences(of: "API 크레딧", with: "API credits")
             .replacingOccurrences(of: "최근 30일 ", with: "Last 30 days ")
             .replacingOccurrences(of: "크레딧", with: "Credits")
             .replacingOccurrences(of: "프롬프트", with: "Prompt")
@@ -410,6 +411,7 @@ public enum ProviderTextLocalization {
         "수동 갱신": "Manual renewal",
         "Auto 사용량": "Auto usage",
         "API 사용량": "API usage",
+        "API 크레딧": "API credits",
         "추가 잔액": "Extra balance",
         "키 한도": "Key limit",
         "자동": "Automatic",

@@ -47,6 +47,8 @@ struct ClaudeUsageProvider: UsageProvider {
     let usageCache: ClaudeUsageCache?
     /// `nil` publishes nothing; the app passes `.live`.
     let shareStore: ClaudeUsageShareStore?
+    /// `nil` skips the Console API-credit lookup; the app passes `.shared`.
+    let apiCreditCache: ClaudeAPICreditCache?
 
     init(
         accountID: AccountID = .legacy,
@@ -74,7 +76,8 @@ struct ClaudeUsageProvider: UsageProvider {
             ClaudeRefreshCoordinator(),
         planCache: ClaudePlanCache = ClaudePlanCache(),
         usageCache: ClaudeUsageCache? = nil,
-        shareStore: ClaudeUsageShareStore? = nil
+        shareStore: ClaudeUsageShareStore? = nil,
+        apiCreditCache: ClaudeAPICreditCache? = nil
     ) {
         self.accountID = accountID
         self.accountLabel = accountLabel
@@ -90,6 +93,7 @@ struct ClaudeUsageProvider: UsageProvider {
         self.planCache = planCache
         self.usageCache = usageCache
         self.shareStore = shareStore
+        self.apiCreditCache = apiCreditCache
     }
 
     func fetch(now: Date) async throws -> ProviderUsage {
@@ -286,13 +290,18 @@ struct ClaudeUsageProvider: UsageProvider {
             for: credential,
             now: now
         )
-        let usage = try endpoint.schemaChecked {
+        let parsed = try endpoint.schemaChecked {
             try ClaudeUsageParser.parse(
                 data,
                 planName: planName,
                 now: now
             )
         }
+        let usage = try await addingAPICredits(
+            to: parsed,
+            credential: credential,
+            now: now
+        )
         await usageCooldown.recordSuccess(for: accountProviderID)
         await usageCache?.record(usage, for: accountProviderID, at: now)
         await shareStore?.recordSuccess(
@@ -302,6 +311,123 @@ struct ClaudeUsageProvider: UsageProvider {
             at: now
         )
         return usage
+    }
+
+    /// Appends the Claude-granted API credits of the account's Console
+    /// organizations. A secondary read: its failure keeps the last answer
+    /// (or none) and never fails the usage card.
+    private func addingAPICredits(
+        to usage: ProviderUsage,
+        credential: DiscoveredCredential,
+        now: Date
+    ) async throws -> ProviderUsage {
+        guard let apiCreditCache else { return usage }
+        let payloads: [Data]
+        if let cached = await apiCreditCache.payloads(
+            for: accountProviderID,
+            at: now
+        ) {
+            payloads = cached
+        } else {
+            do {
+                payloads = try await fetchAPICreditPayloads(credential)
+                await apiCreditCache.record(
+                    payloads,
+                    for: accountProviderID,
+                    at: now
+                )
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                DiagnosticStore.shared.record(
+                    error: error,
+                    provider: id,
+                    category: .providerRefresh
+                )
+                payloads = await apiCreditCache.recordFailure(
+                    for: accountProviderID,
+                    at: now
+                )
+            }
+        }
+        guard
+            let meter = ClaudeUsageParser.apiCreditMeter(payloads, now: now),
+            let first = usage.groups.first
+        else {
+            return usage
+        }
+        let group = UsageGroup(
+            id: first.id,
+            title: first.title,
+            meters: first.meters + [meter],
+            creditText: first.creditText
+        )
+        return ProviderUsage(
+            provider: usage.provider,
+            planName: usage.planName,
+            groups: [group] + usage.groups.dropFirst(),
+            availability: usage.availability,
+            updatedAt: usage.updatedAt
+        )
+    }
+
+    /// `GET /api/oauth/account` names the Console organizations; each one's
+    /// `GET .../prepaid/credits` carries its promotional credit tranches.
+    private func fetchAPICreditPayloads(
+        _ credential: DiscoveredCredential
+    ) async throws -> [Data] {
+        let accountData = try await http.data(
+            for: oauthGET("https://api.anthropic.com/api/oauth/account", credential),
+            endpoint: ProviderContractCatalog.endpoint(
+                .claudeOAuthAccount,
+                for: id
+            )
+        )
+        let creditsEndpoint = ProviderContractCatalog.endpoint(
+            .claudeAPICredits,
+            for: id
+        )
+        var payloads: [Data] = []
+        for organizationID in try ClaudeUsageParser.consoleOrganizationIDs(
+            accountData
+        ) {
+            let path = organizationID.addingPercentEncoding(
+                withAllowedCharacters: .urlPathAllowed
+            ) ?? organizationID
+            payloads.append(
+                try await http.data(
+                    for: oauthGET(
+                        "https://api.anthropic.com/api/oauth/organizations/"
+                            + path + "/prepaid/credits",
+                        credential
+                    ),
+                    endpoint: creditsEndpoint
+                )
+            )
+        }
+        return payloads
+    }
+
+    private func oauthGET(
+        _ url: String,
+        _ credential: DiscoveredCredential
+    ) throws -> URLRequest {
+        guard let url = URL(string: url) else {
+            throw ProviderTransportError.invalidResponse(id)
+        }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 10
+        request.setValue(
+            "Bearer \(credential.accessToken)",
+            forHTTPHeaderField: "Authorization"
+        )
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(
+            "oauth-2025-04-20",
+            forHTTPHeaderField: "anthropic-beta"
+        )
+        request.setValue(Self.cliUserAgent, forHTTPHeaderField: "User-Agent")
+        return request
     }
 
     /// The credential's own plan, else the account's OAuth profile plan.
@@ -693,6 +819,58 @@ enum ClaudePlanName {
             subscriptionType: String(type.dropFirst("claude_".count)),
             rateLimitTier: organization["rate_limit_tier"] as? String
         )
+    }
+}
+
+/// Each account's last Console API-credit answer (the raw `prepaid/credits`
+/// payloads, re-read against the current time so expiry labels stay
+/// fresh). Credits change slowly, so one lookup serves `refreshInterval`;
+/// a failed lookup keeps the last answer and waits the same interval.
+actor ClaudeAPICreditCache {
+    static let shared = ClaudeAPICreditCache()
+
+    private let refreshInterval: TimeInterval
+    private var payloads: [AccountProviderID: [Data]] = [:]
+    private var nextLookup: [AccountProviderID: Date] = [:]
+
+    init(refreshInterval: TimeInterval = 900) {
+        self.refreshInterval = refreshInterval
+    }
+
+    /// The cached answer while it is fresh; `nil` asks for a lookup.
+    func payloads(
+        for accountProviderID: AccountProviderID,
+        at now: Date
+    ) -> [Data]? {
+        guard
+            let next = nextLookup[accountProviderID],
+            now < next
+        else {
+            return nil
+        }
+        return payloads[accountProviderID] ?? []
+    }
+
+    func record(
+        _ payloads: [Data],
+        for accountProviderID: AccountProviderID,
+        at now: Date
+    ) {
+        self.payloads[accountProviderID] = payloads
+        nextLookup[accountProviderID] = now.addingTimeInterval(
+            refreshInterval
+        )
+    }
+
+    /// Backs off and returns the last good answer, if any.
+    func recordFailure(
+        for accountProviderID: AccountProviderID,
+        at now: Date
+    ) -> [Data] {
+        nextLookup[accountProviderID] = now.addingTimeInterval(
+            refreshInterval
+        )
+        return payloads[accountProviderID] ?? []
     }
 }
 
