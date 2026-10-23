@@ -188,6 +188,63 @@ struct ClaudeUsageParsingTests {
     }
 
     @Test
+    func apiCreditsSumUnexpiredPromotionalTranches() throws {
+        let console = Data(
+            """
+            {
+              "amount": 25000,
+              "promo_tranches": [
+                {"remaining_amount_minor_units": 15000, "currency": "USD",
+                 "expires_at": "2026-08-20T00:00:00Z", "name": "Max API credit"},
+                {"remaining_amount_minor_units": 500, "currency": "usd",
+                 "expires_at": "2026-09-30T00:00:00Z"},
+                {"remaining_amount_minor_units": 9000, "currency": "USD",
+                 "expires_at": "2026-08-01T00:00:00Z"},
+                {"remaining_amount_minor_units": 0, "currency": "USD",
+                 "expires_at": "2026-08-10T00:00:00Z"},
+                {"remaining_amount_minor_units": 700, "currency": "EUR",
+                 "expires_at": "2026-08-10T00:00:00Z"}
+              ]
+            }
+            """.utf8
+        )
+        let meter = try #require(
+            ClaudeUsageParser.apiCreditMeter([console], now: fixedNow)
+        )
+        #expect(meter.id == "claude.api-credits")
+        #expect(meter.metric == .credit(balance: 155, unit: .usd))
+        #expect(meter.resetText == "17일 후 만료")
+    }
+
+    @Test
+    func apiCreditsAreAbsentWithoutPromotionalBalance() {
+        let empty = Data(
+            #"{"amount": 0, "promo_tranches": null, "next_expires_at": null}"#
+                .utf8
+        )
+        #expect(ClaudeUsageParser.apiCreditMeter([empty], now: fixedNow) == nil)
+        #expect(ClaudeUsageParser.apiCreditMeter([], now: fixedNow) == nil)
+    }
+
+    @Test
+    func consoleOrganizationsAreTheAPICapableMemberships() throws {
+        let account = Data(
+            """
+            {"memberships": [
+              {"organization": {"uuid": "console-org",
+                "capabilities": ["api", "api_individual"]}},
+              {"organization": {"uuid": "chat-org",
+                "capabilities": ["chat", "claude_max"]}}
+            ]}
+            """.utf8
+        )
+        #expect(
+            try ClaudeUsageParser.consoleOrganizationIDs(account)
+                == ["console-org"]
+        )
+    }
+
+    @Test
     func cloudSessionCreditsFallBackToUtilizationWithoutDollars() throws {
         let usage = try ClaudeUsageParser.parse(
             Data(

@@ -7,6 +7,8 @@ enum ProviderEndpointPurpose: String, CaseIterable, Sendable {
     case claudeTokenRefresh = "claude.token-refresh"
     case claudeDesktopUsage = "claude.desktop-usage"
     case claudeTokenExchange = "claude.token-exchange"
+    case claudeOAuthAccount = "claude.oauth-account"
+    case claudeAPICredits = "claude.api-credits"
     case codexUsage = "codex.usage"
     case cursorUsageSummary = "cursor.usage-summary"
     case cursorAccount = "cursor.account"

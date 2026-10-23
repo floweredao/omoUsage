@@ -60,7 +60,8 @@ enum ProviderFactory {
                     discovery: discovery,
                     http: http,
                     usageCache: .shared,
-                    shareStore: .live
+                    shareStore: .live,
+                    apiCreditCache: .shared
                 )
             case .codex:
                 CodexUsageProvider(
@@ -145,7 +146,8 @@ enum ProviderFactory {
                 discovery: discovery,
                 http: http,
                 usageCache: .shared,
-                shareStore: .live
+                shareStore: .live,
+                apiCreditCache: .shared
             ),
             CodexUsageProvider(discovery: discovery, http: http),
             CursorUsageProvider(discovery: discovery, http: http),

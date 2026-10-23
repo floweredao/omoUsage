@@ -78,6 +78,47 @@ struct ClaudeReliabilityTests {
     }
 
     @Test
+    func consoleAPICreditsJoinTheUsageCardAndNeverFailIt() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [HephaestusAPICreditURLProtocol.self]
+        func provider() -> ClaudeUsageProvider {
+            ClaudeUsageProvider(
+                discovery: HephaestusClaudeReliabilityFixtures.discovery(
+                    environment: ["CLAUDE_CODE_OAUTH_TOKEN": "credit-test-token"]
+                ),
+                http: providerHTTPTestClient(
+                    session: URLSession(configuration: configuration),
+                    retryPolicy: ProviderRetryPolicy(maximumAttempts: 1)
+                ),
+                desktopSessionDiscovery: .unavailable,
+                apiCreditCache: ClaudeAPICreditCache()
+            )
+        }
+
+        HephaestusAPICreditRecorder.shared.reset(creditsStatus: 200)
+        let usage = try await provider().fetch(now: now)
+        let meter = try #require(
+            usage.groups.flatMap(\.meters)
+                .first { $0.id == "claude.api-credits" }
+        )
+        #expect(meter.metric == .credit(balance: 200, unit: .usd))
+        #expect(
+            HephaestusAPICreditRecorder.shared.creditPaths()
+                == ["/api/oauth/organizations/console-org/prepaid/credits"]
+        )
+        #expect(
+            HephaestusAPICreditRecorder.shared.creditAuthorization()
+                == "Bearer credit-test-token"
+        )
+
+        HephaestusAPICreditRecorder.shared.reset(creditsStatus: 500)
+        let degraded = try await provider().fetch(now: now)
+        let ids = degraded.groups.flatMap(\.meters).map(\.id)
+        #expect(ids.contains("claude.session"))
+        #expect(!ids.contains("claude.api-credits"))
+    }
+
+    @Test
     func transientOAuthFailureDoesNotCrossDesktopSession() async throws {
         HephaestusTransientFallbackRecorder.shared.reset()
         let configuration = URLSessionConfiguration.ephemeral
@@ -214,6 +255,96 @@ private final class HephaestusOAuthHeaderURLProtocol: URLProtocol,
     override func stopLoading() {}
 
     private func respond(statusCode: Int, body: Data) {
+        let response = HTTPURLResponse(
+            url: request.url!,
+            statusCode: statusCode,
+            httpVersion: nil,
+            headerFields: ["Content-Type": "application/json"]
+        )!
+        client?.urlProtocol(
+            self,
+            didReceive: response,
+            cacheStoragePolicy: .notAllowed
+        )
+        client?.urlProtocol(self, didLoad: body)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+}
+
+private final class HephaestusAPICreditRecorder: @unchecked Sendable {
+    static let shared = HephaestusAPICreditRecorder()
+
+    private let lock = NSLock()
+    private var status = 200
+    private var paths: [String] = []
+    private var authorization: String?
+
+    func reset(creditsStatus: Int) {
+        lock.withLock {
+            status = creditsStatus
+            paths = []
+            authorization = nil
+        }
+    }
+
+    func recordCredits(_ request: URLRequest) -> Int {
+        lock.withLock {
+            paths.append(request.url?.path ?? "")
+            authorization = request.value(
+                forHTTPHeaderField: "Authorization"
+            )
+            return status
+        }
+    }
+
+    func creditPaths() -> [String] { lock.withLock { paths } }
+
+    func creditAuthorization() -> String? { lock.withLock { authorization } }
+}
+
+private final class HephaestusAPICreditURLProtocol: URLProtocol,
+    @unchecked Sendable
+{
+    override class func canInit(with request: URLRequest) -> Bool { true }
+
+    override class func canonicalRequest(
+        for request: URLRequest
+    ) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        let path = request.url?.path ?? ""
+        if path == "/api/oauth/usage" {
+            respond(200, HephaestusClaudeReliabilityFixtures.usageBody)
+        } else if path == "/api/oauth/account" {
+            respond(200, Data(
+                """
+                {"memberships": [
+                  {"organization": {"uuid": "console-org", "capabilities": ["api"]}},
+                  {"organization": {"uuid": "chat-org", "capabilities": ["chat"]}}
+                ]}
+                """.utf8
+            ))
+        } else if path.hasSuffix("/prepaid/credits") {
+            let status = HephaestusAPICreditRecorder.shared
+                .recordCredits(request)
+            respond(status, Data(
+                """
+                {"amount": 20000, "promo_tranches": [
+                  {"remaining_amount_minor_units": 20000, "currency": "USD",
+                   "expires_at": "2026-08-20T00:00:00Z"}
+                ]}
+                """.utf8
+            ))
+        } else {
+            respond(404, Data("{}".utf8))
+        }
+    }
+
+    override func stopLoading() {}
+
+    private func respond(_ statusCode: Int, _ body: Data) {
         let response = HTTPURLResponse(
             url: request.url!,
             statusCode: statusCode,
