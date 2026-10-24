@@ -6,36 +6,19 @@ struct ProviderIcon: View {
     let provider: ProviderID
     @Environment(\.dashboardTextScale)
     private var scale
-    @Environment(\.dashboardPalette)
-    private var palette
 
     var body: some View {
         let style = ProviderVisualStyle.style(for: provider)
-        let isNeutral = palette == .sideNotch
         ZStack {
             RoundedRectangle(cornerRadius: 5 * scale)
-                .fill(
-                    isNeutral
-                        ? AnyShapeStyle(SideNotchNeutralVisualTokens.ink)
-                        : style.background
-                )
-                .shadow(
-                    color: .black.opacity(isNeutral ? 0 : 0.12),
-                    radius: 1,
-                    y: 1
-                )
+                .fill(style.background)
+                .shadow(color: .black.opacity(0.12), radius: 1, y: 1)
 
             if let image {
                 Image(nsImage: image)
                     .resizable()
-                    .renderingMode(
-                        provider == .antigravity && !isNeutral
-                            ? .original : .template
-                    )
-                    .foregroundStyle(
-                        isNeutral
-                            ? SideNotchNeutralVisualTokens.onInk : .white
-                    )
+                    .renderingMode(provider == .antigravity ? .original : .template)
+                    .foregroundStyle(.white)
                     .padding(3 * scale)
             } else {
                 Text(provider.monogram)
@@ -46,11 +29,7 @@ struct ProviderIcon: View {
                             design: .rounded
                         )
                     )
-                    .foregroundStyle(
-                        isNeutral
-                            ? SideNotchNeutralVisualTokens.onInk
-                            : style.foreground
-                    )
+                    .foregroundStyle(style.foreground)
             }
         }
     }

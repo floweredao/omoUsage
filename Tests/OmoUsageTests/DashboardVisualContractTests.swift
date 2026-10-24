@@ -177,34 +177,44 @@ struct DashboardVisualContractTests {
             SideNotchAccountBadgeTokens.diameter
                 > SideNotchAccountBadgeTokens.fontSize
         )
+        #expect(SideNotchAccountBadgeTokens.haloWidth > 0)
         #expect(SideNotchRailVisualTokens.emptyStateForegroundRole == .primaryDerived)
         #expect(SideNotchRailVisualTokens.emptyStateForeground == Color.primary)
 
         for name in [NSAppearance.Name.aqua, .darkAqua] {
             let appearance = try #require(NSAppearance(named: name))
-            var ratio = 0.0
-            appearance.performAsCurrentDrawingAppearance {
-                guard
-                    let backdrop = NSColor.windowBackgroundColor
-                        .usingColorSpace(.sRGB),
-                    let plate = NSColor(SideNotchAccountBadgeTokens.fill)
-                        .usingColorSpace(.sRGB),
-                    let glyph = NSColor(SideNotchAccountBadgeTokens.foreground)
-                        .usingColorSpace(.sRGB)
-                else {
-                    return
+            for provider in ProviderID.allCases {
+                var ratio = 0.0
+                appearance.performAsCurrentDrawingAppearance {
+                    guard
+                        let backdrop = NSColor.windowBackgroundColor
+                            .usingColorSpace(.sRGB),
+                        let plate = NSColor(
+                            SideNotchAccountBadgeTokens.fill(for: provider)
+                        ).usingColorSpace(.sRGB),
+                        let glyph = NSColor(
+                            SideNotchAccountBadgeTokens.foreground(
+                                for: provider
+                            )
+                        ).usingColorSpace(.sRGB)
+                    else {
+                        return
+                    }
+                    ratio = Self.contrastRatio(
+                        Self.composite(plate, over: backdrop),
+                        Self.composite(glyph, over: backdrop)
+                    )
                 }
-                ratio = Self.contrastRatio(
-                    Self.composite(plate, over: backdrop),
-                    Self.composite(glyph, over: backdrop)
+                #expect(
+                    ratio >= 4.5,
+                    "\(name.rawValue) \(provider) badge contrast \(ratio)"
                 )
             }
-            #expect(ratio >= 4.5, "\(name.rawValue) badge contrast \(ratio)")
         }
     }
 
     @Test
-    func sideNotchRingsColorByRemainingRisk() throws {
+    func sideNotchRingsFollowTheProviderIconColor() throws {
         #expect(SideNotchUsageRisk.level(percentRemaining: 100) == .comfortable)
         #expect(SideNotchUsageRisk.level(percentRemaining: 50) == .comfortable)
         #expect(SideNotchUsageRisk.level(percentRemaining: 49) == .low)
@@ -214,70 +224,74 @@ struct DashboardVisualContractTests {
         #expect(SideNotchUsageRisk.level(for: .quotaRemaining(percent: 7)) == .critical)
         #expect(SideNotchUsageRisk.level(for: .count(value: 3, unit: .requests)) == nil)
 
-        let risks: [SideNotchUsageRisk] = [.comfortable, .low, .critical]
+        // Ring and bar share the badge's color, so one provider is one color.
+        for provider in ProviderID.allCases {
+            #expect(
+                (SideNotchBrandVisualTokens.lightRGB(for: provider) == nil)
+                    == (SideNotchBrandVisualTokens.darkRGB(for: provider) == nil)
+            )
+        }
+        for provider in [ProviderID.cursor, .copilot, .grok, .opencode] {
+            #expect(
+                SideNotchBrandVisualTokens.accent(for: provider)
+                    == SideNotchNeutralVisualTokens.ink
+            )
+        }
+
         for name in [NSAppearance.Name.aqua, .darkAqua] {
             let appearance = try #require(NSAppearance(named: name))
-            let expected = risks.map {
-                name == .darkAqua
-                    ? SideNotchRiskVisualTokens.darkRGB(for: $0)
-                    : SideNotchRiskVisualTokens.lightRGB(for: $0)
-            }
-            #expect(Set(expected.map { "\($0)" }).count == 3)
-            var resolved: [NSColor] = []
-            var ratios: [Double] = []
-            appearance.performAsCurrentDrawingAppearance {
-                guard
-                    let backdrop = NSColor.windowBackgroundColor
-                        .usingColorSpace(.sRGB)
-                else {
-                    return
-                }
-                for risk in risks {
+            for provider in ProviderID.allCases {
+                let expected = name == .darkAqua
+                    ? SideNotchBrandVisualTokens.darkRGB(for: provider)
+                    : SideNotchBrandVisualTokens.lightRGB(for: provider)
+                var resolved: NSColor?
+                var badge: NSColor?
+                var ratio = 0.0
+                appearance.performAsCurrentDrawingAppearance {
                     guard
+                        let backdrop = NSColor.windowBackgroundColor
+                            .usingColorSpace(.sRGB),
                         let ring = NSColor(
-                            SideNotchRiskVisualTokens.fill(for: risk)
+                            SideNotchBrandVisualTokens.accent(for: provider)
                         ).usingColorSpace(.sRGB)
                     else {
-                        continue
+                        return
                     }
-                    resolved.append(ring)
+                    resolved = ring
+                    badge = NSColor(
+                        SideNotchAccountBadgeTokens.fill(for: provider)
+                    ).usingColorSpace(.sRGB)
                     // Rings and bars are graphical objects: 3:1 against
                     // the opaque surface they are drawn on.
-                    ratios.append(
-                        Self.contrastRatio(
-                            Self.composite(backdrop, over: backdrop),
-                            Self.composite(ring, over: backdrop)
-                        )
+                    ratio = Self.contrastRatio(
+                        Self.composite(backdrop, over: backdrop),
+                        Self.composite(ring, over: backdrop)
                     )
                 }
-            }
-            #expect(resolved.count == 3)
-            for (color, rgb) in zip(resolved, expected) {
-                #expect(Int((color.redComponent * 255).rounded()) == Int(rgb.red))
-                #expect(Int((color.greenComponent * 255).rounded()) == Int(rgb.green))
-                #expect(Int((color.blueComponent * 255).rounded()) == Int(rgb.blue))
-            }
-            for ratio in ratios {
-                #expect(ratio >= 3, "\(name.rawValue) risk contrast \(ratio)")
-            }
-            // Amber and terracotta must read as two colors, not two shades.
-            let hues = resolved.map(\.hueComponent)
-            if hues.count == 3 {
-                #expect(abs(hues[1] - hues[2]) * 360 >= 20)
+                let color = try #require(resolved)
+                // Ring and badge resolve to one color for one provider.
+                let plate = try #require(badge)
+                #expect(plate.redComponent == color.redComponent)
+                #expect(plate.greenComponent == color.greenComponent)
+                #expect(plate.blueComponent == color.blueComponent)
+                if let expected {
+                    #expect(Int((color.redComponent * 255).rounded()) == Int(expected.red))
+                    #expect(Int((color.greenComponent * 255).rounded()) == Int(expected.green))
+                    #expect(Int((color.blueComponent * 255).rounded()) == Int(expected.blue))
+                }
+                #expect(
+                    ratio >= 3,
+                    "\(name.rawValue) \(provider) ring contrast \(ratio)"
+                )
             }
         }
     }
 
     @Test
-    func sideNotchDrawsEverythingButRiskInOneNeutral() {
+    func sideNotchKeepsNeutralForSurfaceAndStaleMarks() {
         #expect(EnvironmentValues().dashboardPalette == .standard)
+        #expect(EnvironmentValues().sideNotchAccentProvider == nil)
         #expect(SideNotchNeutralVisualTokens.ink == Color.primary)
-        #expect(SideNotchAccountBadgeTokens.fill == SideNotchNeutralVisualTokens.ink)
-        #expect(
-            SideNotchAccountBadgeTokens.foreground
-                == SideNotchNeutralVisualTokens.onInk
-        )
-        #expect(SideNotchAccountBadgeTokens.haloWidth > 0)
     }
 
     @Test

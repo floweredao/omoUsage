@@ -13,9 +13,10 @@
   summaries, and inward detail expansion without copying their black
   silhouette, speech-tail geometry, branding, or "used" percentage semantics.
   The October 24 correction ("colors are not unified") adopts their
-  crispness: an opaque surface, color only for risk, and one neutral for
-  everything else. The surface stays the system window background rather
-  than a forced black.
+  crispness: an opaque surface and one color per provider, taken from its
+  unchanged brand icon, so ring, bar, and badge match the icon beside them.
+  The surface stays the system window background rather than a forced
+  black.
 - OpenUsage supplies provider/authentication behavior only; its extra product
   surfaces, branding, and help links are not copied.
 - Interaction mechanics adapt beui.dev `button` and `shared-layout-bg`:
@@ -115,25 +116,24 @@ other privileged controls remain native-only.
   `SideNotchNeutralVisualTokens.surface` (the system window background), with
   semantic borders. Translucent material let the wallpaper muddy the colors;
   the opaque surface still follows light/dark and Increase Contrast.
-- The Side Notch has exactly four color roles (`DashboardPalette.sideNotch`).
-  Three are risk colors, shared by rail rings and detail bars through
-  `SideNotchUsageRisk`, not by period: green at 50% remaining or more, amber
-  below 50%, and terracotta below 20%. Each has a light and a dark value
-  (`SideNotchRiskVisualTokens`). Light: green `#2E8B57`, amber `#B06F00`,
-  terracotta `#C4513B`. Dark: green `#4CC38A`, amber `#F2A93B`, terracotta
-  `#E8735A`. Each keeps 3:1 against its surface, and amber and terracotta sit
-  at least 20 degrees of hue apart. The fourth role is one neutral ink,
-  `SideNotchNeutralVisualTokens.ink` (semantic primary), with `onInk` (window
-  background) for marks drawn on it. Ink draws the provider plates (each
-  mark or monogram in `onInk`, including Antigravity, which loses its
-  original colors), the account badges, the ring tracks (at
-  `UsageMeterVisualTokens.trackOpacity`), and the stale marker and badge.
-  Brand fills and the amber stale accent therefore never compete with the
-  risk colors. A ring is 4 pt (`ringLineWidth`), matching the 4 pt detail
-  bar. Rows without a remaining quota show the neutral track alone. The
-  popover, Settings, web, and mobile keep `DashboardPalette.standard`: brand
-  tiles, period fills, and the amber stale accent. Icons are clipped to a
-  circle only on the side-notch rail and detail card.
+- Side Notch color follows each provider's icon (`SideNotchBrandVisualTokens`).
+  The provider icons keep their brand tiles and marks. A provider's rail
+  ring, its track (at `UsageMeterVisualTokens.trackOpacity`), its account
+  badge, and its detail-card bars all use one accent, the dominant color of
+  its tile: Claude orange, Codex indigo, Antigravity blue, Devin purple, Kiro
+  violet, OpenRouter red, and Z.ai blue. Each has a light and a dark value;
+  the light value is deepened and the dark value lifted only as far as needed
+  to keep 3:1 against the window background. Black-tile brands (Cursor,
+  Copilot, Grok, OpenCode) use the neutral ink, `SideNotchNeutralVisualTokens.ink`
+  (semantic primary). Remaining-quota risk never changes the color: below
+  20% remaining (`SideNotchUsageRisk.critical`) the rail's percent caption
+  becomes a bold ink pill with `onInk` text, and the ring's accessibility
+  value adds "running low". The stale marker and badge stay ink. A ring is
+  4 pt (`ringLineWidth`), matching the 4 pt detail bar. Rows without a
+  remaining quota show the accent track alone. The popover, Settings, web,
+  and mobile keep `DashboardPalette.standard`: brand tiles, period fills, and
+  the amber stale accent. Icons are clipped to a circle only on the
+  side-notch rail and detail card.
 - The detail card is elevated by one shadow, never a bloom.
   `SideNotchDetailElevationTokens` uses `NSColor.shadowColor` at 0.12
   opacity, a 4 pt blur radius, and a 2 pt downward offset. The color is dark
@@ -154,16 +154,17 @@ other privileged controls remain native-only.
   and stayed visible for as long as content overflowed. The Settings window
   keeps the system preference.
 - The rail account badge, `SideNotchAccountBadgeTokens`, is a 9 pt semibold
-  rounded initial on a 16 pt ink plate with `onInk` text, offset 14 pt toward
-  the ring's bottom-trailing edge. A 1.5 pt surface halo (`haloWidth`)
-  separates it from the ink provider plate and the ring. Composited over the
-  surface it measures at least 4.5:1 in both appearances. The rail's checking caption reads the same full-primary
+  rounded initial on a 16 pt plate in the provider's accent, offset 14 pt
+  toward the ring's bottom-trailing edge. Its glyph is black or white,
+  whichever contrasts more with the accent, and measures at least 4.5:1 in
+  both appearances. A 1.5 pt surface halo (`haloWidth`) separates it from the
+  provider plate and the ring. The rail's checking caption reads the same full-primary
   foreground as provider metadata through `SideNotchRailVisualTokens`,
   for the same dimmed-panel reason.
 - Mobile canvas and cards use semantic system backgrounds. Mobile meters read
   `UsageMeterVisualTokens` from Core, the same eucalyptus/amber fills and
-  track opacity the popover uses; only the Side Notch swaps in its risk
-  palette.
+  track opacity the popover uses; only the Side Notch swaps in its
+  per-provider brand accents.
   The mobile provider tile is the `ProviderIcon` contract at 32 pt: the
   `ProviderVisualStyle` brand tile, the bundled Claude/Codex/Antigravity SVG
   mark decoded by `ProviderMark`, or the Core monogram. Its corner, inset,
@@ -341,7 +342,7 @@ other privileged controls remain native-only.
   Side Notch detail, web, and mobile cards follow the same rule, and the Side
   Notch rail marks the stale provider with the same symbol. On the Side Notch
   the badge and the rail symbol are drawn in the neutral ink rather than amber,
-  because amber there means low quota.
+  so they never read as a provider's accent.
 - A network or service failure within ten minutes of the last success keeps
   the retained values current, so one dropped refresh never flashes the stale
   badge. Payload and credential failures, and failures after that window, mark

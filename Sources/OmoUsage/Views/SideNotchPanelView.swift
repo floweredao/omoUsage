@@ -566,25 +566,23 @@ private struct SideNotchProviderButton: View {
         Button(action: action) {
             VStack(spacing: 4) {
                 ZStack {
-                    // Every row draws the same neutral track; only a
-                    // remaining quota adds a risk-colored arc on top.
+                    // Track, arc, and badge all take the provider's icon
+                    // color; only a remaining quota adds the arc.
                     Circle()
                         .stroke(
-                            SideNotchNeutralVisualTokens.ink.opacity(
+                            accent.opacity(
                                 UsageMeterVisualTokens.trackOpacity
                             ),
                             lineWidth: SideNotchPanelLayout.ringLineWidth
                         )
                     if
-                        let fraction = summaryMeter.metric.progressFraction,
-                        let risk = SideNotchUsageRisk.level(
-                            for: summaryMeter.metric
-                        )
+                        summaryMeter.metric.kind == .quotaRemaining,
+                        let fraction = summaryMeter.metric.progressFraction
                     {
                         Circle()
                             .trim(from: 0, to: fraction)
                             .stroke(
-                                SideNotchRiskVisualTokens.fill(for: risk),
+                                accent,
                                 style: StrokeStyle(
                                     lineWidth:
                                         SideNotchPanelLayout.ringLineWidth,
@@ -616,18 +614,22 @@ private struct SideNotchProviderButton: View {
                                 )
                             )
                             .foregroundStyle(
-                                SideNotchAccountBadgeTokens.foreground
+                                SideNotchAccountBadgeTokens.foreground(
+                                    for: usage.provider
+                                )
                             )
                             .frame(
                                 width: SideNotchAccountBadgeTokens.diameter,
                                 height: SideNotchAccountBadgeTokens.diameter
                             )
                             .background(
-                                SideNotchAccountBadgeTokens.fill,
+                                SideNotchAccountBadgeTokens.fill(
+                                    for: usage.provider
+                                ),
                                 in: Circle()
                             )
-                            // A surface-colored halo separates the ink
-                            // badge from the ink provider plate and ring.
+                            // A surface-colored halo separates the badge
+                            // from the same-colored provider plate and ring.
                             .background(
                                 Circle()
                                     .fill(SideNotchNeutralVisualTokens.surface)
@@ -661,12 +663,12 @@ private struct SideNotchProviderButton: View {
                     height: SideNotchPanelLayout.ringDiameter
                 )
 
-                Text(compactMetricValue)
-                    .font(.system(size: 10.5, weight: .semibold))
-                    .monospacedDigit()
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.72)
-                    .multilineTextAlignment(.center)
+                SideNotchRailCaption(
+                    text: compactMetricValue,
+                    isRunningLow: SideNotchUsageRisk.level(
+                        for: summaryMeter.metric
+                    ) == .critical
+                )
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(.horizontal, 6)
@@ -727,6 +729,10 @@ private struct SideNotchProviderButton: View {
         )
         .accessibilityValue(accessibilityValue)
         .accessibilityHint(localization.text(.sideNotchShowDetails))
+    }
+
+    private var accent: Color {
+        SideNotchBrandVisualTokens.accent(for: usage.provider)
     }
 
     private var compactMetricValue: String {
@@ -849,6 +855,7 @@ struct SideNotchDetailView: View {
             usesCircularProviderIcon: true
         )
         .environment(\.dashboardPalette, .sideNotch)
+        .environment(\.sideNotchAccentProvider, usage.provider)
         .padding(SideNotchPanelLayout.detailContentPadding)
         .frame(
             height: SideNotchPanelLayout.detailHeight(
@@ -887,23 +894,62 @@ enum SideNotchRailVisualTokens {
 }
 
 /// The account initial on a rail ring. An 8 pt glyph beside the 4 pt ring
-/// stroke was illegible, so the badge is an inverted plate in the neutral
-/// ink, which stays above 7:1 in both appearances, ringed by a surface halo.
+/// stroke was illegible, so the badge is a solid plate in the provider's
+/// accent with a black or white glyph, whichever keeps 4.5:1, ringed by a
+/// surface halo.
 enum SideNotchAccountBadgeTokens {
     static let fontSize: CGFloat = 9
     static let fontWeight = Font.Weight.semibold
     static let diameter: CGFloat = 16
     static let offset: CGFloat = 14
     static let haloWidth: CGFloat = 1.5
-    static let fill = SideNotchNeutralVisualTokens.ink
-    static let foreground = SideNotchNeutralVisualTokens.onInk
+
+    static func fill(for provider: ProviderID) -> Color {
+        SideNotchBrandVisualTokens.accent(for: provider)
+    }
+
+    static func foreground(for provider: ProviderID) -> Color {
+        SideNotchBrandVisualTokens.onAccent(for: provider)
+    }
 }
 
-/// The Side Notch's single neutral. Color is reserved for remaining-quota
-/// risk, so provider plates, account badges, ring tracks, and the stale
-/// marker are all drawn in one ink. The rail and card sit on an opaque
+/// A rail caption. Below 20% remaining it becomes an ink pill, so running
+/// low reads without changing the provider's color.
+private struct SideNotchRailCaption: View {
+    let text: String
+    let isRunningLow: Bool
+
+    var body: some View {
+        Text(text)
+            .font(
+                .system(
+                    size: 10.5,
+                    weight: isRunningLow ? .bold : .semibold
+                )
+            )
+            .monospacedDigit()
+            .lineLimit(2)
+            .minimumScaleFactor(0.72)
+            .multilineTextAlignment(.center)
+            .foregroundStyle(
+                isRunningLow
+                    ? SideNotchNeutralVisualTokens.onInk
+                    : SideNotchNeutralVisualTokens.ink
+            )
+            .padding(.horizontal, isRunningLow ? 5 : 0)
+            .background {
+                if isRunningLow {
+                    Capsule().fill(SideNotchNeutralVisualTokens.ink)
+                }
+            }
+    }
+}
+
+/// The Side Notch's neutral, for the surface, the stale marker, and the
+/// running-low caption pill. Provider color comes from
+/// `SideNotchBrandVisualTokens`. The rail and card sit on an opaque
 /// semantic surface rather than translucent material, so the wallpaper never
-/// muddies the risk colors; it still follows light, dark, and Increase
+/// muddies the provider colors; it still follows light, dark, and Increase
 /// Contrast because it is the system window background.
 enum SideNotchNeutralVisualTokens {
     static let ink = Color.primary
@@ -931,9 +977,9 @@ enum SideNotchAccountIdentity {
     }
 }
 
-/// How close a remaining-quota meter is to running out. The Side Notch
-/// colors its rings and detail bars by this level instead of by period, so a
-/// glance at the rail answers "which provider is about to run out".
+/// How close a remaining-quota meter is to running out. Rings and bars keep
+/// the provider's color, so a critical level is shown as an ink caption pill
+/// on the rail and spoken in the ring's accessibility value instead.
 enum SideNotchUsageRisk: Equatable, Sendable {
     case comfortable
     case low
@@ -956,39 +1002,96 @@ enum SideNotchUsageRisk: Equatable, Sendable {
     }
 }
 
-/// The Side Notch's only colors: green, amber, and terracotta by remaining
-/// quota, shared by rail rings and detail bars. Each has a light and a dark
-/// value so it stays saturated on its surface; every value keeps 3:1 against
-/// the window background of its appearance.
-enum SideNotchRiskVisualTokens {
-    static func lightRGB(for risk: SideNotchUsageRisk) -> VisualRGB {
-        switch risk {
-        case .comfortable: VisualRGB(red: 0x2E, green: 0x8B, blue: 0x57)
-        case .low: VisualRGB(red: 0xB0, green: 0x6F, blue: 0x00)
-        case .critical: VisualRGB(red: 0xC4, green: 0x51, blue: 0x3B)
+/// Each provider's Side Notch color is its icon's brand color: the rail
+/// ring, its track, the account badge, and the detail bars all use it, so one
+/// provider reads as one color. Black-tile brands (Cursor, Copilot, Grok,
+/// OpenCode) use the neutral ink. Gradient brands take their tile's
+/// dominant hue; the light value is deepened and the dark value lifted only as
+/// far as each needs to keep 3:1 against the window background.
+enum SideNotchBrandVisualTokens {
+    /// `nil` means the provider's tile is black, so it draws in ink.
+    static func lightRGB(for provider: ProviderID) -> VisualRGB? {
+        switch provider {
+        case .claude: VisualRGB(red: 0xD9, green: 0x48, blue: 0x0F)
+        case .codex: VisualRGB(red: 0x58, green: 0x56, blue: 0xD6)
+        case .antigravity: VisualRGB(red: 0x2B, green: 0x6F, blue: 0xE0)
+        case .devin: VisualRGB(red: 0xAF, green: 0x52, blue: 0xDE)
+        case .kiro: VisualRGB(red: 0x6E, green: 0x3D, blue: 0xC7)
+        case .openrouter: VisualRGB(red: 0xE8, green: 0x17, blue: 0x3F)
+        case .zai: VisualRGB(red: 0x00, green: 0x7A, blue: 0xFF)
+        case .cursor, .copilot, .grok, .opencode: nil
         }
     }
 
-    static func darkRGB(for risk: SideNotchUsageRisk) -> VisualRGB {
-        switch risk {
-        case .comfortable: VisualRGB(red: 0x4C, green: 0xC3, blue: 0x8A)
-        case .low: VisualRGB(red: 0xF2, green: 0xA9, blue: 0x3B)
-        case .critical: VisualRGB(red: 0xE8, green: 0x73, blue: 0x5A)
+    static func darkRGB(for provider: ProviderID) -> VisualRGB? {
+        switch provider {
+        case .claude: VisualRGB(red: 0xFF, green: 0x6E, blue: 0x3B)
+        case .codex: VisualRGB(red: 0x78, green: 0x77, blue: 0xDE)
+        case .antigravity: VisualRGB(red: 0x42, green: 0x85, blue: 0xF4)
+        case .devin: VisualRGB(red: 0xBF, green: 0x5A, blue: 0xF2)
+        case .kiro: VisualRGB(red: 0x93, green: 0x6E, blue: 0xD5)
+        case .openrouter: VisualRGB(red: 0xFF, green: 0x2D, blue: 0x55)
+        case .zai: VisualRGB(red: 0x0A, green: 0x84, blue: 0xFF)
+        case .cursor, .copilot, .grok, .opencode: nil
         }
     }
 
-    static func fill(for risk: SideNotchUsageRisk) -> Color {
+    static func accent(for provider: ProviderID) -> Color {
+        guard lightRGB(for: provider) != nil else {
+            return SideNotchNeutralVisualTokens.ink
+        }
+        return dynamicColor { isDark in
+            let rgb = isDark ? darkRGB(for: provider) : lightRGB(for: provider)
+            return rgb.map(nsColor) ?? .labelColor
+        }
+    }
+
+    /// Black or white, whichever reads better on the accent.
+    static func onAccent(for provider: ProviderID) -> Color {
+        guard lightRGB(for: provider) != nil else {
+            return SideNotchNeutralVisualTokens.onInk
+        }
+        return dynamicColor { isDark in
+            guard
+                let rgb = isDark
+                    ? darkRGB(for: provider) : lightRGB(for: provider)
+            else {
+                return .windowBackgroundColor
+            }
+            let luminance = relativeLuminance(rgb)
+            // Contrast with black beats contrast with white above ~0.18.
+            return (luminance + 0.05) / 0.05 >= 1.05 / (luminance + 0.05)
+                ? .black : .white
+        }
+    }
+
+    static func relativeLuminance(_ rgb: VisualRGB) -> Double {
+        func channel(_ value: UInt8) -> Double {
+            let c = Double(value) / 255
+            return c <= 0.03928 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * channel(rgb.red)
+            + 0.7152 * channel(rgb.green)
+            + 0.0722 * channel(rgb.blue)
+    }
+
+    private static func nsColor(_ rgb: VisualRGB) -> NSColor {
+        NSColor(
+            srgbRed: CGFloat(rgb.red) / 255,
+            green: CGFloat(rgb.green) / 255,
+            blue: CGFloat(rgb.blue) / 255,
+            alpha: 1
+        )
+    }
+
+    private static func dynamicColor(
+        _ resolve: @escaping @Sendable (Bool) -> NSColor
+    ) -> Color {
         Color(
             nsColor: NSColor(name: nil) { appearance in
-                let isDark = appearance.bestMatch(
-                    from: [.aqua, .darkAqua]
-                ) == .darkAqua
-                let rgb = isDark ? darkRGB(for: risk) : lightRGB(for: risk)
-                return NSColor(
-                    srgbRed: CGFloat(rgb.red) / 255,
-                    green: CGFloat(rgb.green) / 255,
-                    blue: CGFloat(rgb.blue) / 255,
-                    alpha: 1
+                resolve(
+                    appearance.bestMatch(from: [.aqua, .darkAqua])
+                        == .darkAqua
                 )
             }
         )
