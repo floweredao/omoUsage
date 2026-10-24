@@ -225,6 +225,30 @@ struct DashboardVisualContractTests {
         #expect(SideNotchUsageRisk.level(for: .quotaRemaining(percent: 7)) == .critical)
         #expect(SideNotchUsageRisk.level(for: .count(value: 3, unit: .requests)) == nil)
 
+        // Every brand accent shares one muted OKLCH lightness and chroma, so
+        // no provider reads louder than another.
+        func oklchLightnessAndChroma(_ rgb: VisualRGB) -> (Double, Double) {
+            func linear(_ value: UInt8) -> Double {
+                let c = Double(value) / 255
+                return c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4)
+            }
+            let (r, g, b) = (linear(rgb.red), linear(rgb.green), linear(rgb.blue))
+            let l = cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b)
+            let m = cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b)
+            let s = cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b)
+            let a = 1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s
+            let bb = 0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s
+            return (0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s, hypot(a, bb))
+        }
+        for provider in ProviderID.allCases {
+            guard let rgb = SideNotchBrandVisualTokens.darkRGB(for: provider) else {
+                continue
+            }
+            let (lightness, chroma) = oklchLightnessAndChroma(rgb)
+            #expect(abs(lightness - 0.60) < 0.005, "\(provider) OKLCH L \(lightness)")
+            #expect(abs(chroma - 0.12) < 0.005, "\(provider) OKLCH C \(chroma)")
+        }
+
         // Ring and bar share the badge's color, so one provider is one color.
         for provider in ProviderID.allCases {
             // One provider is one color in light and dark appearance.
@@ -282,14 +306,12 @@ struct DashboardVisualContractTests {
                     #expect(Int((color.greenComponent * 255).rounded()) == Int(expected.green))
                     #expect(Int((color.blueComponent * 255).rounded()) == Int(expected.blue))
                 }
-                // The dark values are tuned for the black surface; light
-                // appearance reuses them by design, so only dark keeps 3:1.
-                if name == .darkAqua {
-                    #expect(
-                        ratio >= 3,
-                        "\(name.rawValue) \(provider) ring contrast \(ratio)"
-                    )
-                }
+                // One shared value keeps 3:1 on both the black and the
+                // light surface.
+                #expect(
+                    ratio >= 3,
+                    "\(name.rawValue) \(provider) ring contrast \(ratio)"
+                )
             }
         }
     }
