@@ -18,7 +18,9 @@ enum SideNotchPanelLayout {
     static let footerControlHeight: CGFloat = 28
     static let detailContentPadding: CGFloat = 14
     static let detailCardMargin: CGFloat = 12
-    static let maximumPanelHeight: CGFloat = 540
+    /// 540 pt of rows, padding, and footer plus the two notch fillet bands,
+    /// so the fillets never take room from the provider rows.
+    static let maximumPanelHeight: CGFloat = 540 + notchFilletRadius * 2
     static let minimumHeight: CGFloat = 128
     static let screenMargin: CGFloat = 20
     static let railCornerRadius: CGFloat = 20
@@ -108,6 +110,28 @@ enum SideNotchPanelLayout {
             + footerHeight
     }
 
+    /// Rail height for `providerCount` rows within `limit`.
+    ///
+    /// A rail that fits keeps its natural height. A crowded rail stops on a
+    /// row boundary instead of at `limit`, so its scroll viewport may hide
+    /// whole rows but never cuts one through its ring or percent label.
+    static func fittedRailHeight(
+        providerCount: Int,
+        limit: CGFloat
+    ) -> CGFloat {
+        let natural = naturalRailHeight(providerCount: providerCount)
+        guard natural > limit else { return natural }
+        let fixedHeight = notchFilletRadius * 2
+            + verticalPadding / 2
+            + footerClearance
+            + footerHeight
+        let visibleRows = max(
+            1,
+            ((limit - fixedHeight) / providerRowHeight).rounded(.down)
+        )
+        return min(limit, fixedHeight + visibleRows * providerRowHeight)
+    }
+
     /// Height the rail view occupies inside `containerHeight`.
     ///
     /// A populated rail never stretches past its natural height, so the
@@ -120,10 +144,9 @@ enum SideNotchPanelLayout {
         containerHeight: CGFloat
     ) -> CGFloat {
         guard providerCount > 0 else { return containerHeight }
-        return min(
-            naturalRailHeight(providerCount: providerCount),
-            containerHeight,
-            maximumPanelHeight
+        return fittedRailHeight(
+            providerCount: providerCount,
+            limit: min(containerHeight, maximumPanelHeight)
         )
     }
 
@@ -206,20 +229,23 @@ enum SideNotchPanelLayout {
             )
         }
 
-        let railHeight = max(
-            minimumHeight,
-            naturalRailHeight(providerCount: providerCount)
-        )
-        let desiredHeight = max(
-            railHeight,
-            presentedContentMinimumHeight
-        )
         let maximumHeight = min(
             maximumPanelHeight,
             max(
                 minimumHeight,
                 visibleFrame.height - screenMargin * 2
             )
+        )
+        let railHeight = max(
+            minimumHeight,
+            fittedRailHeight(
+                providerCount: providerCount,
+                limit: maximumHeight
+            )
+        )
+        let desiredHeight = max(
+            railHeight,
+            presentedContentMinimumHeight
         )
         var height = min(desiredHeight, maximumHeight)
         let width: CGFloat = switch mode {

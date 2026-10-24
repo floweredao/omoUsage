@@ -275,8 +275,10 @@ other privileged controls remain native-only.
   mode: `SideNotchPanelLayout.railContentHeight` is the smaller of that
   natural height and the container, top-aligned, so a populated rail keeps
   its own height inside the taller detail container. Only the zero-provider
-  state and a rail too crowded for the panel take the full
-  container and scroll inside it. Only provider detail reserves the largest
+  state takes the full container. A rail too crowded for the panel scrolls
+  inside it and stops on a row boundary (`fittedRailHeight`), so the scroll
+  viewport may hide whole rows but never cuts a visible row through its ring
+  or percent label. Only provider detail reserves the largest
   visible provider detail height plus 12 pt bottom clearance. Each detail
   card is vertically centered on its own rail row: the card's center sits on
   the measured center of the selected row, but its top edge never rises above
@@ -284,7 +286,7 @@ other privileged controls remain native-only.
   downward. The bottom clearance preserves room for the downward shadow. The
   panel reserves enough height for every row's centered card, taking that
   extra height only from space below the rail, so the rail never moves to
-  make room; that reservation may extend past the 540 pt rail maximum down
+  make room; that reservation may extend past the 556 pt rail maximum down
   to the screen margin. Where the screen
   edge leaves too little space, the card clamps upward. The panel resizes
   once on entering or leaving detail and never while moving between
@@ -292,7 +294,8 @@ other privileged controls remain native-only.
   screen edge, and every SwiftUI container uses top-trailing alignment while
   AppKit resizes, so provider rows never shift under the pointer. Both
   states keep the same right edge, and the rail stays within the 128 pt
-  minimum and 540 pt maximum height.
+  minimum and 556 pt maximum height: 540 pt of rows, padding, and footer
+  plus the two fillet bands, so the fillets never take room from the rows.
 - A menu-bar (programmatic) reveal and an edge-hover reveal size the rail
   identically: the revealed frame depends only on the provider count and the
   visible frame, and the anchor changes only its vertical position. A frame
