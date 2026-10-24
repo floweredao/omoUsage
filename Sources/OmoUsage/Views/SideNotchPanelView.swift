@@ -464,8 +464,9 @@ private struct SideNotchRailView: View {
             }
         }
         .padding(.vertical, SideNotchPanelLayout.notchFilletRadius)
+        .environment(\.dashboardPalette, .sideNotch)
         .background(
-            .regularMaterial,
+            SideNotchNeutralVisualTokens.surface,
             in: SideNotchRailShape(
                 cornerRadius: SideNotchPanelLayout.railCornerRadius,
                 filletRadius: SideNotchPanelLayout.notchFilletRadius
@@ -565,37 +566,32 @@ private struct SideNotchProviderButton: View {
         Button(action: action) {
             VStack(spacing: 4) {
                 ZStack {
-                    switch summaryMeter.metric.kind {
-                    case .quotaRemaining:
+                    // Every row draws the same neutral track; only a
+                    // remaining quota adds a risk-colored arc on top.
+                    Circle()
+                        .stroke(
+                            SideNotchNeutralVisualTokens.ink.opacity(
+                                UsageMeterVisualTokens.trackOpacity
+                            ),
+                            lineWidth: SideNotchPanelLayout.ringLineWidth
+                        )
+                    if
+                        let fraction = summaryMeter.metric.progressFraction,
+                        let risk = SideNotchUsageRisk.level(
+                            for: summaryMeter.metric
+                        )
+                    {
                         Circle()
+                            .trim(from: 0, to: fraction)
                             .stroke(
-                                Color.primary.opacity(
-                                    UsageMeterVisualTokens.trackOpacity
-                                ),
-                                lineWidth: 4
-                            )
-                        if
-                            let fraction = summaryMeter.metric.progressFraction,
-                            let risk = SideNotchUsageRisk.level(
-                                for: summaryMeter.metric
-                            )
-                        {
-                            Circle()
-                                .trim(from: 0, to: fraction)
-                                .stroke(
-                                    SideNotchRiskVisualTokens.fillRGB(
-                                        for: risk
-                                    ).color,
-                                    style: StrokeStyle(
-                                        lineWidth: 4,
-                                        lineCap: .round
-                                    )
+                                SideNotchRiskVisualTokens.fill(for: risk),
+                                style: StrokeStyle(
+                                    lineWidth:
+                                        SideNotchPanelLayout.ringLineWidth,
+                                    lineCap: .round
                                 )
-                                .rotationEffect(.degrees(-90))
-                        }
-                    case .spend, .credit, .count, .informational:
-                        Circle()
-                            .fill(Color.primary.opacity(0.06))
+                            )
+                            .rotationEffect(.degrees(-90))
                     }
 
                     ProviderIcon(provider: usage.provider)
@@ -630,6 +626,15 @@ private struct SideNotchProviderButton: View {
                                 SideNotchAccountBadgeTokens.fill,
                                 in: Circle()
                             )
+                            // A surface-colored halo separates the ink
+                            // badge from the ink provider plate and ring.
+                            .background(
+                                Circle()
+                                    .fill(SideNotchNeutralVisualTokens.surface)
+                                    .padding(
+                                        -SideNotchAccountBadgeTokens.haloWidth
+                                    )
+                            )
                             .offset(
                                 x: SideNotchAccountBadgeTokens.offset,
                                 y: SideNotchAccountBadgeTokens.offset
@@ -643,10 +648,11 @@ private struct SideNotchProviderButton: View {
                             systemName: StaleUsageVisualTokens.symbolName
                         )
                             .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(
-                                StaleUsageVisualTokens.accent.color
+                            .foregroundStyle(SideNotchNeutralVisualTokens.ink)
+                            .background(
+                                SideNotchNeutralVisualTokens.surface,
+                                in: Circle()
                             )
-                            .background(.regularMaterial, in: Circle())
                             .offset(x: 14, y: -14)
                     }
                 }
@@ -842,7 +848,7 @@ struct SideNotchDetailView: View {
             showsAccountLabel: showsAccountLabel,
             usesCircularProviderIcon: true
         )
-        .environment(\.usageMeterFillStyle, .risk)
+        .environment(\.dashboardPalette, .sideNotch)
         .padding(SideNotchPanelLayout.detailContentPadding)
         .frame(
             height: SideNotchPanelLayout.detailHeight(
@@ -851,7 +857,7 @@ struct SideNotchDetailView: View {
                 language: localization.language
             )
         )
-        .background(.regularMaterial, in: bubble)
+        .background(SideNotchNeutralVisualTokens.surface, in: bubble)
         .overlay {
             bubble.stroke(
                 Color(nsColor: .separatorColor),
@@ -880,17 +886,29 @@ enum SideNotchRailVisualTokens {
     }
 }
 
-/// The account initial on a rail ring. An 8 pt glyph over translucent
-/// material was illegible beside the 4 pt ring stroke, so the badge is an
-/// inverted plate: full primary behind window-background text, which stays
-/// above 7:1 in both appearances and on the dimmed panel.
+/// The account initial on a rail ring. An 8 pt glyph beside the 4 pt ring
+/// stroke was illegible, so the badge is an inverted plate in the neutral
+/// ink, which stays above 7:1 in both appearances, ringed by a surface halo.
 enum SideNotchAccountBadgeTokens {
     static let fontSize: CGFloat = 9
     static let fontWeight = Font.Weight.semibold
     static let diameter: CGFloat = 16
     static let offset: CGFloat = 14
-    static let fill = Color.primary
-    static let foreground = Color(nsColor: .windowBackgroundColor)
+    static let haloWidth: CGFloat = 1.5
+    static let fill = SideNotchNeutralVisualTokens.ink
+    static let foreground = SideNotchNeutralVisualTokens.onInk
+}
+
+/// The Side Notch's single neutral. Color is reserved for remaining-quota
+/// risk, so provider plates, account badges, ring tracks, and the stale
+/// marker are all drawn in one ink. The rail and card sit on an opaque
+/// semantic surface rather than translucent material, so the wallpaper never
+/// muddies the risk colors; it still follows light, dark, and Increase
+/// Contrast because it is the system window background.
+enum SideNotchNeutralVisualTokens {
+    static let ink = Color.primary
+    static let onInk = Color(nsColor: .windowBackgroundColor)
+    static let surface = Color(nsColor: .windowBackgroundColor)
 }
 
 enum SideNotchAccountIdentity {
@@ -938,18 +956,42 @@ enum SideNotchUsageRisk: Equatable, Sendable {
     }
 }
 
-/// Risk fills reuse the eucalyptus and amber meter palette and add one
-/// terracotta for critical, so no second palette appears beside them. Each
-/// stays above 3:1 against the window background in both appearances.
+/// The Side Notch's only colors: green, amber, and terracotta by remaining
+/// quota, shared by rail rings and detail bars. Each has a light and a dark
+/// value so it stays saturated on its surface; every value keeps 3:1 against
+/// the window background of its appearance.
 enum SideNotchRiskVisualTokens {
-    static let criticalFill = VisualRGB(red: 0xC4, green: 0x51, blue: 0x3B)
-
-    static func fillRGB(for risk: SideNotchUsageRisk) -> VisualRGB {
+    static func lightRGB(for risk: SideNotchUsageRisk) -> VisualRGB {
         switch risk {
-        case .comfortable: UsageMeterVisualTokens.standardFill
-        case .low: UsageMeterVisualTokens.extraFill
-        case .critical: criticalFill
+        case .comfortable: VisualRGB(red: 0x2E, green: 0x8B, blue: 0x57)
+        case .low: VisualRGB(red: 0xB0, green: 0x6F, blue: 0x00)
+        case .critical: VisualRGB(red: 0xC4, green: 0x51, blue: 0x3B)
         }
+    }
+
+    static func darkRGB(for risk: SideNotchUsageRisk) -> VisualRGB {
+        switch risk {
+        case .comfortable: VisualRGB(red: 0x4C, green: 0xC3, blue: 0x8A)
+        case .low: VisualRGB(red: 0xF2, green: 0xA9, blue: 0x3B)
+        case .critical: VisualRGB(red: 0xE8, green: 0x73, blue: 0x5A)
+        }
+    }
+
+    static func fill(for risk: SideNotchUsageRisk) -> Color {
+        Color(
+            nsColor: NSColor(name: nil) { appearance in
+                let isDark = appearance.bestMatch(
+                    from: [.aqua, .darkAqua]
+                ) == .darkAqua
+                let rgb = isDark ? darkRGB(for: risk) : lightRGB(for: risk)
+                return NSColor(
+                    srgbRed: CGFloat(rgb.red) / 255,
+                    green: CGFloat(rgb.green) / 255,
+                    blue: CGFloat(rgb.blue) / 255,
+                    alpha: 1
+                )
+            }
+        )
     }
 }
 

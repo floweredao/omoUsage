@@ -29,6 +29,8 @@ enum SideNotchPanelLayout {
     /// rather than a floating tab. Each fillet takes its own vertical band.
     static let notchFilletRadius: CGFloat = 8
     static let ringDiameter: CGFloat = 36
+    /// Matches the 4 pt detail-card meter bar, so ring and bar read alike.
+    static let ringLineWidth: CGFloat = 4
     static let providerIconSize: CGFloat = 22
     static let coordinateSpaceName = "SideNotchPanel"
 

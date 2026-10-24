@@ -12,6 +12,10 @@
   presentation. They contribute edge glanceability, circular remaining-usage
   summaries, and inward detail expansion without copying their black
   silhouette, speech-tail geometry, branding, or "used" percentage semantics.
+  The October 24 correction ("colors are not unified") adopts their
+  crispness: an opaque surface, color only for risk, and one neutral for
+  everything else. The surface stays the system window background rather
+  than a forced black.
 - OpenUsage supplies provider/authentication behavior only; its extra product
   surfaces, branding, and help links are not copied.
 - Interaction mechanics adapt beui.dev `button` and `shared-layout-bg`:
@@ -107,16 +111,29 @@ other privileged controls remain native-only.
   Symbol drag handle, provider name, optional alias, and the native move
   buttons. They introduce no new color, material, radius, or typography
   token; the dragged row dims to 50% while its neighbors preview the order.
-- The side-notch rail and detail card use regular system material and
-  semantic borders, so they follow light/dark, Reduce Transparency, and
-  Increase Contrast like any native surface. Side-notch rings and detail bars
-  color by remaining-quota risk (`SideNotchUsageRisk`), not by period:
-  eucalyptus at 50% or more, amber below 50%, and terracotta `#C4513B`
-  (`SideNotchRiskVisualTokens.criticalFill`) below 20%. The popover, web,
-  and mobile keep the period palette. Provider branding
-  remains inside the existing icon artwork, clipped to a circle only on the
-  side-notch rail and detail card; popover, Settings, web, and mobile icons keep
-  their existing shape.
+- The side-notch rail and detail card sit on an opaque semantic surface,
+  `SideNotchNeutralVisualTokens.surface` (the system window background), with
+  semantic borders. Translucent material let the wallpaper muddy the colors;
+  the opaque surface still follows light/dark and Increase Contrast.
+- The Side Notch has exactly four color roles (`DashboardPalette.sideNotch`).
+  Three are risk colors, shared by rail rings and detail bars through
+  `SideNotchUsageRisk`, not by period: green at 50% remaining or more, amber
+  below 50%, and terracotta below 20%. Each has a light and a dark value
+  (`SideNotchRiskVisualTokens`). Light: green `#2E8B57`, amber `#B06F00`,
+  terracotta `#C4513B`. Dark: green `#4CC38A`, amber `#F2A93B`, terracotta
+  `#E8735A`. Each keeps 3:1 against its surface, and amber and terracotta sit
+  at least 20 degrees of hue apart. The fourth role is one neutral ink,
+  `SideNotchNeutralVisualTokens.ink` (semantic primary), with `onInk` (window
+  background) for marks drawn on it. Ink draws the provider plates (each
+  mark or monogram in `onInk`, including Antigravity, which loses its
+  original colors), the account badges, the ring tracks (at
+  `UsageMeterVisualTokens.trackOpacity`), and the stale marker and badge.
+  Brand fills and the amber stale accent therefore never compete with the
+  risk colors. A ring is 4 pt (`ringLineWidth`), matching the 4 pt detail
+  bar. Rows without a remaining quota show the neutral track alone. The
+  popover, Settings, web, and mobile keep `DashboardPalette.standard`: brand
+  tiles, period fills, and the amber stale accent. Icons are clipped to a
+  circle only on the side-notch rail and detail card.
 - The detail card is elevated by one shadow, never a bloom.
   `SideNotchDetailElevationTokens` uses `NSColor.shadowColor` at 0.12
   opacity, a 4 pt blur radius, and a 2 pt downward offset. The color is dark
@@ -137,15 +154,16 @@ other privileged controls remain native-only.
   and stayed visible for as long as content overflowed. The Settings window
   keeps the system preference.
 - The rail account badge, `SideNotchAccountBadgeTokens`, is a 9 pt semibold
-  rounded initial on a 16 pt inverted plate: full primary behind
-  window-background text, offset 14 pt toward the ring's bottom-trailing
-  edge. Composited over the panel it measures at least 4.5:1 in both
-  appearances. The rail's checking caption reads the same full-primary
+  rounded initial on a 16 pt ink plate with `onInk` text, offset 14 pt toward
+  the ring's bottom-trailing edge. A 1.5 pt surface halo (`haloWidth`)
+  separates it from the ink provider plate and the ring. Composited over the
+  surface it measures at least 4.5:1 in both appearances. The rail's checking caption reads the same full-primary
   foreground as provider metadata through `SideNotchRailVisualTokens`,
   for the same dimmed-panel reason.
 - Mobile canvas and cards use semantic system backgrounds. Mobile meters read
   `UsageMeterVisualTokens` from Core, the same eucalyptus/amber fills and
-  track opacity the popover and Side Notch use, so no second palette exists.
+  track opacity the popover uses; only the Side Notch swaps in its risk
+  palette.
   The mobile provider tile is the `ProviderIcon` contract at 32 pt: the
   `ProviderVisualStyle` brand tile, the bundled Claude/Codex/Antigravity SVG
   mark decoded by `ProviderMark`, or the Core monogram. Its corner, inset,
@@ -321,7 +339,9 @@ other privileged controls remain native-only.
   the newer failed attempt time on its own line. The success time never advances
   on a failed attempt, while the footer's aggregate attempt time does. Popover,
   Side Notch detail, web, and mobile cards follow the same rule, and the Side
-  Notch rail marks the stale provider with the same symbol.
+  Notch rail marks the stale provider with the same symbol. On the Side Notch
+  the badge and the rail symbol are drawn in the neutral ink rather than amber,
+  because amber there means low quota.
 - A network or service failure within ten minutes of the last success keeps
   the retained values current, so one dropped refresh never flashes the stale
   badge. Payload and credential failures, and failures after that window, mark
