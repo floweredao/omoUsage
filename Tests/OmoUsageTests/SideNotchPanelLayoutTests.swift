@@ -624,6 +624,65 @@ struct SideNotchPanelLayoutTests {
         )
     }
 
+    @Test(arguments: [1, 7, 8, 9, 12])
+    func everyVisibleRailRowShowsItsRingAndPercent(providerCount: Int) {
+        let visibleFrames = [
+            NSRect(x: 0, y: 25, width: 1_920, height: 1_055),
+            NSRect(x: 0, y: 25, width: 1_280, height: 620),
+            NSRect(x: 0, y: 25, width: 1_280, height: 420)
+        ]
+        for visibleFrame in visibleFrames {
+            let container = SideNotchPanelLayout.frame(
+                in: visibleFrame,
+                providerCount: providerCount,
+                mode: .revealed
+            ).height
+            let railHeight = SideNotchPanelLayout.railContentHeight(
+                providerCount: providerCount,
+                containerHeight: container
+            )
+            let viewportHeight = railHeight
+                - SideNotchPanelLayout.notchFilletRadius * 2
+                - SideNotchPanelLayout.footerClearance
+                - SideNotchPanelLayout.footerHeight
+            // The scroll viewport may hide whole rows, but never cut one,
+            // so every row it shows keeps its percent label under the ring.
+            for index in 0..<providerCount {
+                let rowTop = SideNotchPanelLayout.verticalPadding / 2
+                    + CGFloat(index) * SideNotchPanelLayout.providerRowHeight
+                let rowBottom =
+                    rowTop + SideNotchPanelLayout.providerRowHeight
+                #expect(
+                    !(rowTop < viewportHeight && rowBottom > viewportHeight),
+                    "row \(index) of \(providerCount) is cut at \(viewportHeight) pt in a \(visibleFrame.height) pt screen"
+                )
+            }
+        }
+    }
+
+    @Test
+    func eightProviderRailShowsEveryRowOnALargeScreen() {
+        let visibleFrame = NSRect(x: 0, y: 25, width: 1_920, height: 1_055)
+        let frame = SideNotchPanelLayout.frame(
+            in: visibleFrame,
+            providerCount: 8,
+            mode: .revealed
+        )
+        let viewportHeight = SideNotchPanelLayout.railContentHeight(
+            providerCount: 8,
+            containerHeight: frame.height
+        )
+            - SideNotchPanelLayout.notchFilletRadius * 2
+            - SideNotchPanelLayout.footerClearance
+            - SideNotchPanelLayout.footerHeight
+
+        #expect(
+            SideNotchPanelLayout.verticalPadding / 2
+                + 8 * SideNotchPanelLayout.providerRowHeight
+                <= viewportHeight
+        )
+    }
+
     @Test
     func detailReservesRoomToAlignEachCardWithItsRow() {
         let providers = capturedTwoProviderUsage()
@@ -726,7 +785,13 @@ struct SideNotchPanelLayoutTests {
             + SideNotchPanelLayout.providerRowHeight / 2
         let tallHeight = SideNotchPanelLayout.detailHeight(for: tall)
 
-        #expect(revealed.height == SideNotchPanelLayout.maximumPanelHeight)
+        #expect(
+            revealed.height
+                == SideNotchPanelLayout.fittedRailHeight(
+                    providerCount: providers.count,
+                    limit: SideNotchPanelLayout.maximumPanelHeight
+                )
+        )
         #expect(detail.maxY == revealed.maxY)
         #expect(
             SideNotchPanelLayout.detailTop(
@@ -818,11 +883,9 @@ struct SideNotchPanelLayoutTests {
         #expect(programmatic.maxX == hover.maxX)
         #expect(
             programmatic.height
-                == min(
-                    SideNotchPanelLayout.maximumPanelHeight,
-                    SideNotchPanelLayout.naturalRailHeight(
-                        providerCount: providerCount
-                    )
+                == SideNotchPanelLayout.fittedRailHeight(
+                    providerCount: providerCount,
+                    limit: SideNotchPanelLayout.maximumPanelHeight
                 )
         )
         #expect(programmatic.height > SideNotchPanelLayout.minimumHeight)
@@ -1188,11 +1251,13 @@ struct SideNotchPanelLayoutTests {
         )
 
         #expect(rail.width == 56)
-        #expect(rail.height <= 540)
+        #expect(rail.height <= SideNotchPanelLayout.maximumPanelHeight)
         #expect(detail.width == 344)
         #expect(detail.maxX == rail.maxX)
         #expect(SideNotchPanelLayout.providerRowHeight == 58)
-        #expect(crowdedRail.height <= 540)
+        #expect(
+            crowdedRail.height <= SideNotchPanelLayout.maximumPanelHeight
+        )
     }
 
     @Test
@@ -1283,7 +1348,13 @@ struct SideNotchPanelLayoutTests {
 
         #expect(frame.minY >= visibleFrame.minY + 20)
         #expect(frame.maxY <= visibleFrame.maxY - 20)
-        #expect(frame.height == 540)
+        #expect(
+            frame.height
+                == SideNotchPanelLayout.fittedRailHeight(
+                    providerCount: ProviderID.allCases.count,
+                    limit: SideNotchPanelLayout.maximumPanelHeight
+                )
+        )
     }
 
     @Test
