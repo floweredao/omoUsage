@@ -1007,31 +1007,33 @@ enum SideNotchUsageRisk: Equatable, Sendable {
 /// provider reads as one color. Black-tile brands (Cursor, Copilot, Grok,
 /// OpenCode) use the neutral ink. Gradient brands take their tile's
 /// dominant hue; the light value is deepened and the dark value lifted only as
-/// far as each needs to keep 3:1 against the window background.
+/// far as each needs to keep 3:1 against the window background. Each value is
+/// muted to 80% of its brand chroma (OKLCH, same hue and lightness) so the rail
+/// reads calmer than the icon tile beside it.
 enum SideNotchBrandVisualTokens {
     /// `nil` means the provider's tile is black, so it draws in ink.
     static func lightRGB(for provider: ProviderID) -> VisualRGB? {
         switch provider {
-        case .claude: VisualRGB(red: 0xD9, green: 0x48, blue: 0x0F)
-        case .codex: VisualRGB(red: 0x58, green: 0x56, blue: 0xD6)
-        case .antigravity: VisualRGB(red: 0x2B, green: 0x6F, blue: 0xE0)
-        case .devin: VisualRGB(red: 0xAF, green: 0x52, blue: 0xDE)
-        case .kiro: VisualRGB(red: 0x6E, green: 0x3D, blue: 0xC7)
-        case .openrouter: VisualRGB(red: 0xE8, green: 0x17, blue: 0x3F)
-        case .zai: VisualRGB(red: 0x00, green: 0x7A, blue: 0xFF)
+        case .claude: VisualRGB(red: 0xCA, green: 0x59, blue: 0x35)
+        case .codex: VisualRGB(red: 0x5A, green: 0x5E, blue: 0xC1)
+        case .antigravity: VisualRGB(red: 0x3E, green: 0x73, blue: 0xCB)
+        case .devin: VisualRGB(red: 0xA7, green: 0x61, blue: 0xCD)
+        case .kiro: VisualRGB(red: 0x6B, green: 0x4A, blue: 0xB4)
+        case .openrouter: VisualRGB(red: 0xD6, green: 0x42, blue: 0x4E)
+        case .zai: VisualRGB(red: 0x33, green: 0x7F, blue: 0xE6)
         case .cursor, .copilot, .grok, .opencode: nil
         }
     }
 
     static func darkRGB(for provider: ProviderID) -> VisualRGB? {
         switch provider {
-        case .claude: VisualRGB(red: 0xFF, green: 0x6E, blue: 0x3B)
-        case .codex: VisualRGB(red: 0x78, green: 0x77, blue: 0xDE)
-        case .antigravity: VisualRGB(red: 0x42, green: 0x85, blue: 0xF4)
-        case .devin: VisualRGB(red: 0xBF, green: 0x5A, blue: 0xF2)
-        case .kiro: VisualRGB(red: 0x93, green: 0x6E, blue: 0xD5)
-        case .openrouter: VisualRGB(red: 0xFF, green: 0x2D, blue: 0x55)
-        case .zai: VisualRGB(red: 0x0A, green: 0x84, blue: 0xFF)
+        case .claude: VisualRGB(red: 0xEF, green: 0x7C, blue: 0x56)
+        case .codex: VisualRGB(red: 0x7A, green: 0x7B, blue: 0xCD)
+        case .antigravity: VisualRGB(red: 0x53, green: 0x88, blue: 0xDF)
+        case .devin: VisualRGB(red: 0xB6, green: 0x6A, blue: 0xDF)
+        case .kiro: VisualRGB(red: 0x90, green: 0x74, blue: 0xC6)
+        case .openrouter: VisualRGB(red: 0xEC, green: 0x51, blue: 0x62)
+        case .zai: VisualRGB(red: 0x39, green: 0x87, blue: 0xE8)
         case .cursor, .copilot, .grok, .opencode: nil
         }
     }

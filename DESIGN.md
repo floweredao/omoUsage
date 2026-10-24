@@ -123,7 +123,9 @@ other privileged controls remain native-only.
   its tile: Claude orange, Codex indigo, Antigravity blue, Devin purple, Kiro
   violet, OpenRouter red, and Z.ai blue. Each has a light and a dark value;
   the light value is deepened and the dark value lifted only as far as needed
-  to keep 3:1 against the window background. Black-tile brands (Cursor,
+  to keep 3:1 against the window background. Both values are muted to 80% of
+  the brand chroma in OKLCH, keeping hue and lightness, so the rail reads
+  calmer than the full-saturation icon tile beside it. Black-tile brands (Cursor,
   Copilot, Grok, OpenCode) use the neutral ink, `SideNotchNeutralVisualTokens.ink`
   (semantic primary). Remaining-quota risk never changes the color: below
   20% remaining (`SideNotchUsageRisk.critical`) the rail's percent caption
