@@ -27,11 +27,11 @@ and runs without an account or server of its own. The app is called
   windows, credits, spend, and when each one resets. The scroll bar appears
   only while you scroll.
 - **Side Notch.** An optional notch that grows out of the screen edge, with a
-  remaining-usage ring per account that stays green, turns amber below half,
-  and turns terracotta below a fifth. Rings and bars share that one rule, and
-  everything else is drawn in a single neutral, so color only ever means
-  "running low". Point at a ring and its details open in a speech bubble
-  beside it.
+  remaining-usage ring per account. Each ring, its account badge, and its
+  detail bars take the color of the provider's own icon, so every provider
+  reads as one color. Below a fifth remaining, the percentage under the ring
+  turns into a dark pill. Point at a ring and its details open in a speech
+  bubble beside it.
 - **Native Settings.** Five panes (General, Display, Web Access, Order, Auth)
   in the standard macOS grouped style. Short panes fit their content; long
   panes scroll inside the window.
@@ -58,7 +58,7 @@ and runs without an account or server of its own. The app is called
     <td align="center" width="50%">
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="Docs/images/side-notch-dark.png">
-        <img src="Docs/images/side-notch-light.png" width="344" alt="Side Notch rail with risk-colored usage rings and a speech-bubble card for a Claude Code account">
+        <img src="Docs/images/side-notch-light.png" width="344" alt="Side Notch rail with usage rings in each provider's icon color and a speech-bubble card for a Claude Code account">
       </picture>
       <br><sub>Side Notch</sub>
     </td>
