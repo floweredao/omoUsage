@@ -112,20 +112,23 @@ other privileged controls remain native-only.
   Symbol drag handle, provider name, optional alias, and the native move
   buttons. They introduce no new color, material, radius, or typography
   token; the dragged row dims to 50% while its neighbors preview the order.
-- The side-notch rail and detail card sit on an opaque semantic surface,
-  `SideNotchNeutralVisualTokens.surface` (the system window background), with
-  semantic borders. Translucent material let the wallpaper muddy the colors;
-  the opaque surface still follows light/dark and Increase Contrast.
+- The side-notch rail and detail card sit on an opaque surface,
+  `SideNotchNeutralVisualTokens.surface`, with semantic borders: the system
+  window background in light appearance and black (#000) in dark, so the
+  dark rail reads as the hardware notch it grows out of. Translucent material
+  let the wallpaper muddy the colors.
 - Side Notch color follows each provider's icon (`SideNotchBrandVisualTokens`).
   The provider icons keep their brand tiles and marks. A provider's rail
   ring, its track (at `UsageMeterVisualTokens.trackOpacity`), its account
   badge, and its detail-card bars all use one accent, the dominant color of
   its tile: Claude orange, Codex indigo, Antigravity blue, Devin purple, Kiro
   violet, OpenRouter red, and Z.ai blue. Each has a light and a dark value;
-  the light value is deepened and the dark value lifted only as far as needed
-  to keep 3:1 against the window background. Both values are muted to 80% of
-  the brand chroma in OKLCH, keeping hue and lightness, so the rail reads
-  calmer than the full-saturation icon tile beside it. Black-tile brands (Cursor,
+  every value keeps its brand hue at one shared OKLCH strength, lightness
+  0.64 and chroma 0.20 (the vivid red ring of the reference Claude Usage card),
+  so all providers read equally strong. A light value is darkened only as far
+  as needed to keep 3.2:1 against the light surface, and a hue sRGB cannot
+  show at that chroma loses only the excess chroma. Dark values measure at
+  least 5.6:1 against the black surface. Black-tile brands (Cursor,
   Copilot, Grok, OpenCode) use the neutral ink, `SideNotchNeutralVisualTokens.ink`
   (semantic primary). Remaining-quota risk never changes the color: below
   20% remaining (`SideNotchUsageRisk.critical`) the rail's percent caption
@@ -148,6 +151,17 @@ other privileged controls remain native-only.
   edges flow into the screen edge, so it reads as grown out of the display.
   Each fillet takes its own 8 pt band above the first row and below the
   footer. Its ring track reuses `UsageMeterVisualTokens.trackOpacity`.
+- The rail keeps one optical gap, 11-12 pt of empty surface, at its top edge,
+  above and below the footer divider, and at its bottom edge (HIG Layout:
+  consistent spacing, related items grouped; StyleGallery `stack`: one
+  vertical rhythm). `listTopPadding` is 10 pt and `listBottomPadding` 6 pt
+  because a row's ring starts about 1 pt below the row top while its caption
+  ends about 6 pt above the row bottom. `footerClearance` is 4 pt, which with
+  the 7 pt the refresh glyph leaves in its 28 pt slot makes the gap below the
+  divider. Refresh and More sit in two touching 28 pt slots
+  (`footerHeight` 56 pt), and the centered ellipsis leaves the bottom gap.
+  A rail that must scroll drops the bottom list padding and stops on a row
+  boundary, so no partial row peeks in above the divider.
 - The two compact scroll regions, the popover body and the side-notch rail,
   pin the overlay scroller style through `DashboardScrollerPolicy` regardless
   of the system Show scroll bars preference. The scroller reserves no width,

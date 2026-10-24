@@ -648,7 +648,7 @@ struct SideNotchPanelLayoutTests {
             // The scroll viewport may hide whole rows, but never cut one,
             // so every row it shows keeps its percent label under the ring.
             for index in 0..<providerCount {
-                let rowTop = SideNotchPanelLayout.verticalPadding / 2
+                let rowTop = SideNotchPanelLayout.listTopPadding
                     + CGFloat(index) * SideNotchPanelLayout.providerRowHeight
                 let rowBottom =
                     rowTop + SideNotchPanelLayout.providerRowHeight
@@ -677,7 +677,7 @@ struct SideNotchPanelLayoutTests {
             - SideNotchPanelLayout.footerHeight
 
         #expect(
-            SideNotchPanelLayout.verticalPadding / 2
+            SideNotchPanelLayout.listTopPadding
                 + 8 * SideNotchPanelLayout.providerRowHeight
                 <= viewportHeight
         )
@@ -707,7 +707,7 @@ struct SideNotchPanelLayoutTests {
 
         for (index, usage) in providers.enumerated() {
             let rowMidY = SideNotchPanelLayout.notchFilletRadius
-                + SideNotchPanelLayout.verticalPadding / 2
+                + SideNotchPanelLayout.listTopPadding
                 + CGFloat(index) * SideNotchPanelLayout.providerRowHeight
                 + SideNotchPanelLayout.providerRowHeight / 2
             let cardHeight = SideNotchPanelLayout.detailHeight(for: usage)
@@ -779,7 +779,7 @@ struct SideNotchPanelLayoutTests {
             anchorY: 780
         )
         let lastRowMidY = SideNotchPanelLayout.notchFilletRadius
-                + SideNotchPanelLayout.verticalPadding / 2
+                + SideNotchPanelLayout.listTopPadding
             + CGFloat(providers.count - 1)
                 * SideNotchPanelLayout.providerRowHeight
             + SideNotchPanelLayout.providerRowHeight / 2
@@ -1320,7 +1320,7 @@ struct SideNotchPanelLayoutTests {
             isExpanded: false
         )
 
-        #expect(SideNotchPanelLayout.footerClearance >= 8)
+        #expect(SideNotchPanelLayout.footerClearance > 0)
         #expect(
             frame.height
                 == SideNotchPanelLayout.notchFilletRadius * 2
