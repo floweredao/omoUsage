@@ -22,12 +22,17 @@ enum SideNotchPanelLayout {
     static let minimumHeight: CGFloat = 128
     static let screenMargin: CGFloat = 20
     static let railCornerRadius: CGFloat = 20
+    /// Concave fillets where the rail's top and bottom edges flow into the
+    /// screen edge, so the rail reads as a notch grown out of the display
+    /// rather than a floating tab. Each fillet takes its own vertical band.
+    static let notchFilletRadius: CGFloat = 8
     static let ringDiameter: CGFloat = 36
     static let providerIconSize: CGFloat = 22
     static let coordinateSpaceName = "SideNotchPanel"
 
     static func providerRowMidY(at index: Int) -> CGFloat {
-        verticalPadding / 2
+        notchFilletRadius
+            + verticalPadding / 2
             + CGFloat(index) * providerRowHeight
             + providerRowHeight / 2
     }
@@ -93,10 +98,11 @@ enum SideNotchPanelLayout {
             + detailCardMargin
     }
 
-    /// Rail height for `providerCount` rows: padding, rows, footer
-    /// clearance, and footer.
+    /// Rail height for `providerCount` rows: notch fillets, padding, rows,
+    /// footer clearance, and footer.
     static func naturalRailHeight(providerCount: Int) -> CGFloat {
-        verticalPadding
+        notchFilletRadius * 2
+            + verticalPadding
             + CGFloat(providerCount) * providerRowHeight
             + footerClearance
             + footerHeight

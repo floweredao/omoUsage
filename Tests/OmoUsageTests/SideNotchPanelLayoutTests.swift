@@ -344,6 +344,14 @@ struct SideNotchPanelLayoutTests {
                             title: "Fable weekly",
                             period: .week,
                             percentRemaining: 28
+                        ),
+                        // Keeps this card taller than the notch rail, whose
+                        // fillet bands add height to a one-provider rail.
+                        UsageMeter(
+                            id: "claude.opus",
+                            title: "Opus weekly",
+                            period: .week,
+                            percentRemaining: 61
                         )
                     ],
                     creditText: nil
@@ -374,7 +382,8 @@ struct SideNotchPanelLayoutTests {
 
         #expect(
             revealed.height
-                == SideNotchPanelLayout.verticalPadding
+                == SideNotchPanelLayout.notchFilletRadius * 2
+                    + SideNotchPanelLayout.verticalPadding
                     + SideNotchPanelLayout.providerRowHeight
                     + SideNotchPanelLayout.footerClearance
                     + SideNotchPanelLayout.footerHeight
@@ -492,7 +501,8 @@ struct SideNotchPanelLayoutTests {
         let pointerAnchorY: CGFloat = 780
 
         let naturalRailHeight =
-            SideNotchPanelLayout.verticalPadding
+            SideNotchPanelLayout.notchFilletRadius * 2
+            + SideNotchPanelLayout.verticalPadding
             + CGFloat(providers.count)
                 * SideNotchPanelLayout.providerRowHeight
             + SideNotchPanelLayout.footerClearance
@@ -563,7 +573,8 @@ struct SideNotchPanelLayoutTests {
 
         #expect(
             naturalRailHeight
-                == SideNotchPanelLayout.verticalPadding
+                == SideNotchPanelLayout.notchFilletRadius * 2
+                    + SideNotchPanelLayout.verticalPadding
                     + CGFloat(providers.count)
                         * SideNotchPanelLayout.providerRowHeight
                     + SideNotchPanelLayout.footerClearance
@@ -636,7 +647,8 @@ struct SideNotchPanelLayoutTests {
         )
 
         for (index, usage) in providers.enumerated() {
-            let rowMidY = SideNotchPanelLayout.verticalPadding / 2
+            let rowMidY = SideNotchPanelLayout.notchFilletRadius
+                + SideNotchPanelLayout.verticalPadding / 2
                 + CGFloat(index) * SideNotchPanelLayout.providerRowHeight
                 + SideNotchPanelLayout.providerRowHeight / 2
             let cardHeight = SideNotchPanelLayout.detailHeight(for: usage)
@@ -707,7 +719,8 @@ struct SideNotchPanelLayoutTests {
             mode: .detail(.claude),
             anchorY: 780
         )
-        let lastRowMidY = SideNotchPanelLayout.verticalPadding / 2
+        let lastRowMidY = SideNotchPanelLayout.notchFilletRadius
+                + SideNotchPanelLayout.verticalPadding / 2
             + CGFloat(providers.count - 1)
                 * SideNotchPanelLayout.providerRowHeight
             + SideNotchPanelLayout.providerRowHeight / 2
@@ -1245,7 +1258,8 @@ struct SideNotchPanelLayoutTests {
         #expect(SideNotchPanelLayout.footerClearance >= 8)
         #expect(
             frame.height
-                == SideNotchPanelLayout.verticalPadding
+                == SideNotchPanelLayout.notchFilletRadius * 2
+                    + SideNotchPanelLayout.verticalPadding
                     + 7 * SideNotchPanelLayout.providerRowHeight
                     + SideNotchPanelLayout.footerClearance
                     + SideNotchPanelLayout.footerHeight

@@ -107,8 +107,13 @@ other privileged controls remain native-only.
   Symbol drag handle, provider name, optional alias, and the native move
   buttons. They introduce no new color, material, radius, or typography
   token; the dragged row dims to 50% while its neighbors preview the order.
-- The side-notch rail and detail card use regular system material, semantic
-  borders, and the existing eucalyptus/amber usage palette. Provider branding
+- The side-notch rail and detail card use regular system material and
+  semantic borders, so they follow light/dark, Reduce Transparency, and
+  Increase Contrast like any native surface. Side-notch rings and detail bars
+  color by remaining-quota risk (`SideNotchUsageRisk`), not by period:
+  eucalyptus at 50% or more, amber below 50%, and terracotta `#C4513B`
+  (`SideNotchRiskVisualTokens.criticalFill`) below 20%. The popover, web,
+  and mobile keep the period palette. Provider branding
   remains inside the existing icon artwork, clipped to a circle only on the
   side-notch rail and detail card; popover, Settings, web, and mobile icons keep
   their existing shape.
@@ -119,8 +124,11 @@ other privileged controls remain native-only.
   lightens it, and the blur stays within twice the offset so the card reads
   as lit from above rather than haloed.
 - The hidden side-notch handle is 6 pt wide with an 8 pt edge tracking region.
-  The revealed rail uses 20 pt leading corners and square screen-edge corners;
-  its ring track reuses `UsageMeterVisualTokens.trackOpacity`.
+  The revealed rail is a notch (`SideNotchRailShape`): 20 pt leading corners,
+  and 8 pt concave fillets (`notchFilletRadius`) where its top and bottom
+  edges flow into the screen edge, so it reads as grown out of the display.
+  Each fillet takes its own 8 pt band above the first row and below the
+  footer. Its ring track reuses `UsageMeterVisualTokens.trackOpacity`.
 - The two compact scroll regions, the popover body and the side-notch rail,
   pin the overlay scroller style through `DashboardScrollerPolicy` regardless
   of the system Show scroll bars preference. The scroller reserves no width,
@@ -259,8 +267,8 @@ other privileged controls remain native-only.
 - Side-notch mode pins a 6 pt hidden handle or 56 pt revealed rail to
   `NSScreen.visibleFrame.maxX`, centers it vertically with 20 pt minimum top
   and bottom margins, and grows to 344 pt inward without moving its right
-  edge. Provider rows are 58 pt high. Fourteen points of total rail padding
-  plus a 58 pt vertically stacked footer defines the rail's natural height,
+  edge. Provider rows are 58 pt high. The two 8 pt fillet bands, fourteen
+  points of total rail padding, and a 58 pt vertically stacked footer define the rail's natural height,
   and the revealed rail uses exactly that height. It never reserves detail
   height, so no blank material band appears between the last provider row
   and the footer. The rail view is capped the same way in every presented
@@ -296,7 +304,11 @@ other privileged controls remain native-only.
   when rows overflow the capped rail.
 - The side-notch detail card is 280 pt wide and at most 320 pt high. It uses
   the existing provider section, applies 14 pt content padding, and scrolls
-  only when that provider's complete usage content exceeds the cap.
+  only when that provider's complete usage content exceeds the cap. It is a
+  speech bubble (`SideNotchBubbleShape`, 16 pt corners): a rounded-tip
+  tail with a 20 pt base spans the 8 pt gap to the rail and points at the
+  selected row's center,
+  clamped off the rounded corners (`SideNotchBubbleTokens.tailCenterY`).
 - Providers without prior usage are omitted when unavailable or unauthenticated.
   Providers with last-good usage remain visible during transient failures and
   malformed or expired credential recovery.
@@ -660,7 +672,9 @@ other privileged controls remain native-only.
 - Minimum pointer target: 28×28 pt in the compact footer.
 - Side-notch provider targets are at least 56×58 pt. Each exposes the provider
   name, a compact quota value when available, and a detail-view hint; color
-  and arc geometry never carry the meaning alone. Non-quota details retain
+  and arc geometry never carry the meaning alone: a critical (below 20%)
+  ring also appends "Running low" / "얼마 남지 않음" to its accessibility
+  value, and the percentage is always printed under the ring. Non-quota details retain
   their spend, credit, count, or informational semantics.
 - Edge hover is an accelerator, not the sole entry. Menu-bar activation and
   accessibility focus expose the same revealed state without provider

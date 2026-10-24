@@ -7,6 +7,8 @@ struct UsageMeterView: View {
     private var localization
     @Environment(\.dashboardTextScale)
     private var scale
+    @Environment(\.usageMeterFillStyle)
+    private var fillStyle
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3 * scale) {
@@ -47,11 +49,7 @@ struct UsageMeterView: View {
                                     )
                                 )
                             Capsule()
-                                .fill(
-                                    UsageMeterVisualTokens.fillRGB(
-                                        for: meter.period
-                                    ).color
-                                )
+                                .fill(fillColor)
                                 .frame(width: geometry.size.width * fraction)
                         }
                     }
@@ -82,6 +80,18 @@ struct UsageMeterView: View {
         )
     }
 
+    private var fillColor: Color {
+        switch fillStyle {
+        case .period:
+            UsageMeterVisualTokens.fillRGB(for: meter.period).color
+        case .risk:
+            SideNotchRiskVisualTokens.fillRGB(
+                for: SideNotchUsageRisk.level(for: meter.metric)
+                    ?? .comfortable
+            ).color
+        }
+    }
+
     private var resetAccessibilitySuffix: String {
         meter.resetText != nil || meter.resetsAt != nil
             ? ", \(resetText)"
@@ -97,4 +107,16 @@ struct UsageMeterView: View {
         }
         return localization.resetDescription(until: resetsAt)
     }
+}
+
+/// What a meter's fill color encodes. The popover colors by period; the
+/// Side Notch detail colors by how close the quota is to running out, to
+/// match its rail rings.
+enum UsageMeterFillStyle: Sendable {
+    case period
+    case risk
+}
+
+extension EnvironmentValues {
+    @Entry var usageMeterFillStyle: UsageMeterFillStyle = .period
 }
