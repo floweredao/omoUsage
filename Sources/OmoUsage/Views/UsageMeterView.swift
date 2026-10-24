@@ -9,6 +9,8 @@ struct UsageMeterView: View {
     private var scale
     @Environment(\.dashboardPalette)
     private var palette
+    @Environment(\.sideNotchAccentProvider)
+    private var accentProvider
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3 * scale) {
@@ -44,7 +46,7 @@ struct UsageMeterView: View {
                         ZStack(alignment: .leading) {
                             Capsule()
                                 .fill(
-                                    Color.primary.opacity(
+                                    trackColor.opacity(
                                         UsageMeterVisualTokens.trackOpacity
                                     )
                                 )
@@ -85,10 +87,15 @@ struct UsageMeterView: View {
         case .standard:
             UsageMeterVisualTokens.fillRGB(for: meter.period).color
         case .sideNotch:
-            SideNotchRiskVisualTokens.fill(
-                for: SideNotchUsageRisk.level(for: meter.metric)
-                    ?? .comfortable
-            )
+            accentProvider.map(SideNotchBrandVisualTokens.accent(for:))
+                ?? SideNotchNeutralVisualTokens.ink
+        }
+    }
+
+    private var trackColor: Color {
+        switch palette {
+        case .standard: Color.primary
+        case .sideNotch: fillColor
         }
     }
 
@@ -111,8 +118,8 @@ struct UsageMeterView: View {
 
 /// The palette a dashboard surface draws with. The popover keeps brand
 /// tiles, period meter fills, and the amber stale accent. The Side Notch
-/// reserves color for remaining-quota risk, so its rail rings and detail
-/// bars share one rule, and draws every other mark in one neutral ink.
+/// draws each provider's rail ring and detail bars in its icon's brand color
+/// (`sideNotchAccentProvider`) and its stale marks in one neutral ink.
 enum DashboardPalette: Sendable {
     case standard
     case sideNotch
@@ -120,4 +127,5 @@ enum DashboardPalette: Sendable {
 
 extension EnvironmentValues {
     @Entry var dashboardPalette: DashboardPalette = .standard
+    @Entry var sideNotchAccentProvider: ProviderID? = nil
 }
