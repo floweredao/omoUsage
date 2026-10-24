@@ -58,9 +58,20 @@ struct SideNotchPanelView: View {
                                     showsAccountLabel: showsAccountLabel,
                                     language: localization.language
                                 )
+                            let detailTop = SideNotchPanelLayout.detailTop(
+                                rowMidY: rowMidY(for: usage),
+                                detailHeight: detailHeight,
+                                containerHeight: geometry.size.height
+                            )
                             SideNotchDetailView(
                                 usage: usage,
-                                showsAccountLabel: showsAccountLabel
+                                showsAccountLabel: showsAccountLabel,
+                                tailCenterY:
+                                    SideNotchBubbleTokens.tailCenterY(
+                                        rowMidY: rowMidY(for: usage),
+                                        cardTop: detailTop,
+                                        cardHeight: detailHeight
+                                    )
                             )
                                 .frame(
                                     width:
@@ -71,11 +82,7 @@ struct SideNotchPanelView: View {
                                         - SideNotchPanelLayout.collapsedWidth
                                         - SideNotchPanelLayout.detailSpacing
                                         - SideNotchPanelLayout.detailWidth / 2,
-                                    y: SideNotchPanelLayout.detailTop(
-                                        rowMidY: rowMidY(for: usage),
-                                        detailHeight: detailHeight,
-                                        containerHeight: geometry.size.height
-                                    ) + detailHeight / 2
+                                    y: detailTop + detailHeight / 2
                                 )
                                 .transition(.opacity)
                         }
@@ -456,23 +463,18 @@ private struct SideNotchRailView: View {
                 Divider()
             }
         }
+        .padding(.vertical, SideNotchPanelLayout.notchFilletRadius)
         .background(
             .regularMaterial,
-            in: UnevenRoundedRectangle(
-                topLeadingRadius: SideNotchPanelLayout.railCornerRadius,
-                bottomLeadingRadius: SideNotchPanelLayout.railCornerRadius,
-                bottomTrailingRadius: 0,
-                topTrailingRadius: 0,
-                style: .continuous
+            in: SideNotchRailShape(
+                cornerRadius: SideNotchPanelLayout.railCornerRadius,
+                filletRadius: SideNotchPanelLayout.notchFilletRadius
             )
         )
         .overlay {
-            UnevenRoundedRectangle(
-                topLeadingRadius: SideNotchPanelLayout.railCornerRadius,
-                bottomLeadingRadius: SideNotchPanelLayout.railCornerRadius,
-                bottomTrailingRadius: 0,
-                topTrailingRadius: 0,
-                style: .continuous
+            SideNotchRailShape(
+                cornerRadius: SideNotchPanelLayout.railCornerRadius,
+                filletRadius: SideNotchPanelLayout.notchFilletRadius
             )
             .stroke(
                 Color(nsColor: .separatorColor),
@@ -572,12 +574,17 @@ private struct SideNotchProviderButton: View {
                                 ),
                                 lineWidth: 4
                             )
-                        if let fraction = summaryMeter.metric.progressFraction {
+                        if
+                            let fraction = summaryMeter.metric.progressFraction,
+                            let risk = SideNotchUsageRisk.level(
+                                for: summaryMeter.metric
+                            )
+                        {
                             Circle()
                                 .trim(from: 0, to: fraction)
                                 .stroke(
-                                    UsageMeterVisualTokens.fillRGB(
-                                        for: summaryMeter.period
+                                    SideNotchRiskVisualTokens.fillRGB(
+                                        for: risk
                                     ).color,
                                     style: StrokeStyle(
                                         lineWidth: 4,
@@ -738,7 +745,12 @@ private struct SideNotchProviderButton: View {
     private var accessibilityValue: String {
         // The label already names the provider, so the value starts with the
         // usage itself.
-        let value = localization.metricValue(summaryMeter.metric)
+        var value = localization.metricValue(summaryMeter.metric)
+        // Ring color is never the only signal: a critical ring is also
+        // spoken.
+        if SideNotchUsageRisk.level(for: summaryMeter.metric) == .critical {
+            value += ", \(localization.text(.sideNotchRunningLow))"
+        }
         if usage.isWaitingForRetry {
             return "\(value), \(localization.rateLimitRetryNoticeText())"
         }
@@ -813,15 +825,24 @@ enum SideNotchDetailElevationTokens {
 struct SideNotchDetailView: View {
     let usage: ProviderUsage
     let showsAccountLabel: Bool
+    /// Vertical center of the bubble tail in the card's own coordinates.
+    var tailCenterY: CGFloat?
     @Environment(\.appLocalization)
     private var localization
 
     var body: some View {
+        let bubble = SideNotchBubbleShape(
+            cornerRadius: SideNotchBubbleTokens.cornerRadius,
+            tailCenterY: tailCenterY,
+            tailHalfHeight: SideNotchBubbleTokens.tailHalfHeight,
+            tailLength: SideNotchBubbleTokens.tailLength
+        )
         ProviderSectionView(
             usage: usage,
             showsAccountLabel: showsAccountLabel,
             usesCircularProviderIcon: true
         )
+        .environment(\.usageMeterFillStyle, .risk)
         .padding(SideNotchPanelLayout.detailContentPadding)
         .frame(
             height: SideNotchPanelLayout.detailHeight(
@@ -830,19 +851,9 @@ struct SideNotchDetailView: View {
                 language: localization.language
             )
         )
-        .background(
-            .regularMaterial,
-            in: RoundedRectangle(
-                cornerRadius: 16,
-                style: .continuous
-            )
-        )
+        .background(.regularMaterial, in: bubble)
         .overlay {
-            RoundedRectangle(
-                cornerRadius: 16,
-                style: .continuous
-            )
-            .stroke(
+            bubble.stroke(
                 Color(nsColor: .separatorColor),
                 lineWidth: 0.5
             )
@@ -899,5 +910,167 @@ enum SideNotchAccountIdentity {
     ) -> String {
         guard let accountLabel else { return providerName }
         return "\(providerName), \(AccountLabel.sanitized(accountLabel))"
+    }
+}
+
+/// How close a remaining-quota meter is to running out. The Side Notch
+/// colors its rings and detail bars by this level instead of by period, so a
+/// glance at the rail answers "which provider is about to run out".
+enum SideNotchUsageRisk: Equatable, Sendable {
+    case comfortable
+    case low
+    case critical
+
+    /// Remaining percentages below these bounds are low and critical.
+    static let lowBelowPercent = 50
+    static let criticalBelowPercent = 20
+
+    static func level(percentRemaining: Int) -> SideNotchUsageRisk {
+        if percentRemaining < criticalBelowPercent { return .critical }
+        if percentRemaining < lowBelowPercent { return .low }
+        return .comfortable
+    }
+
+    /// `nil` for metrics that are not a remaining quota.
+    static func level(for metric: UsageMetric) -> SideNotchUsageRisk? {
+        guard case .quotaRemaining(let percent) = metric else { return nil }
+        return level(percentRemaining: percent)
+    }
+}
+
+/// Risk fills reuse the eucalyptus and amber meter palette and add one
+/// terracotta for critical, so no second palette appears beside them. Each
+/// stays above 3:1 against the window background in both appearances.
+enum SideNotchRiskVisualTokens {
+    static let criticalFill = VisualRGB(red: 0xC4, green: 0x51, blue: 0x3B)
+
+    static func fillRGB(for risk: SideNotchUsageRisk) -> VisualRGB {
+        switch risk {
+        case .comfortable: UsageMeterVisualTokens.standardFill
+        case .low: UsageMeterVisualTokens.extraFill
+        case .critical: criticalFill
+        }
+    }
+}
+
+/// The revealed rail: rounded leading corners and concave fillets where its
+/// top and bottom edges flow into the screen edge, like a notch grown out of
+/// the display. The fillets occupy their own `filletRadius` bands at the top
+/// and bottom of the rect.
+struct SideNotchRailShape: Shape {
+    var cornerRadius: CGFloat
+    var filletRadius: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        let fillet = max(0, min(filletRadius, rect.height / 4, rect.width / 2))
+        let top = rect.minY + fillet
+        let bottom = rect.maxY - fillet
+        let radius = max(
+            0,
+            min(cornerRadius, (bottom - top) / 2, rect.width - fillet)
+        )
+        var path = Path()
+        path.move(to: CGPoint(x: rect.maxX, y: rect.minY))
+        path.addArc(
+            tangent1End: CGPoint(x: rect.maxX, y: top),
+            tangent2End: CGPoint(x: rect.minX, y: top),
+            radius: fillet
+        )
+        path.addArc(
+            tangent1End: CGPoint(x: rect.minX, y: top),
+            tangent2End: CGPoint(x: rect.minX, y: bottom),
+            radius: radius
+        )
+        path.addArc(
+            tangent1End: CGPoint(x: rect.minX, y: bottom),
+            tangent2End: CGPoint(x: rect.maxX, y: bottom),
+            radius: radius
+        )
+        path.addArc(
+            tangent1End: CGPoint(x: rect.maxX, y: bottom),
+            tangent2End: CGPoint(x: rect.maxX, y: rect.maxY),
+            radius: fillet
+        )
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        path.closeSubpath()
+        return path
+    }
+}
+
+/// The detail card's speech-bubble geometry. The tail spans the gap
+/// between card and rail, so the card reads as speaking from the selected
+/// row.
+enum SideNotchBubbleTokens {
+    static let cornerRadius: CGFloat = 16
+    static let tailLength: CGFloat = SideNotchPanelLayout.detailSpacing
+    static let tailHalfHeight: CGFloat = 10
+    static let tailTipRadius: CGFloat = 1.5
+
+    /// Tail center in card coordinates: on the row's center, but never
+    /// into the rounded corners.
+    static func tailCenterY(
+        rowMidY: CGFloat,
+        cardTop: CGFloat,
+        cardHeight: CGFloat
+    ) -> CGFloat {
+        let lowest = cornerRadius + tailHalfHeight
+        let highest = cardHeight - cornerRadius - tailHalfHeight
+        guard highest >= lowest else { return cardHeight / 2 }
+        return min(max(rowMidY - cardTop, lowest), highest)
+    }
+}
+
+/// A rounded card with a soft tail on its trailing edge. The tail is drawn
+/// outside `rect`, into the gap toward the rail.
+struct SideNotchBubbleShape: Shape {
+    var cornerRadius: CGFloat
+    var tailCenterY: CGFloat?
+    var tailHalfHeight: CGFloat
+    var tailLength: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        let radius = min(cornerRadius, rect.width / 2, rect.height / 2)
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX + radius, y: rect.minY))
+        path.addArc(
+            tangent1End: CGPoint(x: rect.maxX, y: rect.minY),
+            tangent2End: CGPoint(x: rect.maxX, y: rect.maxY),
+            radius: radius
+        )
+        let lowest = rect.minY + radius + tailHalfHeight
+        let highest = rect.maxY - radius - tailHalfHeight
+        if let tailCenterY, highest >= lowest {
+            let center = min(max(rect.minY + tailCenterY, lowest), highest)
+            let tipX = rect.maxX + tailLength
+            let tip = SideNotchBubbleTokens.tailTipRadius
+            path.addLine(
+                to: CGPoint(x: rect.maxX, y: center - tailHalfHeight)
+            )
+            path.addLine(to: CGPoint(x: tipX - tip, y: center - tip))
+            path.addQuadCurve(
+                to: CGPoint(x: tipX - tip, y: center + tip),
+                control: CGPoint(x: tipX, y: center)
+            )
+            path.addLine(
+                to: CGPoint(x: rect.maxX, y: center + tailHalfHeight)
+            )
+        }
+        path.addArc(
+            tangent1End: CGPoint(x: rect.maxX, y: rect.maxY),
+            tangent2End: CGPoint(x: rect.minX, y: rect.maxY),
+            radius: radius
+        )
+        path.addArc(
+            tangent1End: CGPoint(x: rect.minX, y: rect.maxY),
+            tangent2End: CGPoint(x: rect.minX, y: rect.minY),
+            radius: radius
+        )
+        path.addArc(
+            tangent1End: CGPoint(x: rect.minX, y: rect.minY),
+            tangent2End: CGPoint(x: rect.maxX, y: rect.minY),
+            radius: radius
+        )
+        path.closeSubpath()
+        return path
     }
 }

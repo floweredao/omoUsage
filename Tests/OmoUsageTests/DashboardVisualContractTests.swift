@@ -204,6 +204,110 @@ struct DashboardVisualContractTests {
     }
 
     @Test
+    func sideNotchRingsColorByRemainingRisk() throws {
+        #expect(SideNotchUsageRisk.level(percentRemaining: 100) == .comfortable)
+        #expect(SideNotchUsageRisk.level(percentRemaining: 50) == .comfortable)
+        #expect(SideNotchUsageRisk.level(percentRemaining: 49) == .low)
+        #expect(SideNotchUsageRisk.level(percentRemaining: 20) == .low)
+        #expect(SideNotchUsageRisk.level(percentRemaining: 19) == .critical)
+        #expect(SideNotchUsageRisk.level(percentRemaining: 0) == .critical)
+        #expect(SideNotchUsageRisk.level(for: .quotaRemaining(percent: 7)) == .critical)
+        #expect(SideNotchUsageRisk.level(for: .count(value: 3, unit: .requests)) == nil)
+
+        let fills = [
+            SideNotchUsageRisk.comfortable, .low, .critical
+        ].map(SideNotchRiskVisualTokens.fillRGB(for:))
+        #expect(Set(fills.map { "\($0)" }).count == 3)
+        #expect(fills[0] == UsageMeterVisualTokens.standardFill)
+        #expect(fills[1] == UsageMeterVisualTokens.extraFill)
+
+        // Rings are graphical objects: each fill keeps 3:1 against the
+        // window background in both appearances.
+        for name in [NSAppearance.Name.aqua, .darkAqua] {
+            let appearance = try #require(NSAppearance(named: name))
+            for fill in fills {
+                var ratio = 0.0
+                appearance.performAsCurrentDrawingAppearance {
+                    guard
+                        let backdrop = NSColor.windowBackgroundColor
+                            .usingColorSpace(.sRGB),
+                        let ring = NSColor(fill.color).usingColorSpace(.sRGB)
+                    else {
+                        return
+                    }
+                    ratio = Self.contrastRatio(
+                        Self.composite(backdrop, over: backdrop),
+                        Self.composite(ring, over: backdrop)
+                    )
+                }
+                #expect(ratio >= 3, "\(name.rawValue) \(fill) contrast \(ratio)")
+            }
+        }
+    }
+
+    @Test
+    func sideNotchBubbleTailStaysInTheRailGapAndOffTheCorners() {
+        #expect(
+            SideNotchBubbleTokens.tailLength
+                <= SideNotchPanelLayout.detailSpacing
+        )
+        let corner = SideNotchBubbleTokens.cornerRadius
+        let half = SideNotchBubbleTokens.tailHalfHeight
+        // Centered on its row when the row is inside the card's span.
+        #expect(
+            SideNotchBubbleTokens.tailCenterY(
+                rowMidY: 140, cardTop: 60, cardHeight: 200
+            ) == 80
+        )
+        // Clamped off the rounded corners at both ends.
+        #expect(
+            SideNotchBubbleTokens.tailCenterY(
+                rowMidY: 0, cardTop: 60, cardHeight: 200
+            ) == corner + half
+        )
+        #expect(
+            SideNotchBubbleTokens.tailCenterY(
+                rowMidY: 900, cardTop: 60, cardHeight: 200
+            ) == 200 - corner - half
+        )
+
+        let card = CGRect(x: 0, y: 0, width: 280, height: 200)
+        let bubble = SideNotchBubbleShape(
+            cornerRadius: corner,
+            tailCenterY: 80,
+            tailHalfHeight: half,
+            tailLength: SideNotchBubbleTokens.tailLength
+        ).path(in: card)
+        #expect(bubble.contains(CGPoint(x: 280 + 2, y: 80)))
+        #expect(!bubble.contains(CGPoint(x: 280 + 2, y: 40)))
+        #expect(bubble.boundingRect.maxX <= 280 + SideNotchPanelLayout.detailSpacing)
+    }
+
+    @Test
+    func sideNotchRailFlowsIntoTheScreenEdgeThroughConcaveFillets() {
+        let fillet = SideNotchPanelLayout.notchFilletRadius
+        let rail = CGRect(x: 0, y: 0, width: 56, height: 300)
+        let path = SideNotchRailShape(
+            cornerRadius: SideNotchPanelLayout.railCornerRadius,
+            filletRadius: fillet
+        ).path(in: rail)
+        // The screen-edge column stays filled through the fillet bands...
+        #expect(path.contains(CGPoint(x: 55.5, y: fillet - 0.5)))
+        #expect(path.contains(CGPoint(x: 55.5, y: 300 - fillet + 0.5)))
+        // ...but the fillet band is open away from the edge.
+        #expect(!path.contains(CGPoint(x: 28, y: fillet / 2)))
+        #expect(!path.contains(CGPoint(x: 56 - fillet + 1, y: 1)))
+        #expect(path.contains(CGPoint(x: 28, y: 150)))
+        #expect(
+            SideNotchPanelLayout.naturalRailHeight(providerCount: 0)
+                == fillet * 2
+                    + SideNotchPanelLayout.verticalPadding
+                    + SideNotchPanelLayout.footerClearance
+                    + SideNotchPanelLayout.footerHeight
+        )
+    }
+
+    @Test
     func sideNotchDetailUsesRestrainedDownwardElevation() throws {
         // The captured recipe was black 0.16 / radius 10 / y 4: a blur two
         // and a half times the offset, so it read as an omnidirectional

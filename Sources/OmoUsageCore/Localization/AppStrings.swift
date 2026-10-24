@@ -35,6 +35,7 @@ public enum AppStringKey: String, CaseIterable, Sendable {
     case dashboardTextSizeOption
     case dashboardTextSizeDescription
     case sideNotchShowDetails
+    case sideNotchRunningLow
     case providerAuthentication
     case dashboardOrder
     case resetToDefault
@@ -259,6 +260,7 @@ public struct AppStrings: Sendable {
         .dashboardTextSizeDescription:
             "팝오버의 글자와 아이콘을 최대 200%까지 키웁니다. 팝오버는 글자가 잘리지 않도록 함께 넓어집니다.",
         .sideNotchShowDetails: "사용량 상세 보기",
+        .sideNotchRunningLow: "얼마 남지 않음",
         .providerAuthentication: "인증",
         .dashboardOrder: "순서",
         .resetToDefault: "기본 순서로 재설정",
@@ -490,6 +492,7 @@ public struct AppStrings: Sendable {
         .dashboardTextSizeDescription:
             "Enlarges popover text and icons up to 200%. The popover widens with them so nothing is clipped.",
         .sideNotchShowDetails: "Show usage details",
+        .sideNotchRunningLow: "Running low",
         .providerAuthentication: "Auth",
         .dashboardOrder: "Order",
         .resetToDefault: "Reset to Default",
