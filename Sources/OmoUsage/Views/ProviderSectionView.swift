@@ -211,6 +211,16 @@ struct StaleUsageBadge: View {
     private var localization
     @Environment(\.dashboardTextScale)
     private var scale
+    @Environment(\.dashboardPalette)
+    private var palette
+
+    /// The Side Notch keeps amber for low quota, so its stale badge is ink.
+    private var accent: Color {
+        switch palette {
+        case .standard: StaleUsageVisualTokens.accent.color
+        case .sideNotch: SideNotchNeutralVisualTokens.ink
+        }
+    }
 
     var body: some View {
         HStack(spacing: StaleUsageVisualTokens.badgeSpacing * scale) {
@@ -230,7 +240,7 @@ struct StaleUsageBadge: View {
                     )
                 )
         }
-        .foregroundStyle(StaleUsageVisualTokens.accent.color)
+        .foregroundStyle(accent)
         .padding(
             .horizontal,
             StaleUsageVisualTokens.badgeHorizontalPadding * scale
@@ -240,7 +250,7 @@ struct StaleUsageBadge: View {
             StaleUsageVisualTokens.badgeVerticalPadding * scale
         )
         .background(
-            StaleUsageVisualTokens.accent.color.opacity(
+            accent.opacity(
                 StaleUsageVisualTokens.badgeBackgroundOpacity
             ),
             in: Capsule()
@@ -248,7 +258,7 @@ struct StaleUsageBadge: View {
         .overlay {
             Capsule()
                 .stroke(
-                    StaleUsageVisualTokens.accent.color.opacity(
+                    accent.opacity(
                         StaleUsageVisualTokens.badgeBorderOpacity
                     ),
                     lineWidth: 0.5

@@ -7,8 +7,8 @@ struct UsageMeterView: View {
     private var localization
     @Environment(\.dashboardTextScale)
     private var scale
-    @Environment(\.usageMeterFillStyle)
-    private var fillStyle
+    @Environment(\.dashboardPalette)
+    private var palette
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3 * scale) {
@@ -81,14 +81,14 @@ struct UsageMeterView: View {
     }
 
     private var fillColor: Color {
-        switch fillStyle {
-        case .period:
+        switch palette {
+        case .standard:
             UsageMeterVisualTokens.fillRGB(for: meter.period).color
-        case .risk:
-            SideNotchRiskVisualTokens.fillRGB(
+        case .sideNotch:
+            SideNotchRiskVisualTokens.fill(
                 for: SideNotchUsageRisk.level(for: meter.metric)
                     ?? .comfortable
-            ).color
+            )
         }
     }
 
@@ -109,14 +109,15 @@ struct UsageMeterView: View {
     }
 }
 
-/// What a meter's fill color encodes. The popover colors by period; the
-/// Side Notch detail colors by how close the quota is to running out, to
-/// match its rail rings.
-enum UsageMeterFillStyle: Sendable {
-    case period
-    case risk
+/// The palette a dashboard surface draws with. The popover keeps brand
+/// tiles, period meter fills, and the amber stale accent. The Side Notch
+/// reserves color for remaining-quota risk, so its rail rings and detail
+/// bars share one rule, and draws every other mark in one neutral ink.
+enum DashboardPalette: Sendable {
+    case standard
+    case sideNotch
 }
 
 extension EnvironmentValues {
-    @Entry var usageMeterFillStyle: UsageMeterFillStyle = .period
+    @Entry var dashboardPalette: DashboardPalette = .standard
 }
