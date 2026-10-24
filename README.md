@@ -27,8 +27,10 @@ and runs without an account or server of its own. The app is called
   windows, credits, spend, and when each one resets. The scroll bar appears
   only while you scroll.
 - **Side Notch.** An optional notch that grows out of the screen edge, with a
-  remaining-usage ring per account that turns amber and then terracotta as
-  the quota runs low. Point at one and its details open in a speech bubble
+  remaining-usage ring per account that stays green, turns amber below half,
+  and turns terracotta below a fifth. Rings and bars share that one rule, and
+  everything else is drawn in a single neutral, so color only ever means
+  "running low". Point at a ring and its details open in a speech bubble
   beside it.
 - **Native Settings.** Five panes (General, Display, Web Access, Order, Auth)
   in the standard macOS grouped style. Short panes fit their content; long
