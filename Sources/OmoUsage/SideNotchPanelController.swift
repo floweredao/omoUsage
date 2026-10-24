@@ -12,9 +12,18 @@ enum SideNotchPanelLayout {
     static let detailSpacing: CGFloat = 8
     static let expandedWidth: CGFloat = 344
     static let providerRowHeight: CGFloat = 58
-    static let verticalPadding: CGFloat = 14
-    static let footerClearance: CGFloat = 8
-    static let footerHeight: CGFloat = 58
+    /// The rail keeps one optical gap, about 11-12 pt of empty surface, at
+    /// its top and bottom edges and on both sides of the footer divider.
+    /// A row's ring sits about 1 pt below the row top while its caption
+    /// ends about 6 pt above the row bottom, so the list's top padding is
+    /// the larger one. The divider-to-refresh gap is `footerClearance`
+    /// plus the 7 pt the 14 pt refresh glyph leaves in its 28 pt slot, and
+    /// the ellipsis glyph centered in the last slot leaves the bottom gap.
+    static let listTopPadding: CGFloat = 10
+    static let listBottomPadding: CGFloat = 6
+    static let verticalPadding: CGFloat = listTopPadding + listBottomPadding
+    static let footerClearance: CGFloat = 4
+    static let footerHeight: CGFloat = footerControlHeight * 2
     static let footerControlHeight: CGFloat = 28
     static let detailContentPadding: CGFloat = 14
     static let detailCardMargin: CGFloat = 12
@@ -36,7 +45,7 @@ enum SideNotchPanelLayout {
 
     static func providerRowMidY(at index: Int) -> CGFloat {
         notchFilletRadius
-            + verticalPadding / 2
+            + listTopPadding
             + CGFloat(index) * providerRowHeight
             + providerRowHeight / 2
     }
@@ -124,7 +133,7 @@ enum SideNotchPanelLayout {
         let natural = naturalRailHeight(providerCount: providerCount)
         guard natural > limit else { return natural }
         let fixedHeight = notchFilletRadius * 2
-            + verticalPadding / 2
+            + listTopPadding
             + footerClearance
             + footerHeight
         let visibleRows = max(

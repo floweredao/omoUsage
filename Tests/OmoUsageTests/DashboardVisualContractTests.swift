@@ -187,8 +187,9 @@ struct DashboardVisualContractTests {
                 var ratio = 0.0
                 appearance.performAsCurrentDrawingAppearance {
                     guard
-                        let backdrop = NSColor.windowBackgroundColor
-                            .usingColorSpace(.sRGB),
+                        let backdrop = NSColor(
+                            SideNotchNeutralVisualTokens.surface
+                        ).usingColorSpace(.sRGB),
                         let plate = NSColor(
                             SideNotchAccountBadgeTokens.fill(for: provider)
                         ).usingColorSpace(.sRGB),
@@ -249,8 +250,9 @@ struct DashboardVisualContractTests {
                 var ratio = 0.0
                 appearance.performAsCurrentDrawingAppearance {
                     guard
-                        let backdrop = NSColor.windowBackgroundColor
-                            .usingColorSpace(.sRGB),
+                        let backdrop = NSColor(
+                            SideNotchNeutralVisualTokens.surface
+                        ).usingColorSpace(.sRGB),
                         let ring = NSColor(
                             SideNotchBrandVisualTokens.accent(for: provider)
                         ).usingColorSpace(.sRGB)
@@ -288,10 +290,29 @@ struct DashboardVisualContractTests {
     }
 
     @Test
-    func sideNotchKeepsNeutralForSurfaceAndStaleMarks() {
+    func sideNotchKeepsNeutralForSurfaceAndStaleMarks() throws {
         #expect(EnvironmentValues().dashboardPalette == .standard)
         #expect(EnvironmentValues().sideNotchAccentProvider == nil)
         #expect(SideNotchNeutralVisualTokens.ink == Color.primary)
+
+        for name in [NSAppearance.Name.aqua, .darkAqua] {
+            let appearance = try #require(NSAppearance(named: name))
+            var surface: NSColor?
+            var window: NSColor?
+            appearance.performAsCurrentDrawingAppearance {
+                surface = NSColor(SideNotchNeutralVisualTokens.surface)
+                    .usingColorSpace(.sRGB)
+                window = NSColor.windowBackgroundColor.usingColorSpace(.sRGB)
+            }
+            let resolved = try #require(surface)
+            let expected = try #require(
+                name == .darkAqua
+                    ? NSColor.black.usingColorSpace(.sRGB) : window
+            )
+            #expect(resolved.redComponent == expected.redComponent)
+            #expect(resolved.greenComponent == expected.greenComponent)
+            #expect(resolved.blueComponent == expected.blueComponent)
+        }
     }
 
     @Test
