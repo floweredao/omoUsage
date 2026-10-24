@@ -122,13 +122,14 @@ other privileged controls remain native-only.
   ring, its track (at `UsageMeterVisualTokens.trackOpacity`), its account
   badge, and its detail-card bars all use one accent, the dominant color of
   its tile: Claude orange, Codex indigo, Antigravity blue, Devin purple, Kiro
-  violet, OpenRouter red, and Z.ai blue. Each has a light and a dark value;
-  every value keeps its brand hue at one shared OKLCH strength, lightness
-  0.64 and chroma 0.20 (the vivid red ring of the reference Claude Usage card),
-  so all providers read equally strong. A light value is darkened only as far
-  as needed to keep 3.2:1 against the light surface, and a hue sRGB cannot
-  show at that chroma loses only the excess chroma. Dark values measure at
-  least 5.6:1 against the black surface. Black-tile brands (Cursor,
+  violet, OpenRouter red, and Z.ai blue. Each accent is lifted only as far as
+  needed to keep 3:1 against the black dark surface (at least 5.5:1 measured)
+  and muted to 80% of the brand chroma in OKLCH, keeping hue and lightness, so
+  the rail reads calmer than the full-saturation icon tile beside it. Light
+  appearance uses the same values by the user's choice, so a provider is one
+  color in both appearances. On the light surface some accents fall below 3:1
+  (Claude orange about 2.3:1); the ring's percent caption in ink still carries
+  the value. Black-tile brands (Cursor,
   Copilot, Grok, OpenCode) use the neutral ink, `SideNotchNeutralVisualTokens.ink`
   (semantic primary). Remaining-quota risk never changes the color: below
   20% remaining (`SideNotchUsageRisk.critical`) the rail's percent caption
