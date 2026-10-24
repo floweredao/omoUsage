@@ -26,8 +26,10 @@ and runs without an account or server of its own. The app is called
 - **Menu-bar popover.** One section per account with session and weekly
   windows, credits, spend, and when each one resets. The scroll bar appears
   only while you scroll.
-- **Side Notch.** An optional rail on the screen edge with a remaining-usage
-  ring per account. Point at one and its details slide out beside it.
+- **Side Notch.** An optional notch that grows out of the screen edge, with a
+  remaining-usage ring per account that turns amber and then terracotta as
+  the quota runs low. Point at one and its details open in a speech bubble
+  beside it.
 - **Native Settings.** Five panes (General, Display, Web Access, Order, Auth)
   in the standard macOS grouped style. Short panes fit their content; long
   panes scroll inside the window.
@@ -54,7 +56,7 @@ and runs without an account or server of its own. The app is called
     <td align="center" width="50%">
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="Docs/images/side-notch-dark.png">
-        <img src="Docs/images/side-notch-light.png" width="344" alt="Side Notch rail with usage rings and a Codex account's details">
+        <img src="Docs/images/side-notch-light.png" width="344" alt="Side Notch rail with risk-colored usage rings and a speech-bubble card for a Claude Code account">
       </picture>
       <br><sub>Side Notch</sub>
     </td>
