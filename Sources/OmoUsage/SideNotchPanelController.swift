@@ -751,6 +751,9 @@ final class SideNotchPanelController: NSObject {
         )
     private var providerCount = 0
     private var pointerInside = false
+    /// The app that was frontmost before a click made OmoUsage active; it
+    /// gets keyboard focus back when the detail collapses.
+    private var applicationToRestore: NSRunningApplication?
     private var pointerAnchorY: CGFloat?
     private var autoHideGeneration = 0
     private var autoHideTask: (any SideNotchAutoHideTask)?
@@ -920,6 +923,23 @@ final class SideNotchPanelController: NSObject {
         state.transition(to: .hidden)
         onExpansionChange(false)
         panel.orderOut(nil)
+        restoreFocusedApplication()
+    }
+
+    /// Hands focus back only while OmoUsage still owns it and no other
+    /// OmoUsage window (such as Settings) took the key role. A collapse caused
+    /// by clicking another app leaves that app in front.
+    private func restoreFocusedApplication() {
+        guard let application = applicationToRestore else { return }
+        applicationToRestore = nil
+        DispatchQueue.main.async { [panel] in
+            guard
+                NSApp.isActive,
+                NSApp.keyWindow == nil || NSApp.keyWindow === panel,
+                !application.isTerminated
+            else { return }
+            application.activate()
+        }
     }
 
     func toggleRevealed(preferredScreen: NSScreen? = nil) {
@@ -1065,6 +1085,9 @@ final class SideNotchPanelController: NSObject {
             panelFrame: panel.frame
         )
         activate(plan)
+        if state.selection == nil {
+            restoreFocusedApplication()
+        }
         if state.selection == nil, !pointerInside {
             scheduleAutoHide()
         }
@@ -1088,6 +1111,11 @@ final class SideNotchPanelController: NSObject {
     /// what keeps keyboard focus with the frontmost application.
     private func activate(_ plan: SideNotchActivationPlan) {
         if plan.activatesApplication {
+            if !NSApp.isActive,
+               let frontmost = NSWorkspace.shared.frontmostApplication,
+               frontmost != NSRunningApplication.current {
+                applicationToRestore = frontmost
+            }
             NSApp.activate(ignoringOtherApps: true)
         }
         if plan.startsEscapeMonitor {
