@@ -5,11 +5,13 @@ enum ProviderFactory {
     static func current(
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> [any UsageProvider] {
+#if OMO_USAGE_FIXTURES
         if environment["OMO_USAGE_FIXTURE_MODE"] == "1" {
             return ProviderID.allCases.map {
                 FixtureUsageProvider(id: $0)
             }
         }
+#endif
 
         let discovery = CredentialDiscovery.live()
         let http = ProviderHTTP()
@@ -40,6 +42,7 @@ enum ProviderFactory {
             }
         }
 
+#if OMO_USAGE_FIXTURES
         if environment["OMO_USAGE_FIXTURE_MODE"] == "1" {
             return referencedAccounts.map { provider, account in
                 FixtureUsageProvider(
@@ -50,6 +53,7 @@ enum ProviderFactory {
                 )
             }
         }
+#endif
 
         return referencedAccounts.map { provider, account in
             switch provider {
