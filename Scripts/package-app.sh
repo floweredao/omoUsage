@@ -220,6 +220,7 @@ if [ "$SIGNING_MODE" = developer-id ]; then
     fi
 elif [ "$SIGNING_MODE" = development ]; then
     printf '%s\n' "warning: development package has no entitlements; cloud KVS is unavailable" >&2
+    printf '%s\n' "warning: do not install this package in /Applications; it cannot sync usage to iPhone or iPad. Install a Developer ID release instead." >&2
     sh Scripts/sign-app.sh --development "$APP" "$IDENTITY"
     codesign --verify --deep --strict --verbose=2 "$APP"
     # Keychain grants follow the designated requirement; it must name the
@@ -230,6 +231,7 @@ elif [ "$SIGNING_MODE" = development ]; then
     fi
 else
     printf '%s\n' "warning: ad-hoc package has no team identifier; cloud KVS is unavailable" >&2
+    printf '%s\n' "warning: do not install this package in /Applications; it cannot sync usage to iPhone or iPad. Install a Developer ID release instead." >&2
     sh Scripts/sign-app.sh --adhoc "$APP"
     codesign --verify --deep --strict --verbose=2 "$APP"
 fi
