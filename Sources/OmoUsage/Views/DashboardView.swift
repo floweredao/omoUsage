@@ -6,6 +6,11 @@ struct DashboardView: View {
     @Bindable var viewModel: UsageDashboardViewModel
     let localization: LocalizationController
     var textSize: DashboardTextSize = .standard
+    var cloudSyncStatus = CloudSyncStatus()
+
+    private var syncStatusHeight: CGFloat {
+        cloudSyncStatus.isFailing ? 28 : 0
+    }
     let onSettings: () -> Void
     let onQuit: () -> Void
     let onPanelHeightChange: (CGFloat) -> Void
@@ -71,8 +76,29 @@ struct DashboardView: View {
             }
             .scrollIndicators(.automatic)
             .frame(
-                height: panelHeight - DashboardLayout.footerHeight * scale
+                height: panelHeight
+                    - DashboardLayout.footerHeight * scale
+                    - syncStatusHeight * scale
             )
+
+            if cloudSyncStatus.isFailing {
+                Label(
+                    localization.text(.macICloudSyncFailed),
+                    systemImage: "icloud.slash"
+                )
+                .font(.system(size: 11 * scale, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 14 * scale)
+                .frame(height: syncStatusHeight * scale)
+                .overlay(alignment: .top) { Divider() }
+                .help(localization.text(.macICloudSyncFailedDescription))
+                .accessibilityElement(children: .combine)
+                .accessibilityHint(
+                    localization.text(.macICloudSyncFailedDescription)
+                )
+                .accessibilityIdentifier("dashboard.icloudSyncFailed")
+            }
 
             PopoverFooterView(
                 refreshedAt: viewModel.snapshot.refreshedAt,

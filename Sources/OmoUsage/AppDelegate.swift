@@ -679,6 +679,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let opensSettingsOnLaunch: Bool
     private let appUpdateController: AppUpdateController
     private let snapshotSync: UbiquitousUsageSnapshotStore
+    private let cloudSyncStatus: CloudSyncStatus
     private let webDashboardSnapshotStore: WebDashboardSnapshotStore
     private let webDashboardSettingsStore: WebDashboardSettingsStore
     private let webDashboardLanguageStore: WebDashboardLanguageStore
@@ -748,6 +749,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         let defaults = UserDefaults.standard
 #endif
         let snapshotSync = UbiquitousUsageSnapshotStore()
+        let cloudSyncStatus = CloudSyncStatus()
         let localization = LocalizationController(
             store: AppLanguageStore(defaults: defaults)
         )
@@ -945,7 +947,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 ) else { return }
 #endif
                 do {
-                    try snapshotSync.publish(snapshot)
+                    try cloudSyncStatus.publish {
+                        try snapshotSync.publish(snapshot)
+                    }
                 } catch {
                     DiagnosticStore.shared.record(
                         error: error,
@@ -1004,6 +1008,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         self.appUpdateController = AppUpdateController()
 #endif
         self.snapshotSync = snapshotSync
+        self.cloudSyncStatus = cloudSyncStatus
         self.webDashboardSnapshotStore = webDashboardSnapshotStore
         self.webDashboardSettingsStore = webDashboardSettingsStore
         self.webDashboardLanguageStore = webDashboardLanguageStore
@@ -1175,6 +1180,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             viewModel: viewModel,
             localization: localization,
             textSize: dashboardTextSize,
+            cloudSyncStatus: cloudSyncStatus,
             onSettings: { [weak self] in
                 self?.showSettings()
             },
@@ -1403,6 +1409,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                     }
                 },
                 appUpdateController: appUpdateController,
+                cloudSyncStatus: cloudSyncStatus,
                 paneSelection: settingsPaneSelection,
                 onPreferredContentHeightChange: { [weak self] height in
                     Task { @MainActor in

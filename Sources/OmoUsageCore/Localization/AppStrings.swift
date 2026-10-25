@@ -196,6 +196,8 @@ public enum AppStringKey: String, CaseIterable, Sendable {
     case mobileRetainedAfterSyncFailure
     case checkICloud
     case mobileICloudCheckExplanation
+    case macICloudSyncFailed
+    case macICloudSyncFailedDescription
     // settings
     case checkConnectionsAgain
     case checkConnectionsAgainDescription
@@ -439,6 +441,9 @@ public struct AppStrings: Sendable {
         .mobileRetainedAfterSyncFailure:
             "iCloud 확인에 실패해 마지막으로 받은 데이터를 그대로 표시합니다.",
         .checkICloud: "iCloud 확인",
+        .macICloudSyncFailed: "iCloud 동기화 안 됨",
+        .macICloudSyncFailedDescription:
+            "iPhone과 iPad에 새 사용량이 전달되지 않습니다. 이 Mac의 iCloud 로그인을 확인하거나 정식 릴리스를 설치하세요.",
         .mobileICloudCheckExplanation:
             "Mac이 iCloud에 올린 최신 데이터만 확인합니다. 이 기기는 프로바이더에 직접 연결하지 않습니다.",
         // settings
@@ -671,6 +676,9 @@ public struct AppStrings: Sendable {
         .mobileRetainedAfterSyncFailure:
             "The iCloud check failed, so the last data received is still shown.",
         .checkICloud: "Check iCloud",
+        .macICloudSyncFailed: "iCloud sync unavailable",
+        .macICloudSyncFailedDescription:
+            "Your iPhone and iPad aren't getting new usage. Check that this Mac is signed in to iCloud, or install the official release.",
         .mobileICloudCheckExplanation:
             "Checks iCloud for the newest data your Mac published. This device never contacts providers.",
         // settings
