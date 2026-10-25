@@ -503,6 +503,44 @@ enum AppAppearancePolicy {
 }
 
 #if OMO_USAGE_FIXTURES
+/// `OMO_USAGE_FIXTURE_MODE=1` shows sample usage, so it must never touch the
+/// user's real settings, account registry, or iCloud snapshot. Release builds
+/// never compile this or any other fixture switch.
+enum FixtureModeIsolation {
+    static let defaultsSuiteName = "com.omo.usage.fixture-mode"
+
+    static func isActive(environment: [String: String]) -> Bool {
+        environment["OMO_USAGE_FIXTURE_MODE"] == "1"
+    }
+
+    /// A throwaway defaults domain, emptied at every fixture launch.
+    static func defaults(environment: [String: String]) -> UserDefaults? {
+        guard isActive(environment: environment) else { return nil }
+        let defaults = UserDefaults(suiteName: defaultsSuiteName)
+        defaults?.removePersistentDomain(forName: defaultsSuiteName)
+        return defaults
+    }
+
+    /// Points the account registry at a scratch config home in fixture mode.
+    static func configEnvironment(
+        _ environment: [String: String],
+        scratchRoot: URL = FileManager.default.temporaryDirectory
+            .appending(path: "omousage-fixture-mode", directoryHint: .isDirectory)
+    ) -> [String: String] {
+        guard isActive(environment: environment) else { return environment }
+        var isolated = environment
+        isolated["XDG_CONFIG_HOME"] = scratchRoot.path(percentEncoded: false)
+        return isolated
+    }
+
+    static func publishesToCloud(
+        environment: [String: String],
+        hasCompanionFixture: Bool
+    ) -> Bool {
+        !hasCompanionFixture && !isActive(environment: environment)
+    }
+}
+
 /// Sample-data screenshot QA only: light and dark captures without changing
 /// the Mac's appearance, and a visible popover while the status item sits
 /// in a hidden or full-screen menu bar. Release builds never compile this.
@@ -703,7 +741,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         )
         let claudeAuthenticationFixture = companionFixture?
             .claudeAuthenticationUIFixture(environment: fixtureEnvironment)
-        let defaults = companionFixture?.defaults ?? .standard
+        let defaults = companionFixture?.defaults
+            ?? FixtureModeIsolation.defaults(environment: fixtureEnvironment)
+            ?? .standard
 #else
         let defaults = UserDefaults.standard
 #endif
@@ -739,7 +779,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         let disconnectedProviders = disconnectionStore.load()
 #if OMO_USAGE_FIXTURES
         let accountStore = companionFixture?.accountStore()
-            ?? ProviderAccountStore.live(defaults: defaults)
+            ?? ProviderAccountStore.live(
+                environment: FixtureModeIsolation.configEnvironment(
+                    fixtureEnvironment
+                ),
+                defaults: defaults
+            )
 #else
         let accountStore = ProviderAccountStore.live(defaults: defaults)
 #endif
@@ -894,7 +939,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             publishSnapshot: { snapshot in
                 webDashboardSnapshotStore.update(snapshot)
 #if OMO_USAGE_FIXTURES
-                guard companionFixture == nil else { return }
+                guard FixtureModeIsolation.publishesToCloud(
+                    environment: fixtureEnvironment,
+                    hasCompanionFixture: companionFixture != nil
+                ) else { return }
 #endif
                 do {
                     try snapshotSync.publish(snapshot)
