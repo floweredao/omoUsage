@@ -231,6 +231,7 @@ struct SettingsView: View {
     let onShareWebDashboardURL: (URL, NSView) -> Bool
     let onRetryWebDashboard: () -> Void
     let appUpdateController: AppUpdateController
+    var cloudSyncStatus = CloudSyncStatus()
     let paneSelection: SettingsPaneSelection
     let onPreferredContentHeightChange: (CGFloat) -> Void
     private let authenticateDevin: @MainActor () async throws -> CredentialSnapshot
@@ -327,9 +328,11 @@ struct SettingsView: View {
         onShareWebDashboardURL: @escaping (URL, NSView) -> Bool,
         onRetryWebDashboard: @escaping () -> Void,
         appUpdateController: AppUpdateController,
+        cloudSyncStatus: CloudSyncStatus = CloudSyncStatus(),
         paneSelection: SettingsPaneSelection,
         onPreferredContentHeightChange: @escaping (CGFloat) -> Void
     ) {
+        self.cloudSyncStatus = cloudSyncStatus
         self.viewModel = viewModel
         self.localization = localization
         self.accountRegistryController = accountRegistryController
@@ -583,6 +586,20 @@ struct SettingsView: View {
                     systemImage: "exclamationmark.triangle"
                 )
                 .foregroundStyle(.secondary)
+            }
+        }
+
+        if cloudSyncStatus.isFailing {
+            Section {
+                Label(
+                    localization.text(.macICloudSyncFailed),
+                    systemImage: "icloud.slash"
+                )
+                .accessibilityIdentifier("settings.icloudSyncFailed")
+            } footer: {
+                SettingsSectionFooter {
+                    Text(localization.text(.macICloudSyncFailedDescription))
+                }
             }
         }
 
