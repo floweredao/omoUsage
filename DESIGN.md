@@ -136,10 +136,10 @@ other privileged controls remain native-only.
   Copilot, Grok, OpenCode) use the neutral ink, `SideNotchNeutralVisualTokens.ink`
   (semantic primary). Remaining-quota risk never changes the color: below
   20% remaining (`SideNotchUsageRisk.critical`) the rail's percent caption
-  becomes a bold ink pill with `onInk` text, and the ring's accessibility
-  value adds "running low". The stale marker and badge stay ink. A ring is
+  keeps the same plain ink text as every other account, and the ring's
+  accessibility value adds "running low". The stale marker and badge stay ink. A ring is
   4 pt (`ringLineWidth`), matching the 4 pt detail bar. Rows without a
-  remaining quota show the accent track alone. The ring, caption, risk pill,
+  remaining quota show the accent track alone. The ring, caption,
   and accessibility value all show one meter: the lowest remaining session or
   account-wide weekly quota, the session on a tie
   (`SideNotchSummaryMeterPolicy`). Model-scoped limits such as Claude's Fable

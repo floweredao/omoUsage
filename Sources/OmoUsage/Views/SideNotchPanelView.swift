@@ -667,12 +667,7 @@ private struct SideNotchProviderButton: View {
                     height: SideNotchPanelLayout.ringDiameter
                 )
 
-                SideNotchRailCaption(
-                    text: compactMetricValue,
-                    isRunningLow: SideNotchUsageRisk.level(
-                        for: summaryMeter.metric
-                    ) == .critical
-                )
+                SideNotchRailCaption(text: compactMetricValue)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(.horizontal, 6)
@@ -952,40 +947,24 @@ enum SideNotchAccountBadgeTokens {
     }
 }
 
-/// A rail caption. Below 20% remaining it becomes an ink pill, so running
-/// low reads without changing the provider's color.
+/// A rail caption. Every account's percent looks the same at every level;
+/// running low is spoken in the ring's accessibility value instead.
 private struct SideNotchRailCaption: View {
     let text: String
-    let isRunningLow: Bool
 
     var body: some View {
         Text(text)
-            .font(
-                .system(
-                    size: 10.5,
-                    weight: isRunningLow ? .bold : .semibold
-                )
-            )
+            .font(.system(size: 10.5, weight: .semibold))
             .monospacedDigit()
             .lineLimit(2)
             .minimumScaleFactor(0.72)
             .multilineTextAlignment(.center)
-            .foregroundStyle(
-                isRunningLow
-                    ? SideNotchNeutralVisualTokens.onInk
-                    : SideNotchNeutralVisualTokens.ink
-            )
-            .padding(.horizontal, isRunningLow ? 5 : 0)
-            .background {
-                if isRunningLow {
-                    Capsule().fill(SideNotchNeutralVisualTokens.ink)
-                }
-            }
+            .foregroundStyle(SideNotchNeutralVisualTokens.ink)
     }
 }
 
 /// The Side Notch's neutral, for the surface, the stale marker, and the
-/// running-low caption pill. Provider color comes from
+/// rail caption. Provider color comes from
 /// `SideNotchBrandVisualTokens`. The rail and card sit on an opaque
 /// surface rather than translucent material, so the wallpaper never muddies
 /// the provider colors. Light uses the system window background; dark is
@@ -1022,8 +1001,8 @@ enum SideNotchAccountIdentity {
 }
 
 /// How close a remaining-quota meter is to running out. Rings and bars keep
-/// the provider's color, so a critical level is shown as an ink caption pill
-/// on the rail and spoken in the ring's accessibility value instead.
+/// the provider's color, so a critical level is spoken in the ring's
+/// accessibility value instead.
 enum SideNotchUsageRisk: Equatable, Sendable {
     case comfortable
     case low
