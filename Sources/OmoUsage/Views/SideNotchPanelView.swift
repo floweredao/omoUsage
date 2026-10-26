@@ -775,15 +775,50 @@ private struct SideNotchProviderButton: View {
     }
 }
 
+/// The rail shows the quota that limits the account right now: the lowest
+/// remaining session or account-wide weekly meter, with the session first on a
+/// tie. Model-scoped limits only bound one model or model family, so they
+/// stay in the detail card: Claude's per-model weekly meters
+/// (`claude.week.<model>`) and Antigravity's per-model and per-family quotas.
+/// Providers that report nothing else keep the earlier session-first choice.
 enum SideNotchSummaryMeterPolicy {
+    static let modelScopedIDPrefixes = [
+        "claude.week.",
+        "antigravity.model.",
+        "antigravity.gemini.",
+        "antigravity.third-party.",
+    ]
+
+    static func isModelScoped(_ meter: UsageMeter) -> Bool {
+        modelScopedIDPrefixes.contains { meter.id.hasPrefix($0) }
+    }
+
     static func select(from meters: [UsageMeter]) -> UsageMeter? {
-        meters.first {
+        let accountWide = meters.filter {
+            $0.metric.kind == .quotaRemaining
+                && $0.period != .extra
+                && !isModelScoped($0)
+        }
+        if let lowest = accountWide.min(by: isMoreLimiting) {
+            return lowest
+        }
+        return meters.first {
             $0.metric.kind == .quotaRemaining && $0.period == .session
         } ?? meters.first {
             $0.metric.kind == .quotaRemaining && $0.period != .extra
         } ?? meters.first {
             $0.metric.kind == .quotaRemaining
         } ?? meters.first
+    }
+
+    private static func isMoreLimiting(
+        _ lhs: UsageMeter,
+        than rhs: UsageMeter
+    ) -> Bool {
+        let left = lhs.percentRemaining ?? 0
+        let right = rhs.percentRemaining ?? 0
+        if left != right { return left < right }
+        return lhs.period == .session && rhs.period != .session
     }
 }
 

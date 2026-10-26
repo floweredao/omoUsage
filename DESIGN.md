@@ -139,7 +139,11 @@ other privileged controls remain native-only.
   becomes a bold ink pill with `onInk` text, and the ring's accessibility
   value adds "running low". The stale marker and badge stay ink. A ring is
   4 pt (`ringLineWidth`), matching the 4 pt detail bar. Rows without a
-  remaining quota show the accent track alone. The popover, Settings, web,
+  remaining quota show the accent track alone. The ring, caption, risk pill,
+  and accessibility value all show one meter: the lowest remaining session or
+  account-wide weekly quota, the session on a tie
+  (`SideNotchSummaryMeterPolicy`). Model-scoped limits such as Claude's Fable
+  weekly only appear in the detail card. The popover, Settings, web,
   and mobile keep `DashboardPalette.standard`: brand tiles, period fills, and
   the amber stale accent. Icons are clipped to a circle only on the
   side-notch rail and detail card.

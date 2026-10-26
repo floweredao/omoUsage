@@ -45,7 +45,11 @@ struct ClaudeUsageParsingTests {
         #expect(session.resetText == nil)
         #expect(session.resetsAt == (resetField.contains("2026")
             ? Date(timeIntervalSince1970: 1_785_684_540) : nil))
-        #expect(SideNotchSummaryMeterPolicy.select(from: meters)?.id == session.id)
+        // The rail shows the more limiting of session and weekly (75% left).
+        #expect(
+            SideNotchSummaryMeterPolicy.select(from: meters)?.id
+                == (session.percentRemaining! <= 75 ? session.id : "claude.week")
+        )
     }
 
     @Test
@@ -493,7 +497,11 @@ struct CodexUsageParsingTests {
         #expect(session.resetText == nil)
         #expect(session.resetsAt == (resetField.contains("1785684540")
             ? Date(timeIntervalSince1970: 1_785_684_540) : nil))
-        #expect(SideNotchSummaryMeterPolicy.select(from: meters)?.id == session.id)
+        // The rail shows the more limiting of session and weekly (75% left).
+        #expect(
+            SideNotchSummaryMeterPolicy.select(from: meters)?.id
+                == (session.percentRemaining! <= 75 ? session.id : "codex.week")
+        )
     }
 
     @Test
