@@ -107,7 +107,7 @@ struct TypedMetricPresentationTests {
     }
 
     @Test
-    func sideNotchRailPrefersFiveHourSessionOverWeeklyQuota() {
+    func sideNotchRailShowsTheLowerOfSessionAndWeeklyQuota() {
         let weekly = UsageMeter(
             id: "claude.week",
             title: "Weekly",
@@ -120,9 +120,76 @@ struct TypedMetricPresentationTests {
             period: .session,
             percentRemaining: 63
         )
+        let tiedWeekly = UsageMeter(
+            id: "claude.week",
+            title: "Weekly",
+            period: .week,
+            percentRemaining: 63
+        )
 
         #expect(
             SideNotchSummaryMeterPolicy.select(from: [weekly, session])?.id
+                == "claude.session"
+        )
+        #expect(
+            SideNotchSummaryMeterPolicy.select(from: [tiedWeekly, session])?.id
+                == "claude.session"
+        )
+    }
+
+    @Test
+    func sideNotchRailShowsExhaustedWeeklyOverFullSession() throws {
+        let usage = try ClaudeUsageParser.parse(
+            Data(
+                """
+                {
+                  "five_hour": {"utilization": 0},
+                  "seven_day": {"utilization": 100}
+                }
+                """.utf8
+            ),
+            planName: "Max",
+            now: Date(timeIntervalSince1970: 1_785_675_000)
+        )
+        let selected = SideNotchSummaryMeterPolicy.select(
+            from: usage.groups.flatMap(\.meters)
+        )
+
+        #expect(selected?.id == "claude.week")
+        #expect(selected?.percentRemaining == 0)
+        #expect(SideNotchUsageRisk.level(for: try #require(selected).metric) == .critical)
+    }
+
+    @Test
+    func sideNotchRailIgnoresExhaustedModelWeeklyQuota() throws {
+        let usage = try ClaudeUsageParser.parse(
+            Data(
+                """
+                {
+                  "five_hour": {"utilization": 40},
+                  "seven_day": {"utilization": 10},
+                  "limits": [
+                    {
+                      "kind": "weekly_scoped",
+                      "group": "weekly",
+                      "percent": 100,
+                      "scope": {"model": {"id": null, "display_name": "Fable"}}
+                    }
+                  ]
+                }
+                """.utf8
+            ),
+            planName: "Max",
+            now: Date(timeIntervalSince1970: 1_785_675_000)
+        )
+        let meters = usage.groups.flatMap(\.meters)
+        let fable = try #require(meters.first {
+            SideNotchSummaryMeterPolicy.isModelScoped($0)
+        })
+
+        #expect(fable.percentRemaining == 0)
+        #expect(
+            SideNotchSummaryMeterPolicy.select(from: meters)?.id
                 == "claude.session"
         )
     }
