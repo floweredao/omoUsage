@@ -27,8 +27,10 @@ record_failure() {
     failures="${failures}$1\n"
 }
 
-[ ! -e "758588182_17891656152596285_1812746344893833058_n.jpg" ] \
-    || record_failure 'unexpected root JPG: 758588182_17891656152596285_1812746344893833058_n.jpg'
+for candidate in *.jpg *.jpeg *.png *.gif *.webp *.heic; do
+    [ -e "$candidate" ] || continue
+    record_failure "unexpected image in the repository root: $candidate"
+done
 [ -f .gitattributes ] || record_failure 'missing .gitattributes'
 [ -f Scripts/check-repository-hygiene.sh ] \
     || record_failure 'missing Scripts/check-repository-hygiene.sh'

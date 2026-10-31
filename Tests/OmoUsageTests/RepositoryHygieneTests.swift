@@ -7,12 +7,17 @@ struct RepositoryHygieneTests {
     func repositoryKeepsOnlyDocumentedFilesAndExecutableScripts() throws {
         let fileManager = FileManager.default
 
+        let rootImages = try fileManager
+            .contentsOfDirectory(atPath: repositoryRoot.path)
+            .filter {
+                imageExtensions.contains(
+                    URL(filePath: $0).pathExtension.lowercased()
+                )
+            }
+            .sorted()
         #expect(
-            !fileManager.fileExists(
-                atPath: repositoryRoot.appending(
-                    path: "758588182_17891656152596285_1812746344893833058_n.jpg"
-                ).path
-            )
+            rootImages.isEmpty,
+            "unexpected images in the repository root: \(rootImages)"
         )
         #expect(
             fileManager.fileExists(
@@ -43,6 +48,10 @@ struct RepositoryHygieneTests {
             #expect(mode(of: path) == expectedMode, "\(path) has an unexpected mode")
         }
     }
+
+    private let imageExtensions: Set<String> = [
+        "gif", "heic", "jpeg", "jpg", "png", "webp"
+    ]
 
     private let executableScripts: Set<String> = [
         "Scripts/check-repository-hygiene.sh",
