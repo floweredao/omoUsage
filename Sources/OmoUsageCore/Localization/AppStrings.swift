@@ -207,6 +207,7 @@ public enum AppStringKey: String, CaseIterable, Sendable {
     case dashboardOrderDescription
     case availableServices
     case addAPIKey
+    case changeAPIKey
     case kiroLBUsage
     case kiroLBUsageDescription
 }
@@ -464,6 +465,7 @@ public struct AppStrings: Sendable {
             "행의 손잡이를 드래그하거나 Command-위/아래 화살표 키를 눌러 대시보드에 표시되는 순서를 바꿉니다.",
         .availableServices: "연결 가능한 서비스",
         .addAPIKey: "키 입력\u{2026}",
+        .changeAPIKey: "키 변경\u{2026}",
         .kiroLBUsage: "Kiro LB 사용량",
         .kiroLBUsageDescription:
             "로컬에서 실행 중인 kiro-lb 게이트웨이의 계정별 남은 사용량을 대시보드에 표시합니다. 실험 기능이라 동작이 바뀔 수 있어요."
@@ -706,6 +708,7 @@ public struct AppStrings: Sendable {
             "Drag a row's handle, or press Command-Up Arrow and Command-Down Arrow, to change the order shown in the dashboard.",
         .availableServices: "Available Services",
         .addAPIKey: "Add Key\u{2026}",
+        .changeAPIKey: "Change Key\u{2026}",
         .kiroLBUsage: "Kiro LB usage",
         .kiroLBUsageDescription:
             "Shows remaining usage for each account behind a kiro-lb gateway running on this Mac. Experimental; behavior may change."

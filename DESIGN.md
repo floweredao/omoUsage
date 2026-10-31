@@ -97,7 +97,11 @@ other privileged controls remain native-only.
 - Provider colors identify brands without expanding the dashboard chrome.
 - Settings draws no row chrome of its own: every pane is one SwiftUI
   `Form` in the grouped style, so row backgrounds, separators, corner radii,
-  section headers, and footers are the system's. Meter tracks use 16%
+  section headers, and footers are the system's. `SettingsSectionFooter`
+  styles explanatory section footers as leading-aligned `.footnote` text in
+  `.secondary` foreground with no extra outer padding, matching native
+  grouped-form footers; failure feedback lines inside a footer override to
+  `.primary` so errors are never visually demoted. Meter tracks use 16%
   semantic contrast in both appearances.
 - Settings status is a symbol beside secondary text (`checkmark.circle.fill`,
   `exclamationmark.triangle.fill`, `minus.circle`, `clock`, `hourglass`);
@@ -312,8 +316,10 @@ other privileged controls remain native-only.
   - Left out on purpose: separate Dashboard Order tab (merged into
     Dashboard), full multi-row sections for untouched unconnected providers
     (collapsed into compact one-line rows under Available Services until
-    expanded or pending), custom row chrome, nested scroll containers, and
-    save/apply buttons.
+    expanded or pending), always-visible empty API-key fields with disabled
+    Save/Delete on already-configured primary accounts (hidden behind a
+    `키 변경…` / `Change Key…` button until editing is requested), custom row
+    chrome, nested scroll containers, and save/apply buttons.
 - Every pane is a `Form` with `.formStyle(.grouped)`: `Section`s with native
   row anatomy (label leading, control trailing, explanatory text as a
   subtitle or section footer). General holds Language, Launch at Login, and
@@ -547,9 +553,13 @@ other privileged controls remain native-only.
 - `ProviderSectionView`: authenticated provider usage only.
 - `ProviderSettingsSection`: one grouped-form section per connected, pending,
   or expanded provider in the `Accounts` pane. Its header is the icon, name,
-  and native help button; its footer is the credential guidance. Connection
-  status and controls belong to each account row, not the header; the primary
-  row also owns its editable API-key controls. Every section embeds its
+  and native help button; its footer is the credential guidance in
+  `SettingsSectionFooter` (`.footnote`, `.secondary`, leading-aligned).
+  Connection status and controls belong to each account row, not the header;
+  the primary row also owns its editable API-key controls, showing the
+  `SecureField` immediately when no key is stored (`keySource == nil`) and
+  collapsing it behind a `키 변경…` / `Change Key…` button (paired with
+  `삭제` / `Delete`) while a key is already stored. Every section embeds its
   provider-specific account manager. It owns authentication only and carries
   no ordering affordance.
 - `AvailableProviderRow`: compact one-line row in the `Accounts` pane's
