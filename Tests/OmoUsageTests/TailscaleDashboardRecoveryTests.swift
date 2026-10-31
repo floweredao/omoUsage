@@ -41,6 +41,36 @@ struct TailscaleDashboardRecoveryTests {
     }
 
     @Test
+    func readyInspectionOnAnotherServePortOpensOnlyThatAuthority() async throws {
+        let service = RecoveryService([
+            .success(.ready(host: host, httpsPort: 7_443))
+        ])
+        let (controller, access, _) = makeController(
+            service, clock: RecoveryClock()
+        )
+        let gateway = WebDashboardAccessGateway(
+            accessStore: access,
+            router: WebDashboardRouter(
+                snapshotData: { Data("{}".utf8) },
+                indexHTML: Data("fixture".utf8)
+            )
+        )
+        func status(_ authority: String) -> Int {
+            gateway.response(request: WebDashboardHTTPRequest(
+                method: "GET", path: "/",
+                headers: ["host": authority], body: Data()
+            )).statusCode
+        }
+
+        await controller.refresh()
+
+        #expect(controller.state == .ready(host: host))
+        #expect(access.dashboardURL.absoluteString == "https://\(host):7443")
+        #expect(status("\(host):7443") == 200)
+        #expect(status("\(host):8443") == 403)
+    }
+
+    @Test
     func initialInspectionExportsLocalURLBeforeRemoteRecovery() async throws {
         let service = RecoveryService([
             .success(.signedOut), .success(.ready(host: host))

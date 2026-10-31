@@ -355,6 +355,49 @@ struct WebDashboardAuthenticationTests {
         )
     }
 
+    @Test
+    func tailscaleCLIRecognizesManualServeMappingOnAnotherPort() throws {
+        // 8443 already serves a different local app.
+        let recorder = TailscaleCommandRecorder(responses: [
+            TailscaleCommandResult(
+                status: 0,
+                standardOutput: Data(
+                    """
+                    {"BackendState":"Running","Self":{
+                      "DNSName":"fixture-device.fixture-tailnet.ts.net.",
+                      "Online":true
+                    }}
+                    """.utf8
+                ),
+                standardError: Data()
+            ),
+            TailscaleCommandResult(
+                status: 0,
+                standardOutput: Data(
+                    """
+                    {"TCP":{"7443":{"HTTPS":true},"8443":{"HTTPS":true}},"Web":{
+                      "fixture-device.fixture-tailnet.ts.net:8443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8787"}}},
+                      "fixture-device.fixture-tailnet.ts.net:7443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:7827"}}}
+                    }}
+                    """.utf8
+                ),
+                standardError: Data()
+            )
+        ])
+        let client = TailscaleCLIService(
+            executable: URL(filePath: "/fixture/tailscale"),
+            execute: recorder.run
+        )
+
+        #expect(
+            try client.inspect(dashboardPort: 7_827)
+                == .ready(
+                    host: "fixture-device.fixture-tailnet.ts.net",
+                    httpsPort: 7_443
+                )
+        )
+    }
+
     @Test(arguments: [
         // The expected port and target must belong to the same handler.
         """
@@ -387,6 +430,11 @@ struct WebDashboardAuthenticationTests {
         {"TCP":{"8443":{"HTTPS":true}},"Web":{
           "fixture-device.fixture-tailnet.ts.net:8443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:7827"}}}
         },"AllowFunnel":{"fixture-device.fixture-tailnet.ts.net:8443":true}}
+        """,
+        """
+        {"TCP":{"7443":{"HTTPS":true}},"Web":{
+          "fixture-device.fixture-tailnet.ts.net:7443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:7827"}}}
+        },"AllowFunnel":{"fixture-device.fixture-tailnet.ts.net:7443":true}}
         """
     ])
     func tailscaleCLIRejectsUnrelatedOrNonPrivateServeMappings(

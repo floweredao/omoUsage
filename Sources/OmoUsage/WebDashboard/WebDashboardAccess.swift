@@ -234,7 +234,10 @@ enum TailscaleDashboardInspection: Equatable, Sendable {
     case unavailable
     case signedOut
     case available(host: String)
-    case ready(host: String)
+    case ready(
+        host: String,
+        httpsPort: UInt16 = TailscaleCLIService.httpsPort
+    )
 }
 
 protocol TailscaleDashboardServing: Sendable {
@@ -337,13 +340,14 @@ struct TailscaleCLIService: TailscaleDashboardServing, Sendable {
         guard serve.status == 0 else {
             throw TailscaleDashboardFailure.commandFailed
         }
-        return try Self.servesDashboard(
+        guard let httpsPort = try Self.dashboardServePort(
             serve.standardOutput,
             host: host,
             dashboardPort: dashboardPort
-        )
-            ? .ready(host: host)
-            : .available(host: host)
+        ) else {
+            return .available(host: host)
+        }
+        return .ready(host: host, httpsPort: httpsPort)
     }
 
     func enable(dashboardPort: UInt16) throws {
@@ -455,11 +459,14 @@ struct TailscaleCLIService: TailscaleDashboardServing, Sendable {
             : nil
     }
 
-    private static func servesDashboard(
+    /// The private HTTPS port that serves the dashboard, preferring the
+    /// dedicated port. Another port counts when the owner mapped it
+    /// manually because the dedicated one belongs to a different service.
+    private static func dashboardServePort(
         _ data: Data,
         host: String,
         dashboardPort: UInt16
-    ) throws -> Bool {
+    ) throws -> UInt16? {
         let configuration: ServeConfiguration
         do {
             configuration = try JSONDecoder().decode(
@@ -469,12 +476,18 @@ struct TailscaleCLIService: TailscaleDashboardServing, Sendable {
         } catch {
             throw TailscaleDashboardFailure.invalidStatus
         }
-        let port = String(Self.httpsPort)
-        let authority = "\(host):\(port)"
-        return configuration.TCP?[port]?.HTTPS == true
-            && configuration.Web?[authority]?.Handlers?["/"]?.Proxy
-                == "http://127.0.0.1:\(dashboardPort)"
-            && configuration.AllowFunnel?[authority] != true
+        func serves(_ port: UInt16) -> Bool {
+            let authority = "\(host):\(port)"
+            return configuration.TCP?[String(port)]?.HTTPS == true
+                && configuration.Web?[authority]?.Handlers?["/"]?.Proxy
+                    == "http://127.0.0.1:\(dashboardPort)"
+                && configuration.AllowFunnel?[authority] != true
+        }
+        if serves(Self.httpsPort) { return Self.httpsPort }
+        return (configuration.TCP ?? [:]).keys
+            .compactMap { UInt16($0) }
+            .sorted()
+            .first(where: serves)
     }
 
     private struct ServeConfiguration: Decodable {
@@ -780,10 +793,10 @@ final class TailscaleDashboardController {
         case .available(let host):
             publishLocalMode()
             state = .available(host: host)
-        case .ready(let host):
+        case .ready(let host, let httpsPort):
             let mode = WebDashboardAccessMode.tailscale(
                 host: host,
-                httpsPort: TailscaleCLIService.httpsPort
+                httpsPort: httpsPort
             )
             accessStore.updateMode(mode)
             statusStore.publishAccessMode(mode)
