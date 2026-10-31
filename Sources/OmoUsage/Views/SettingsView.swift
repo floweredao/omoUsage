@@ -2938,7 +2938,7 @@ private struct ProviderSettingsSection: View {
 
     @State private var isHelpPresented = false
     @State private var isKeyRemovalConfirmationPresented = false
-    @State private var isEditingStoredKey = false
+    @State private var isKeyFieldRevealed = false
     @Environment(\.appLocalization)
     private var localization
 
@@ -2985,20 +2985,6 @@ private struct ProviderSettingsSection: View {
             SettingsSectionFooter {
                 Text(localization.providerText(descriptor.instruction))
             }
-        }
-        .confirmationDialog(
-            localization.format(.removeKeyTitle, provider.displayName),
-            isPresented: $isKeyRemovalConfirmationPresented,
-            titleVisibility: .visible
-        ) {
-            Button(
-                localization.text(.delete),
-                role: .destructive
-            ) {
-                isEditingStoredKey = false
-                onRemove()
-            }
-            Button(localization.text(.cancel), role: .cancel) {}
         }
     }
 
@@ -3118,6 +3104,13 @@ private struct ProviderSettingsSection: View {
         }
     }
 
+    /// The primary row's OmoUsage-owned API key. A stored key is named by its
+    /// source and edited only on request (`키 변경…` / `Change Key…`), so a
+    /// connected row never carries an empty field with disabled buttons. A
+    /// connected row without a stored key (a discovered companion credential)
+    /// offers `키 입력…` / `Add Key…` the same way; only an unconnected row
+    /// with no key shows the field at once, because entering one is its
+    /// primary action.
     @ViewBuilder
     private var primaryCredentialControls: some View {
         if descriptor.acceptsAPIKey {
@@ -3132,41 +3125,55 @@ private struct ProviderSettingsSection: View {
                             action: onCleanupLegacy
                         )
                         .buttonStyle(.link)
-                        .controlSize(.small)
                     }
                     Spacer(minLength: 8)
-                    if !isEditingStoredKey {
-                        Button(localization.text(.changeAPIKey)) {
-                            isEditingStoredKey = true
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .accessibilityIdentifier(
-                            "change-key-\(provider.rawValue)"
-                        )
+                    if !isKeyFieldRevealed {
+                        revealKeyFieldButton(title: .changeAPIKey)
                         Button(localization.text(.delete), role: .destructive) {
                             isKeyRemovalConfirmationPresented = true
                         }
                         .buttonStyle(.bordered)
-                        .controlSize(.small)
                     }
                 }
+                .controlSize(.small)
+                .confirmationDialog(
+                    localization.format(.removeKeyTitle, provider.displayName),
+                    isPresented: $isKeyRemovalConfirmationPresented,
+                    titleVisibility: .visible
+                ) {
+                    Button(localization.text(.delete), role: .destructive) {
+                        isKeyFieldRevealed = false
+                        onRemove()
+                    }
+                    Button(localization.text(.cancel), role: .cancel) {}
+                }
+            } else if primaryIsConnected, !isKeyFieldRevealed {
+                HStack(spacing: 8) {
+                    Spacer(minLength: 8)
+                    revealKeyFieldButton(title: .addAPIKey)
+                }
+                .controlSize(.small)
             }
-            if keySource == nil || isEditingStoredKey {
+            if showsKeyField {
                 HStack(spacing: 8) {
                     SecureField(localization.text(.apiKey), text: $keyDraft)
                         .textFieldStyle(.roundedBorder)
                         .accessibilityLabel(localization.text(.apiKey))
-                    if keySource != nil {
+                    if keySource != nil || primaryIsConnected {
                         Button(localization.text(.cancel)) {
                             keyDraft = ""
-                            isEditingStoredKey = false
+                            isKeyFieldRevealed = false
                         }
                         .buttonStyle(.bordered)
                     }
                     Button(localization.text(.save)) {
                         onSave()
-                        isEditingStoredKey = false
+                        // A failed save keeps the draft, so the field stays open.
+                        if keyDraft.trimmingCharacters(
+                            in: .whitespacesAndNewlines
+                        ).isEmpty {
+                            isKeyFieldRevealed = false
+                        }
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(
@@ -3174,14 +3181,33 @@ private struct ProviderSettingsSection: View {
                             in: .whitespacesAndNewlines
                         ).isEmpty
                     )
-                    Button(localization.text(.delete), role: .destructive) {
-                        isKeyRemovalConfirmationPresented = true
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(keySource == nil)
                 }
                 .controlSize(.small)
             }
+        }
+    }
+
+    private func revealKeyFieldButton(title: AppStringKey) -> some View {
+        Button(localization.text(title)) {
+            isKeyFieldRevealed = true
+        }
+        .buttonStyle(.bordered)
+        .accessibilityIdentifier("change-key-\(provider.rawValue)")
+    }
+
+    /// The field is shown at once only when there is neither a stored key nor
+    /// a live connection; otherwise a button reveals it.
+    private var showsKeyField: Bool {
+        isKeyFieldRevealed || (keySource == nil && !primaryIsConnected)
+    }
+
+    private var primaryIsConnected: Bool {
+        let identity = accounts.first { $0.role == .primary }?.identity
+            ?? AccountProviderID(accountID: .legacy, providerID: provider)
+        guard !viewModel.isDisconnected(identity) else { return false }
+        switch viewModel.accountConnectionStates[identity] {
+        case .available, .failed, .schemaChanged: return true
+        case .authenticationRequired, .unavailable, nil: return false
         }
     }
 
