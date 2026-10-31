@@ -666,6 +666,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let localization: LocalizationController
     private let accountRegistryController: ProviderAccountRegistryController
     private let accountDefaults: UserDefaults
+    private let experimentalFeatureStore: ExperimentalFeatureStore
     private let companionCapture: (ProviderID) throws -> String
     private let companionLaunch: (ProviderID) -> Result<
         ProviderSetupOutcome,
@@ -992,6 +993,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         self.localization = localization
         self.accountRegistryController = accountRegistryController
         self.accountDefaults = defaults
+        self.experimentalFeatureStore = ExperimentalFeatureStore(defaults: defaults)
         self.companionCapture = companionCapture
         self.companionLaunch = companionLaunch
 #if OMO_USAGE_FIXTURES
@@ -1418,6 +1420,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                     Task { @MainActor in
                         self?.fitSettingsWindow(toContentHeight: height)
                     }
+                },
+                isKiroLBEnabled: experimentalFeatureStore.isKiroLBEnabled,
+                onKiroLBEnabledChange: { [weak self] enabled in
+                    guard let self else { return }
+                    self.experimentalFeatureStore.setKiroLBEnabled(enabled)
+                    self.applyExperimentalFeatureChange()
                 }
             )
         )
