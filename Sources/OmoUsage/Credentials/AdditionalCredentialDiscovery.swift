@@ -483,6 +483,48 @@ extension CredentialDiscovery {
         try apiKeyCredential(.zai, accountID: accountID)
     }
 
+    /// The kiro-lb dashboard password: environment, the exact account
+    /// Keychain item, then (legacy account only) `DASHBOARD_PASSWORD` from
+    /// the gateway's own `.env` file.
+    func kiroLB(
+        accountID: AccountID = .legacy
+    ) throws -> DiscoveredCredential {
+        guard
+            let store = ProviderAPIKeyStore.live(
+                for: .kiroLB,
+                accountID: accountID,
+                home: home,
+                environment: environment,
+                keychain: providerKeychain
+            )
+        else {
+            throw CredentialDiscoveryError.notFound(.kiroLB)
+        }
+        if let loaded = store.loadCredential() {
+            return credential(.kiroLB, token: loaded.value, source: loaded.source)
+        }
+        guard accountID == .legacy else {
+            throw CredentialDiscoveryError.notFound(.kiroLB)
+        }
+        // A failed exact Keychain read must not widen to plaintext.
+        do {
+            _ = try providerKeychain.value(
+                service: store.service,
+                account: store.account
+            )
+        } catch {
+            throw CredentialDiscoveryError.notFound(.kiroLB)
+        }
+        guard let password = kiroLBGateway.password else {
+            throw CredentialDiscoveryError.notFound(.kiroLB)
+        }
+        return credential(.kiroLB, token: password, source: .file)
+    }
+
+    var kiroLBGateway: KiroLBGatewayConfiguration {
+        KiroLBGatewayConfiguration.load(home: home, environment: environment)
+    }
+
     func openCodeDatabase() throws -> URL? {
         let directory = openCodeDataDirectory
         guard FileManager.default.fileExists(atPath: directory.path) else {

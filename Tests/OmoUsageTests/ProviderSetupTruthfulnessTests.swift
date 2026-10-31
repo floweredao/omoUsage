@@ -14,7 +14,7 @@ struct ProviderSetupTruthfulnessTests {
             ProviderSetup.descriptor(for: $0)?.acceptsAPIKey == false
         }
 
-        #expect(apiKeyProviders == [.opencode, .openrouter, .zai])
+        #expect(apiKeyProviders == [.opencode, .openrouter, .zai, .kiroLB])
         #expect(
             companionProviders == [
                 .claude, .codex, .cursor, .antigravity,
