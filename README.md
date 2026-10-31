@@ -218,6 +218,9 @@ macOS app and its tests.
 
 ## Documentation
 
+- [`CONTRIBUTING.md`](CONTRIBUTING.md): requirements, how to build and run with
+  sample data, the checks a change has to pass, and the commit and
+  pull-request conventions.
 - [`DESIGN.md`](DESIGN.md): the layout, tokens, motion, accessibility, and
   privacy rules every screen follows.
 - [`RELEASE.md`](RELEASE.md): signing, Sparkle updates, and release steps.
@@ -228,3 +231,7 @@ macOS app and its tests.
 - [OpenUsage](https://github.com/robinebers/openusage) for the idea and for
   showing how each service reports usage.
 - [Sparkle](https://sparkle-project.org) for in-app updates.
+
+## License
+
+OmoUsage is released under the [MIT License](LICENSE).
