@@ -483,7 +483,10 @@ struct TailscaleCLIService: TailscaleDashboardServing, Sendable {
     ) -> URL? {
         let candidates = [
             URL(filePath: "/usr/local/bin/tailscale"),
-            URL(filePath: "/opt/homebrew/bin/tailscale")
+            URL(filePath: "/opt/homebrew/bin/tailscale"),
+            // The macOS app ships the same CLI inside its bundle; the paths
+            // above exist only when someone installed a symlink by hand.
+            URL(filePath: "/Applications/Tailscale.app/Contents/MacOS/Tailscale")
         ]
         return candidates.first {
             isExecutable($0.path)
