@@ -33,6 +33,23 @@ struct DashboardVisualContractTests {
     }
 
     @Test
+    func settingsFooterFeedbackKeepsOnlyFailuresInPrimary() {
+        // Footers are secondary footnote text; a failure line alone is primary.
+        #expect(LocalizedText.key(.saveKeyFailed).isSettingsFailureFeedback)
+        #expect(
+            LocalizedText.key(.webDashboardOpenFailed).isSettingsFailureFeedback
+        )
+        #expect(
+            !LocalizedText.formatted(.savedKey, "OpenRouter")
+                .isSettingsFailureFeedback
+        )
+        #expect(
+            !LocalizedText.key(.companionCredentialMissing)
+                .isSettingsFailureFeedback
+        )
+    }
+
+    @Test
     func tailscaleQRCodeKeepsScannableQuietZone() {
         #expect(
             TailscaleQRCodeVisualTokens.quietZoneModules >= 4
