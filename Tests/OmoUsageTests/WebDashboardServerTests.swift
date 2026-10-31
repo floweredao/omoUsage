@@ -339,6 +339,67 @@ struct WebDashboardServerTests {
     }
 
     @Test
+    func legacyProviderOrderIsRepairedOnlyWhenItCoversTheRoster() throws {
+        // Given a client from before Kiro LB: it knows the other 11 ids.
+        let visibleRoster = ProviderID.allCases.filter { $0 != .kiroLB }
+        let settingsStore = WebDashboardSettingsStore(
+            controlState: UsageDashboardControlState(
+                providerOrder: visibleRoster,
+                disconnectedProviders: [],
+                isRefreshing: false
+            ),
+            language: .english
+        )
+        let recorder = WebDashboardCommandRecorder()
+        let router = WebDashboardRouter(
+            snapshotData: { Data() },
+            settingsData: settingsStore.encoded,
+            indexHTML: Data(),
+            appIconSVG: Data(),
+            mutationNonce: "correct-nonce",
+            dispatchCommand: recorder.record
+        )
+        let authorizedHeaders = [
+            "content-type": "application/json",
+            "x-omo-csrf": "correct-nonce"
+        ]
+        let posted = Array(visibleRoster.reversed())
+        let legacyOrder = try JSONSerialization.data(
+            withJSONObject: ["providerOrder": posted.map(\.rawValue)]
+        )
+        let shortOrder = try JSONSerialization.data(
+            withJSONObject: [
+                "providerOrder": posted
+                    .filter { $0 != .openrouter }
+                    .map(\.rawValue)
+            ]
+        )
+
+        // When
+        let accepted = router.response(
+            request: WebDashboardHTTPRequest(
+                method: "POST",
+                path: "/api/settings",
+                headers: authorizedHeaders,
+                body: legacyOrder
+            )
+        )
+        let rejected = router.response(
+            request: WebDashboardHTTPRequest(
+                method: "POST",
+                path: "/api/settings",
+                headers: authorizedHeaders,
+                body: shortOrder
+            )
+        )
+
+        // Then
+        #expect(accepted.statusCode == 202)
+        #expect(rejected.statusCode == 400)
+        #expect(recorder.commands == [.setProviderOrder(posted + [.kiroLB])])
+    }
+
+    @Test
     func accountCommandsRequireNonceAndValidateConfiguredRoster() throws {
         // Given
         let accountA = AccountID(

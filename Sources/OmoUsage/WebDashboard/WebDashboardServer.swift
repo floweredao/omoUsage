@@ -546,20 +546,24 @@ struct WebDashboardRouter: Sendable {
         }
 
         if Set(dictionary.keys) == ["providerOrder"] {
-            guard
-                let rawOrder = dictionary["providerOrder"] as? [String],
-                rawOrder.count == ProviderID.allCases.count
-            else {
+            guard let rawOrder = dictionary["providerOrder"] as? [String] else {
                 return nil
             }
             let order = rawOrder.compactMap(ProviderID.init(rawValue:))
+            // A client older than a provider this build added posts the
+            // roster it knew. Accept it while it still covers every provider
+            // the current settings expose, then repair the missing ones into
+            // their canonical places.
+            let roster = configuredProviderRoster()
+                ?? Set(ProviderID.allCases)
             guard
-                order.count == ProviderID.allCases.count,
-                Set(order) == Set(ProviderID.allCases)
+                order.count == rawOrder.count,
+                Set(order).count == order.count,
+                Set(order).isSuperset(of: roster)
             else {
                 return nil
             }
-            return .setProviderOrder(order)
+            return .setProviderOrder(ProviderDisplayOrder.repaired(order))
         }
 
         if Set(dictionary.keys) == ["accountProviderOrder"] {
@@ -634,6 +638,17 @@ struct WebDashboardRouter: Sendable {
     }
 
     private func configuredAccountRoster() -> Set<AccountProviderID>? {
+        guard let state = configuredSettingsState() else { return nil }
+        return Set(state.accountProviderOrder)
+    }
+
+    private func configuredProviderRoster() -> Set<ProviderID>? {
+        guard let state = configuredSettingsState() else { return nil }
+        let order = state.providerOrder.compactMap(ProviderID.init(rawValue:))
+        return order.isEmpty ? nil : Set(order)
+    }
+
+    private func configuredSettingsState() -> WebDashboardSettingsState? {
         guard
             let data = try? settingsData(),
             let state = try? JSONDecoder().decode(
@@ -643,7 +658,7 @@ struct WebDashboardRouter: Sendable {
         else {
             return nil
         }
-        return Set(state.accountProviderOrder)
+        return state
     }
 
     private func accountProviderID(from value: Any?) -> AccountProviderID? {
