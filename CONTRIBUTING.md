@@ -72,7 +72,8 @@ executable, add it to both `Scripts/check-repository-hygiene.sh` and
 - Tests use [Swift Testing](https://developer.apple.com/documentation/testing)
   (`@Test`, `#expect`), with injected files, Keychain, and `URLProtocol` stubs
   instead of network access. Add the regression test next to its neighbors.
-- Korean is the persisted default language. A user-visible string belongs in
+- The display language follows the system language until the user chooses
+  one. A user-visible string belongs in
   `Sources/OmoUsageCore/Localization/AppStrings.swift` with both a Korean and
   an English value.
 - Credentials stay on the machine. Never put a token, cookie, API key, local
