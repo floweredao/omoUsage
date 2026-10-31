@@ -72,16 +72,16 @@ if "- target: OmoUsageCore" not in desktop:
 PY
 
 forbidden_imports='^(import|@_exported import) (AppKit|Security|SQLite3|LocalAuthentication)([[:space:]]|$)'
-if rg -n "$forbidden_imports" Sources/OmoUsageCore Sources/OmoUsage/Mobile; then
+if grep -rn -E "$forbidden_imports" Sources/OmoUsageCore Sources/OmoUsage/Mobile; then
     fail "Core or Mobile imports a forbidden framework"
 fi
-if find Sources/OmoUsageCore Sources/OmoUsage/Mobile -type f | rg '/(Credentials|Providers|Diagnostics|Settings)/'; then
+if find Sources/OmoUsageCore Sources/OmoUsage/Mobile -type f | grep -E '/(Credentials|Providers|Diagnostics|Settings)/'; then
     fail "Core or Mobile includes a forbidden source folder"
 fi
 
 PBX=OmoUsage.xcodeproj/project.pbxproj
 [ -f "$PBX" ] || fail "generated Xcode project is absent"
-rg -q 'OmoUsageCore' "$PBX" || fail "generated Xcode project has no Core target"
+grep -q 'OmoUsageCore' "$PBX" || fail "generated Xcode project has no Core target"
 
 swift build --target OmoUsageCore >/dev/null
 BIN_PATH=$(swift build --show-bin-path)
