@@ -73,7 +73,7 @@ Paths below are repository-relative. Other macOS paths in the lookup table are r
 - UI and observable state live on `@MainActor`; shared mutable cooldown state uses an actor.
 - `UsageDashboardViewModel.refresh()` fetches independently with a task group. Cancellation publishes neither failure state nor a new timestamp.
 - Provider failures are typed. Missing authentication removes a provider; transient failures may retain its last-good usage.
-- Korean is the persisted default language. Machine values use typed IDs/enums; provider-generated display text is localized separately.
+- The display language follows the system language (Korean or English, otherwise English) until the user chooses one. Machine values use typed IDs/enums; provider-generated text is stored in its canonical Korean form and localized for display.
 - SwiftPM builds `OmoUsageCore`, the macOS executable, and tests. XcodeGen/Xcode builds macOS, iOS, and Catalyst targets.
 - macOS fixture hooks require `OMO_USAGE_FIXTURES` (debug by default); release QA packaging uses `--fixtures`. `OMO_USAGE_FIXTURE_MODE=1` selects fixtures, including on Mobile.
 - 한국어 문서 이름은 README-ko.md로 통일한다.
@@ -116,6 +116,6 @@ sh Scripts/package-app.sh
 - Both app targets must use the same development team and `$(TeamIdentifierPrefix)com.omo.usage` iCloud identifier.
 - The checked-in `.xcodeproj` mirrors `project.yml`; treat the YAML as the target-definition source.
 - `sh Scripts/ci-check.sh policy` regenerates the Xcode project; it is not a read-only check. `swiftpm`, `xcode`, and `package-smoke` are separate local lanes.
-- Existing GitHub workflows have push/PR/tag triggers. Do not trigger Actions without explicit authorization; check and reversibly disable relevant workflows before an authorized remote write.
+- GitHub workflows run on push, pull request, and tag events.
 - `UsageSnapshotCodec` currently uses schema version 4, decodes versions 1–3, and keeps a 256 KB payload ceiling.
 - `NWWebDashboardListener` binds production `127.0.0.1:7827`; fixture mode may override the port. Optional Tailscale Serve supplies private HTTPS access. `WebDashboardAccessGateway` validates Host/Origin before the router checks routes and mutation nonces.
