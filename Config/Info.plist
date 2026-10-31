@@ -27,7 +27,7 @@
 	<key>SUFeedURL</key>
 	<string>https://github.com/floweredao/omoUsage/releases/latest/download/appcast.xml</string>
 	<key>SUPublicEDKey</key>
-	<string>8z9ItI/rDJ0KpfL0XG/N8P05spSYk4QhGnVA2RpQk7g=</string>
+	<string>iEZnS7Zb9NJkmwzKnT7vcRKUv03ASyz40kAPHrGAQsQ=</string>
 	<key>SUEnableAutomaticChecks</key>
 	<false/>
 	<key>SUAutomaticallyUpdate</key>
