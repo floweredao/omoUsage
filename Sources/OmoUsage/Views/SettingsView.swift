@@ -201,7 +201,7 @@ func resetKeychainAuthorizationForUserAction() {
 }
 
 /// macOS grouped forms place section footers trailing; settings explanations
-/// and status text read as leading secondary text under their section.
+/// and status text read as leading secondary footnote text under their section.
 struct SettingsSectionFooter<Content: View>: View {
     @ViewBuilder let content: () -> Content
 
@@ -209,6 +209,8 @@ struct SettingsSectionFooter<Content: View>: View {
         VStack(alignment: .leading, spacing: 4) {
             content()
         }
+        .font(.footnote)
+        .foregroundStyle(.secondary)
         .frame(maxWidth: .infinity, alignment: .leading)
         .multilineTextAlignment(.leading)
     }
@@ -541,7 +543,10 @@ struct SettingsView: View {
     @ViewBuilder
     private var feedbackText: some View {
         if let feedback {
-            SettingsFeedbackText(text: localization.resolve(feedback))
+            SettingsFeedbackText(
+                text: localization.resolve(feedback),
+                isFailure: feedback.isSettingsFailureFeedback
+            )
         }
     }
 
@@ -717,6 +722,7 @@ struct SettingsView: View {
             status: webDashboardStatusStore.status,
             tailscaleController: tailscaleDashboardController,
             feedback: feedback.map(localization.resolve),
+            isFeedbackFailure: feedback?.isSettingsFailureFeedback == true,
             onOpen: {
                 if !onOpenWebDashboard() {
                     feedback = .key(.webDashboardOpenFailed)
@@ -1584,14 +1590,62 @@ struct SettingsView: View {
     }
 }
 
-/// The status line for the last Settings action. It lives in a section
-/// footer, so the grouped form already styles it as secondary text.
+/// The status line for the last Settings action. Failure lines use primary
+/// foreground so they are not visually demoted inside the secondary footer.
 private struct SettingsFeedbackText: View {
     let text: String
+    var isFailure = false
 
     var body: some View {
         Text(text)
+            .foregroundStyle(
+                isFailure ? HierarchicalShapeStyle.primary : .secondary
+            )
             .accessibilityIdentifier("settings-feedback")
+    }
+}
+
+extension LocalizedText {
+    /// Whether a Settings feedback line reports a failure. Failures stay in
+    /// primary inside the secondary footer; waiting instructions ("no new
+    /// credential yet") and successes keep the footer's secondary style.
+    var isSettingsFailureFeedback: Bool {
+        let key: AppStringKey
+        switch self {
+        case .key(let resolvedKey), .formatted(let resolvedKey, _):
+            key = resolvedKey
+        case .raw:
+            return false
+        }
+        switch key {
+        case .webDashboardOpenFailed,
+             .webDashboardLinkCreationFailed,
+             .connectionVerificationFailed,
+             .registryRecoveryFailed,
+             .companionRequired,
+             .companionCredentialUnavailable,
+             .saveKeyFailed,
+             .removeKeyFailed,
+             .legacyKeyCleanupFailed,
+             .accountAdditionFailed,
+             .claudeSignInTimedOut,
+             .claudeSignInFailed,
+             .claudeSignInSaveFailed,
+             .browserLoginFailed,
+             .browserSignInTimedOut,
+             .browserSignInDenied,
+             .browserUsageUnavailable,
+             .browserCredentialSaveFailed,
+             .kiroAccountMismatch,
+             .kiroAccountAlreadyConnected,
+             .kiroUnsupportedOrganization,
+             .accountAliasInvalid,
+             .saveAccountAliasFailed,
+             .accountChangeFailed:
+            return true
+        default:
+            return false
+        }
     }
 }
 
@@ -2452,6 +2506,7 @@ private struct WebDashboardSettingsSections: View {
     let status: WebDashboardStatus
     @Bindable var tailscaleController: TailscaleDashboardController
     let feedback: String?
+    var isFeedbackFailure = false
     let onOpen: () -> Void
     let onOpenQRCode: () -> Void
     let onShareLink: (NSView) -> Void
@@ -2484,9 +2539,13 @@ private struct WebDashboardSettingsSections: View {
                     Text(endpointDetails)
                     if let failure = status.failure {
                         Text(failureMessage(failure))
+                            .foregroundStyle(.primary)
                     }
                     if let feedback {
-                        SettingsFeedbackText(text: feedback)
+                        SettingsFeedbackText(
+                            text: feedback,
+                            isFailure: isFeedbackFailure
+                        )
                     }
                 }
             }
@@ -2879,6 +2938,7 @@ private struct ProviderSettingsSection: View {
 
     @State private var isHelpPresented = false
     @State private var isKeyRemovalConfirmationPresented = false
+    @State private var isEditingStoredKey = false
     @Environment(\.appLocalization)
     private var localization
 
@@ -2925,6 +2985,20 @@ private struct ProviderSettingsSection: View {
             SettingsSectionFooter {
                 Text(localization.providerText(descriptor.instruction))
             }
+        }
+        .confirmationDialog(
+            localization.format(.removeKeyTitle, provider.displayName),
+            isPresented: $isKeyRemovalConfirmationPresented,
+            titleVisibility: .visible
+        ) {
+            Button(
+                localization.text(.delete),
+                role: .destructive
+            ) {
+                isEditingStoredKey = false
+                onRemove()
+            }
+            Button(localization.text(.cancel), role: .cancel) {}
         }
     }
 
@@ -3060,35 +3134,53 @@ private struct ProviderSettingsSection: View {
                         .buttonStyle(.link)
                         .controlSize(.small)
                     }
+                    Spacer(minLength: 8)
+                    if !isEditingStoredKey {
+                        Button(localization.text(.changeAPIKey)) {
+                            isEditingStoredKey = true
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .accessibilityIdentifier(
+                            "change-key-\(provider.rawValue)"
+                        )
+                        Button(localization.text(.delete), role: .destructive) {
+                            isKeyRemovalConfirmationPresented = true
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
                 }
             }
-            HStack(spacing: 8) {
-                SecureField(localization.text(.apiKey), text: $keyDraft)
-                    .textFieldStyle(.roundedBorder)
-                    .accessibilityLabel(localization.text(.apiKey))
-                Button(localization.text(.save), action: onSave)
+            if keySource == nil || isEditingStoredKey {
+                HStack(spacing: 8) {
+                    SecureField(localization.text(.apiKey), text: $keyDraft)
+                        .textFieldStyle(.roundedBorder)
+                        .accessibilityLabel(localization.text(.apiKey))
+                    if keySource != nil {
+                        Button(localization.text(.cancel)) {
+                            keyDraft = ""
+                            isEditingStoredKey = false
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                    Button(localization.text(.save)) {
+                        onSave()
+                        isEditingStoredKey = false
+                    }
                     .buttonStyle(.borderedProminent)
                     .disabled(
-                        keyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        keyDraft.trimmingCharacters(
+                            in: .whitespacesAndNewlines
+                        ).isEmpty
                     )
-                Button(localization.text(.delete), role: .destructive) {
-                    isKeyRemovalConfirmationPresented = true
+                    Button(localization.text(.delete), role: .destructive) {
+                        isKeyRemovalConfirmationPresented = true
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(keySource == nil)
                 }
-                .buttonStyle(.bordered)
-                .disabled(keySource == nil)
-            }
-            .controlSize(.small)
-            .confirmationDialog(
-                localization.format(.removeKeyTitle, provider.displayName),
-                isPresented: $isKeyRemovalConfirmationPresented,
-                titleVisibility: .visible
-            ) {
-                Button(
-                    localization.text(.delete),
-                    role: .destructive,
-                    action: onRemove
-                )
-                Button(localization.text(.cancel), role: .cancel) {}
+                .controlSize(.small)
             }
         }
     }
