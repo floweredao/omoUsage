@@ -923,6 +923,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                     )
                 }
             },
+            excludedProviders: ExperimentalFeatureStore.excludedProviders(
+                in: defaults
+            ),
             disconnectedProviders: disconnectedProviders,
             disconnectedAccountProviders: accountComposition.disconnected,
             persistDisconnectedProviders: disconnectionStore.save,
@@ -1496,6 +1499,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         return true
     }
 
+    /// Call after an experimental feature flag flips: rebuilds providers and
+    /// order the same way an account-registry change does.
+    func applyExperimentalFeatureChange() {
+        applyAccountRegistryChange()
+    }
+
     private func applyAccountRegistryChange() {
 #if OMO_USAGE_FIXTURES
         let composition = AppAccountCompositionFactory.make(
@@ -1518,7 +1527,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         viewModel.updateProviders(
             composition.providers,
             accountProviderOrder: composition.accountProviderOrder,
-            disconnected: composition.disconnected
+            disconnected: composition.disconnected,
+            excludedProviders: ExperimentalFeatureStore.excludedProviders(
+                in: accountDefaults
+            )
         )
         Task { [weak self] in
             guard let self else { return }

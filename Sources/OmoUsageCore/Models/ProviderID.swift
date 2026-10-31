@@ -56,6 +56,7 @@ public enum ProviderID: String, CaseIterable, Codable, Sendable {
     case opencode
     case openrouter
     case zai
+    case kiroLB
 
     public var displayName: String {
         switch self {
@@ -70,6 +71,7 @@ public enum ProviderID: String, CaseIterable, Codable, Sendable {
         case .opencode: "OpenCode"
         case .openrouter: "OpenRouter"
         case .zai: "Z.ai"
+        case .kiroLB: "Kiro LB"
         }
     }
 
@@ -86,6 +88,7 @@ public enum ProviderID: String, CaseIterable, Codable, Sendable {
         case .opencode: "O"
         case .openrouter: "R"
         case .zai: "Z"
+        case .kiroLB: "K"
         }
     }
 }

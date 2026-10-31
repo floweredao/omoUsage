@@ -6,7 +6,11 @@ import Testing
 @Suite
 struct AccountProviderFactoryTests {
     @Test
-    func registryCreatesReferencedAccountsForEveryProvider() {
+    func registryCreatesReferencedAccountsForEveryProvider() throws {
+        let defaults = try #require(
+            UserDefaults(suiteName: "AccountProviderFactory-\(UUID().uuidString)")
+        )
+        defaults.set(true, forKey: ExperimentalFeatureStore.kiroLBDefaultsKey)
         let accountIDs = Dictionary(
             uniqueKeysWithValues: ProviderID.allCases.map {
                 ($0, AccountID())
@@ -35,15 +39,22 @@ struct AccountProviderFactoryTests {
 
         let providers = ProviderFactory.current(
             registry: registry,
-            environment: ["OMO_USAGE_FIXTURE_MODE": "1"]
+            environment: ["OMO_USAGE_FIXTURE_MODE": "1"],
+            defaults: defaults
         )
 
-        #expect(providers.map(\.accountProviderID) == references)
+        // Enabled Kiro LB also gets its unpersisted legacy row.
+        let legacyKiroLB = AccountProviderID(accountID: .legacy, providerID: .kiroLB)
+        #expect(
+            providers.map(\.accountProviderID)
+                == references.dropLast() + [legacyKiroLB, references.last!]
+        )
         #expect(
             providers.map(\.accountLabel)
-                == ProviderID.allCases.map { "\($0.displayName) Account" }
+                == ProviderID.allCases.dropLast().map { "\($0.displayName) Account" }
+                + ["Legacy Alias", "Kiro LB Account"]
         )
-        #expect(providers.count == ProviderID.allCases.count)
+        #expect(providers.count == ProviderID.allCases.count + 1)
     }
 
     @Test

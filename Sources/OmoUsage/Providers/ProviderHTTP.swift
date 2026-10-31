@@ -77,6 +77,23 @@ struct ProviderHTTP: Sendable {
         )
     }
 
+    /// Like `data(for:endpoint:)`, through the same validation, retry,
+    /// response-limit, and status mapping, but also returns the final
+    /// response so a caller can read headers such as `Set-Cookie`.
+    func response(
+        for request: URLRequest,
+        endpoint: ProviderEndpointDescriptor
+    ) async throws -> (Data, HTTPURLResponse) {
+        try endpoint.validate(request)
+        return try await exchange(
+            for: request,
+            provider: endpoint.provider,
+            operation: endpoint.safety == .safe ? .safe : .unsafe,
+            retriesRateLimit: endpoint.retriesRateLimit,
+            detailingStatusFailures: false
+        )
+    }
+
     func data(
         for request: URLRequest,
         provider: ProviderID,
@@ -84,6 +101,22 @@ struct ProviderHTTP: Sendable {
         retriesRateLimit: Bool = true,
         detailingStatusFailures: Bool = false
     ) async throws -> Data {
+        try await exchange(
+            for: request,
+            provider: provider,
+            operation: operation,
+            retriesRateLimit: retriesRateLimit,
+            detailingStatusFailures: detailingStatusFailures
+        ).0
+    }
+
+    private func exchange(
+        for request: URLRequest,
+        provider: ProviderID,
+        operation: ProviderHTTPOperation?,
+        retriesRateLimit: Bool,
+        detailingStatusFailures: Bool
+    ) async throws -> (Data, HTTPURLResponse) {
         let retrySafe: Bool
         switch operation {
         case .safe:
@@ -181,7 +214,7 @@ struct ProviderHTTP: Sendable {
                     response: response,
                     provider: provider
                 )
-                return data
+                return (data, response)
             } catch is CancellationError {
                 throw CancellationError()
             } catch let error as ProviderTransportError {

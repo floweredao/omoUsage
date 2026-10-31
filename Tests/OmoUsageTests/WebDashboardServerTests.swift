@@ -245,7 +245,8 @@ struct WebDashboardServerTests {
                 "kiro",
                 "opencode",
                 "openrouter",
-                "zai"
+                "zai",
+                "kiroLB"
               ]
             }
             """.utf8

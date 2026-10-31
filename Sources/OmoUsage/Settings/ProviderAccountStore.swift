@@ -482,6 +482,7 @@ struct ProviderAccountStore {
             if Self.companionProviders.contains(provider) {
                 return identity
             }
+            guard provider != .kiroLB else { return nil }
             return try legacyAPIKeyPresence(provider) ? identity : nil
         }
         return ProviderAccountRegistry(

@@ -196,8 +196,13 @@ public enum UsageSnapshotCodec {
         includesAccountIdentity: Bool
     ) throws -> Data {
         try validate(snapshot)
+        // Experimental Kiro LB usage stays on this Mac: only the loopback
+        // dashboard payload may carry it, never the iCloud payload.
+        let published = includesAccountIdentity
+            ? snapshot.providers
+            : snapshot.providers.filter { $0.provider != .kiroLB }
         var ordinals: [ProviderID: Int] = [:]
-        let providers = snapshot.providers.map { usage in
+        let providers = published.map { usage in
             let ordinal = ordinals[usage.provider, default: 0] + 1
             ordinals[usage.provider] = ordinal
             return CloudProviderUsage(
@@ -211,7 +216,9 @@ public enum UsageSnapshotCodec {
             providers: providers,
             generatedAt: snapshot.generatedAt,
             lastRefreshAttemptAt: snapshot.lastRefreshAttemptAt,
-            oldestDisplayedSuccessAt: snapshot.oldestDisplayedSuccessAt
+            oldestDisplayedSuccessAt: published.count == snapshot.providers.count
+                ? snapshot.oldestDisplayedSuccessAt
+                : published.compactMap(\.lastSuccessfulAt).min()
         )
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .millisecondsSince1970
