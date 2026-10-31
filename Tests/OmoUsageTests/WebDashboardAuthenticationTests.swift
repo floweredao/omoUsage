@@ -415,6 +415,25 @@ struct WebDashboardAuthenticationTests {
     }
 
     @Test
+    func tailscaleCLIResolvesTheAppBundleWhenNoSymlinkExists() {
+        let bundle = "/Applications/Tailscale.app/Contents/MacOS/Tailscale"
+
+        // The app is installed and nobody made a CLI symlink.
+        #expect(
+            TailscaleCLIService.resolveExecutable { $0 == bundle }?.path
+                == bundle
+        )
+        // An explicitly installed CLI still wins over the bundle.
+        #expect(
+            TailscaleCLIService.resolveExecutable {
+                $0 == "/usr/local/bin/tailscale" || $0 == bundle
+            }?.path == "/usr/local/bin/tailscale"
+        )
+        // No Tailscale at all stays unresolved.
+        #expect(TailscaleCLIService.resolveExecutable { _ in false } == nil)
+    }
+
+    @Test
     func tailscaleCLIRecognizesItsExistingServeMapping() throws {
         let recorder = TailscaleCommandRecorder(responses: [
             TailscaleCommandResult(
