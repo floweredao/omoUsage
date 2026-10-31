@@ -705,7 +705,7 @@ enum ProviderSetup {
                 help: help(
                     provider,
                     [
-                        "이 Mac의 로컬 kiro-lb 게이트웨이(127.0.0.1:8000)에서 계정별 사용량을 읽습니다.",
+                        "로컬에서 실행 중인 kiro-lb 게이트웨이에서 계정별 사용량을 읽습니다. 주소는 KIRO_LB_URL이나 kiro-lb .env의 SERVER_PORT를 따르며 기본값은 127.0.0.1:8000입니다.",
                         "비밀번호는 kiro-lb .env 파일의 DASHBOARD_PASSWORD입니다.",
                         "게이트웨이가 이 Mac에서 실행 중이면 비밀번호를 자동으로 찾습니다."
                     ],

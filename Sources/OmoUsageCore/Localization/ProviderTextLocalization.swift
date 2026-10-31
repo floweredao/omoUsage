@@ -440,7 +440,7 @@ public enum ProviderTextLocalization {
         "OpenRouter API 키 입력": "Enter an OpenRouter API key",
         "Z.ai API 키 입력": "Enter a Z.ai API key",
         "kiro-lb 대시보드 비밀번호 입력": "Enter the kiro-lb dashboard password",
-        "이 Mac의 로컬 kiro-lb 게이트웨이(127.0.0.1:8000)에서 계정별 사용량을 읽습니다.": "Reads per-account usage from the local kiro-lb gateway on this Mac (127.0.0.1:8000).",
+        "로컬에서 실행 중인 kiro-lb 게이트웨이에서 계정별 사용량을 읽습니다. 주소는 KIRO_LB_URL이나 kiro-lb .env의 SERVER_PORT를 따르며 기본값은 127.0.0.1:8000입니다.": "Reads per-account usage from a kiro-lb gateway running on this Mac. The address comes from KIRO_LB_URL or SERVER_PORT in kiro-lb's .env, and defaults to 127.0.0.1:8000.",
         "비밀번호는 kiro-lb .env 파일의 DASHBOARD_PASSWORD입니다.": "The password is DASHBOARD_PASSWORD in kiro-lb's .env file.",
         "게이트웨이가 이 Mac에서 실행 중이면 비밀번호를 자동으로 찾습니다.": "When the gateway runs on this Mac, the password is found automatically.",
         "Claude Code OAuth 로그인을 완료하세요.": "Complete Claude Code OAuth sign-in.",
