@@ -597,7 +597,9 @@ private final class RecoveryService: TailscaleDashboardServing, @unchecked Senda
     }
 
     func enable(dashboardPort: UInt16) throws { try recordMutation("enable") }
-    func disable() throws { try recordMutation("disable") }
+    func disable(dashboardPort: UInt16) throws {
+        try recordMutation("disable")
+    }
 
     private func recordMutation(_ name: String) throws {
         lock.withLock {

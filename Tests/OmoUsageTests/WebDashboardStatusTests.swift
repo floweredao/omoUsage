@@ -280,7 +280,7 @@ private final class StubTailscaleDashboardService:
         lock.withLock { enableCount += 1 }
     }
 
-    func disable() throws {}
+    func disable(dashboardPort: UInt16) throws {}
 }
 
 private enum StatusTestFailure: Error {
