@@ -775,6 +775,8 @@ private struct SideNotchProviderButton: View {
 /// tie. Model-scoped limits only bound one model or model family, so they
 /// stay in the detail card: Claude's per-model weekly meters
 /// (`claude.week.<model>`) and Antigravity's per-model and per-family quotas.
+/// A pool's per-account meters (`kirolb-account-<n>`) only bound one member
+/// of the pool, so the rail shows the pool aggregate instead.
 /// Providers that report nothing else keep the earlier session-first choice.
 enum SideNotchSummaryMeterPolicy {
     static let modelScopedIDPrefixes = [
@@ -784,8 +786,16 @@ enum SideNotchSummaryMeterPolicy {
         "antigravity.third-party.",
     ]
 
+    static let poolMemberIDPrefixes = [
+        "kirolb-account-",
+    ]
+
     static func isModelScoped(_ meter: UsageMeter) -> Bool {
         modelScopedIDPrefixes.contains { meter.id.hasPrefix($0) }
+    }
+
+    static func isPoolMember(_ meter: UsageMeter) -> Bool {
+        poolMemberIDPrefixes.contains { meter.id.hasPrefix($0) }
     }
 
     static func select(from meters: [UsageMeter]) -> UsageMeter? {
@@ -793,6 +803,7 @@ enum SideNotchSummaryMeterPolicy {
             $0.metric.kind == .quotaRemaining
                 && $0.period != .extra
                 && !isModelScoped($0)
+                && !isPoolMember($0)
         }
         if let lowest = accountWide.min(by: isMoreLimiting) {
             return lowest

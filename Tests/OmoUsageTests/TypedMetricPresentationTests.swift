@@ -161,6 +161,39 @@ struct TypedMetricPresentationTests {
     }
 
     @Test
+    func sideNotchRailShowsTheKiroLBPoolInsteadOfItsLowestAccount() throws {
+        // One pooled account is nearly spent, the other is almost full, so
+        // the pool as a whole has half its quota left.
+        let usage = try KiroLBUsageParser.parse(
+            Data(
+                """
+                {
+                  "accounts": [
+                    {"enabled": true, "usage": {
+                      "subscriptionTitle": "KIRO PRO",
+                      "usageLimit": 100, "currentUsage": 90
+                    }},
+                    {"enabled": true, "usage": {
+                      "subscriptionTitle": "KIRO PRO",
+                      "usageLimit": 100, "currentUsage": 10
+                    }}
+                  ]
+                }
+                """.utf8
+            ),
+            now: Date(timeIntervalSince1970: 1_785_675_000)
+        )
+        let meters = usage.groups.flatMap(\.meters)
+        let selected = SideNotchSummaryMeterPolicy.select(from: meters)
+
+        #expect(meters.map(\.id) == [
+            "kirolb-pool", "kirolb-account-1", "kirolb-account-2"
+        ])
+        #expect(selected?.id == "kirolb-pool")
+        #expect(selected?.percentRemaining == 50)
+    }
+
+    @Test
     func sideNotchRailIgnoresExhaustedModelWeeklyQuota() throws {
         let usage = try ClaudeUsageParser.parse(
             Data(
