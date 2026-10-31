@@ -339,6 +339,73 @@ struct WebDashboardServerTests {
     }
 
     @Test
+    func legacyProviderOrderMissingAnExperimentalProviderIsRepaired() {
+        let recorder = WebDashboardCommandRecorder()
+        let router = WebDashboardRouter(
+            snapshotData: { Data() },
+            settingsData: { Data(#"{"isRefreshing":false}"#.utf8) },
+            indexHTML: Data(),
+            appIconSVG: Data(),
+            mutationNonce: "correct-nonce",
+            dispatchCommand: recorder.record
+        )
+        let headers = [
+            "content-type": "application/json",
+            "x-omo-csrf": "correct-nonce"
+        ]
+        // A client that last loaded before Kiro LB shipped posts the 11 ids
+        // it knows, in the order the owner arranged them.
+        let legacyOrder = Data(
+            """
+            {
+              "providerOrder": [
+                "codex", "claude", "cursor", "antigravity", "copilot",
+                "devin", "grok", "kiro", "opencode", "openrouter", "zai"
+              ]
+            }
+            """.utf8
+        )
+        // Dropping an established provider stays a rejected order.
+        let missingEstablishedProvider = Data(
+            """
+            {
+              "providerOrder": [
+                "codex", "cursor", "antigravity", "copilot", "devin",
+                "grok", "kiro", "opencode", "openrouter", "zai"
+              ]
+            }
+            """.utf8
+        )
+
+        let accepted = router.response(
+            request: WebDashboardHTTPRequest(
+                method: "POST",
+                path: "/api/settings",
+                headers: headers,
+                body: legacyOrder
+            )
+        )
+        let rejected = router.response(
+            request: WebDashboardHTTPRequest(
+                method: "POST",
+                path: "/api/settings",
+                headers: headers,
+                body: missingEstablishedProvider
+            )
+        )
+
+        #expect(accepted.statusCode == 202)
+        #expect(rejected.statusCode == 400)
+        #expect(recorder.commands == [
+            .setProviderOrder([
+                .codex, .claude, .cursor, .antigravity, .copilot,
+                .devin, .grok, .kiro, .opencode, .openrouter, .zai,
+                .kiroLB
+            ])
+        ])
+    }
+
+    @Test
     func accountCommandsRequireNonceAndValidateConfiguredRoster() throws {
         // Given
         let accountA = AccountID(
