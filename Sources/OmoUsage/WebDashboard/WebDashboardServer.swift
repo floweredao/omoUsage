@@ -535,6 +535,13 @@ struct WebDashboardRouter: Sendable {
         }
     }
 
+    /// A legacy `providerOrder` payload has to list every provider this
+    /// build always shows. An experimental provider may be missing, because
+    /// a client that last loaded before it shipped never saw it;
+    /// `ProviderDisplayOrder.repaired` appends whatever the payload omits.
+    private static let requiredProviderOrder = Set(ProviderID.allCases)
+        .subtracting(ExperimentalFeatureStore.experimentalProviders)
+
     private func settingsCommand(
         from data: Data
     ) -> WebDashboardCommand? {
@@ -547,19 +554,21 @@ struct WebDashboardRouter: Sendable {
 
         if Set(dictionary.keys) == ["providerOrder"] {
             guard
-                let rawOrder = dictionary["providerOrder"] as? [String],
-                rawOrder.count == ProviderID.allCases.count
+                let rawOrder = dictionary["providerOrder"] as? [String]
             else {
                 return nil
             }
             let order = rawOrder.compactMap(ProviderID.init(rawValue:))
             guard
-                order.count == ProviderID.allCases.count,
-                Set(order) == Set(ProviderID.allCases)
+                order.count == rawOrder.count,
+                Set(order).count == order.count,
+                Set(order).isSuperset(of: Self.requiredProviderOrder)
             else {
                 return nil
             }
-            return .setProviderOrder(order)
+            return .setProviderOrder(
+                ProviderDisplayOrder.repaired(order)
+            )
         }
 
         if Set(dictionary.keys) == ["accountProviderOrder"] {

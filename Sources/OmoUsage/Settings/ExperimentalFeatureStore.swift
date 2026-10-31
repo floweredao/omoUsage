@@ -23,9 +23,13 @@ final class ExperimentalFeatureStore {
         defaults.bool(forKey: kiroLBDefaultsKey)
     }
 
+    /// Providers that ship behind a Labs flag, so a persisted or posted
+    /// provider order may predate them.
+    nonisolated static let experimentalProviders: Set<ProviderID> = [.kiroLB]
+
     nonisolated static func excludedProviders(
         in defaults: UserDefaults
     ) -> Set<ProviderID> {
-        isKiroLBEnabled(in: defaults) ? [] : [.kiroLB]
+        isKiroLBEnabled(in: defaults) ? [] : experimentalProviders
     }
 }
