@@ -267,10 +267,20 @@ struct WebDashboardAuthenticationTests {
                 standardOutput: Data("{}".utf8),
                 standardError: Data()
             ),
+            // enable: the precheck finds nothing on the dedicated port.
+            serveStatus("{}"),
             TailscaleCommandResult(
                 status: 0,
                 standardOutput: Data(),
                 standardError: Data()
+            ),
+            // disable: the precheck finds the mapping enable just made.
+            serveStatus(
+                """
+                {"TCP":{"8443":{"HTTPS":true}},"Web":{
+                  "fixture-device.fixture-tailnet.ts.net:8443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:7827"}}}
+                }}
+                """
             ),
             TailscaleCommandResult(
                 status: 0,
@@ -290,17 +300,118 @@ struct WebDashboardAuthenticationTests {
                 )
         )
         try client.enable(dashboardPort: 7_827)
-        try client.disable()
+        try client.disable(dashboardPort: 7_827)
 
         #expect(recorder.arguments() == [
             ["status", "--json", "--peers=false"],
+            ["serve", "status", "--json"],
             ["serve", "status", "--json"],
             [
                 "serve", "--bg", "--yes", "--https=8443",
                 "7827"
             ],
+            ["serve", "status", "--json"],
             ["serve", "--https=8443", "off"]
         ])
+    }
+
+    @Test
+    func tailscaleCLIEnableRefusesWhenTheDedicatedPortServesAnotherApp() throws {
+        // 8443 already proxies a different local app on this node.
+        let recorder = TailscaleCommandRecorder(responses: [
+            serveStatus(
+                """
+                {"TCP":{"8443":{"HTTPS":true}},"Web":{
+                  "fixture-device.fixture-tailnet.ts.net:8443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8787"}}}
+                }}
+                """
+            ),
+            serveStatus("")
+        ])
+        let client = TailscaleCLIService(
+            executable: URL(filePath: "/fixture/tailscale"),
+            execute: recorder.run
+        )
+
+        #expect(throws: TailscaleDashboardFailure.portInUse) {
+            try client.enable(dashboardPort: 7_827)
+        }
+        #expect(recorder.arguments() == [["serve", "status", "--json"]])
+    }
+
+    @Test
+    func tailscaleCLIEnableKeepsAnExistingManualMapping() throws {
+        // The owner mapped the dashboard to 7443 because 8443 is taken.
+        let recorder = TailscaleCommandRecorder(responses: [
+            serveStatus(
+                """
+                {"TCP":{"7443":{"HTTPS":true},"8443":{"HTTPS":true}},"Web":{
+                  "fixture-device.fixture-tailnet.ts.net:8443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8787"}}},
+                  "fixture-device.fixture-tailnet.ts.net:7443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:7827"}}}
+                }}
+                """
+            ),
+            serveStatus("")
+        ])
+        let client = TailscaleCLIService(
+            executable: URL(filePath: "/fixture/tailscale"),
+            execute: recorder.run
+        )
+
+        try client.enable(dashboardPort: 7_827)
+
+        #expect(recorder.arguments() == [["serve", "status", "--json"]])
+    }
+
+    @Test
+    func tailscaleCLIDisableTurnsOffOnlyTheDashboardPort() throws {
+        // 8443 belongs to another app; the dashboard sits on 7443.
+        let recorder = TailscaleCommandRecorder(responses: [
+            serveStatus(
+                """
+                {"TCP":{"7443":{"HTTPS":true},"8443":{"HTTPS":true}},"Web":{
+                  "fixture-device.fixture-tailnet.ts.net:8443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8787"}}},
+                  "fixture-device.fixture-tailnet.ts.net:7443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:7827"}}}
+                }}
+                """
+            ),
+            serveStatus("")
+        ])
+        let client = TailscaleCLIService(
+            executable: URL(filePath: "/fixture/tailscale"),
+            execute: recorder.run
+        )
+
+        try client.disable(dashboardPort: 7_827)
+
+        #expect(recorder.arguments() == [
+            ["serve", "status", "--json"],
+            ["serve", "--https=7443", "off"]
+        ])
+    }
+
+    @Test
+    func tailscaleCLIDisableLeavesAnotherAppAloneWhenNothingServesTheDashboard()
+        throws
+    {
+        let recorder = TailscaleCommandRecorder(responses: [
+            serveStatus(
+                """
+                {"TCP":{"8443":{"HTTPS":true}},"Web":{
+                  "fixture-device.fixture-tailnet.ts.net:8443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8787"}}}
+                }}
+                """
+            ),
+            serveStatus("")
+        ])
+        let client = TailscaleCLIService(
+            executable: URL(filePath: "/fixture/tailscale"),
+            execute: recorder.run
+        )
+
+        try client.disable(dashboardPort: 7_827)
+
+        #expect(recorder.arguments() == [["serve", "status", "--json"]])
     }
 
     @Test
@@ -503,6 +614,14 @@ struct WebDashboardAuthenticationTests {
             )
         )
     }
+}
+
+private func serveStatus(_ json: String) -> TailscaleCommandResult {
+    TailscaleCommandResult(
+        status: 0,
+        standardOutput: Data(json.utf8),
+        standardError: Data()
+    )
 }
 
 private final class TailscaleCommandRecorder: @unchecked Sendable {
