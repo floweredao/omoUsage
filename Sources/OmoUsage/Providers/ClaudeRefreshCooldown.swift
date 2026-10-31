@@ -210,8 +210,9 @@ actor ClaudeUsageCache {
 }
 
 /// Publishes each Claude account's latest usage read and rate-limit wait to
-/// a private local file, so local tools (ddolmeng's quota watch) can reuse
-/// it instead of spending the same account's budget. Never holds a token.
+/// a private local file, so other local tools (for example a quota monitor)
+/// can reuse it instead of spending the same account's budget. Never holds a
+/// token.
 ///
 /// Format (`schema_version` 1): `written_at` and an `accounts` array of
 /// `account_id`, `account_label`, `fetched_at`, `five_hour` and `seven_day`
