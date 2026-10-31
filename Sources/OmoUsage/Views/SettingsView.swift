@@ -201,7 +201,7 @@ func resetKeychainAuthorizationForUserAction() {
 }
 
 /// macOS grouped forms place section footers trailing; settings explanations
-/// and status text read as leading secondary text under their section.
+/// and status text read as leading secondary footnote text under their section.
 struct SettingsSectionFooter<Content: View>: View {
     @ViewBuilder let content: () -> Content
 
@@ -209,6 +209,8 @@ struct SettingsSectionFooter<Content: View>: View {
         VStack(alignment: .leading, spacing: 4) {
             content()
         }
+        .font(.footnote)
+        .foregroundStyle(.secondary)
         .frame(maxWidth: .infinity, alignment: .leading)
         .multilineTextAlignment(.leading)
     }
@@ -234,10 +236,13 @@ struct SettingsView: View {
     var cloudSyncStatus = CloudSyncStatus()
     let paneSelection: SettingsPaneSelection
     let onPreferredContentHeightChange: (CGFloat) -> Void
+    private let onKiroLBEnabledChange: (Bool) -> Void
     private let authenticateDevin: @MainActor () async throws -> CredentialSnapshot
     private let authenticateKiro: @MainActor () async throws -> CredentialSnapshot
     private let discoverKiro: (KiroBrowserConnectionTarget) throws -> CredentialSnapshot
     private let validateKiro: @MainActor (CredentialSnapshot) async throws -> ProviderUsage
+    @State private var isKiroLBEnabled: Bool
+    @State private var expandedAvailableProviders: Set<ProviderID> = []
     @State private var claudeConnection: ClaudeBrowserConnectionCoordinator
     @State private var claudeLoginTask: Task<Void, Never>?
     @State private var devinConnection = DevinBrowserConnectionCoordinator()
@@ -330,7 +335,9 @@ struct SettingsView: View {
         appUpdateController: AppUpdateController,
         cloudSyncStatus: CloudSyncStatus = CloudSyncStatus(),
         paneSelection: SettingsPaneSelection,
-        onPreferredContentHeightChange: @escaping (CGFloat) -> Void
+        onPreferredContentHeightChange: @escaping (CGFloat) -> Void,
+        isKiroLBEnabled: Bool = false,
+        onKiroLBEnabledChange: @escaping (Bool) -> Void = { _ in }
     ) {
         self.cloudSyncStatus = cloudSyncStatus
         self.viewModel = viewModel
@@ -353,10 +360,12 @@ struct SettingsView: View {
         self.appUpdateController = appUpdateController
         self.paneSelection = paneSelection
         self.onPreferredContentHeightChange = onPreferredContentHeightChange
+        self.onKiroLBEnabledChange = onKiroLBEnabledChange
         self.authenticateDevin = authenticateDevin
         self.authenticateKiro = authenticateKiro
         self.discoverKiro = discoverKiro
         self.validateKiro = validateKiro
+        _isKiroLBEnabled = State(initialValue: isKiroLBEnabled)
         _claudeConnection = State(
             initialValue: ClaudeBrowserConnectionCoordinator(
                 snapshotStore: claudeSnapshotStore,
@@ -429,19 +438,14 @@ struct SettingsView: View {
             switch paneSelection.pane {
             case .general:
                 generalSections
+            case .accounts:
+                authSections
             case .display:
                 displaySections
             case .webAccess:
                 webAccessSections
-            case .dashboardOrder:
-                if accountRegistryController.registry != nil {
-                    ProviderOrderingView(
-                        viewModel: viewModel,
-                        feedback: paneFeedback
-                    )
-                }
-            case .accounts:
-                authSections
+            case .experimental:
+                experimentalSections
             }
         }
         .formStyle(.grouped)
@@ -539,7 +543,10 @@ struct SettingsView: View {
     @ViewBuilder
     private var feedbackText: some View {
         if let feedback {
-            SettingsFeedbackText(text: localization.resolve(feedback))
+            SettingsFeedbackText(
+                text: localization.resolve(feedback),
+                isFailure: feedback.isSettingsFailureFeedback
+            )
         }
     }
 
@@ -701,6 +708,13 @@ struct SettingsView: View {
                 Text(localization.text(.dashboardTextSizeDescription))
             }
         }
+
+        if accountRegistryController.registry != nil {
+            ProviderOrderingView(
+                viewModel: viewModel,
+                feedback: paneFeedback
+            )
+        }
     }
 
     private var webAccessSections: some View {
@@ -708,6 +722,7 @@ struct SettingsView: View {
             status: webDashboardStatusStore.status,
             tailscaleController: tailscaleDashboardController,
             feedback: feedback.map(localization.resolve),
+            isFeedbackFailure: feedback?.isSettingsFailureFeedback == true,
             onOpen: {
                 if !onOpenWebDashboard() {
                     feedback = .key(.webDashboardOpenFailed)
@@ -738,96 +753,231 @@ struct SettingsView: View {
         )
     }
 
+    struct AccountsPanePartition: Equatable, Sendable {
+        let connected: [ProviderID]
+        let available: [ProviderID]
+    }
+
+    nonisolated static func partition(
+        providers: [ProviderID],
+        connected: Set<ProviderID>
+    ) -> AccountsPanePartition {
+        AccountsPanePartition(
+            connected: providers.filter { connected.contains($0) },
+            available: providers.filter { !connected.contains($0) }
+        )
+    }
+
+    @ViewBuilder
+    private var experimentalSections: some View {
+        Section {
+            Toggle(
+                localization.text(.kiroLBUsage),
+                isOn: Binding(
+                    get: { isKiroLBEnabled },
+                    set: { enabled in
+                        isKiroLBEnabled = enabled
+                        onKiroLBEnabledChange(enabled)
+                    }
+                )
+            )
+            .toggleStyle(.switch)
+            .accessibilityIdentifier("kiro-lb-usage-toggle")
+        } footer: {
+            SettingsSectionFooter {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(localization.text(.kiroLBUsageDescription))
+                    if !feedbackBelongsToRecoverySection {
+                        feedbackText
+                    }
+                }
+            }
+        }
+    }
+
+    private func showsFullProviderSection(_ provider: ProviderID) -> Bool {
+        if expandedAvailableProviders.contains(provider) {
+            return true
+        }
+        let rows = accountRegistryController.settingsAccounts(for: provider)
+        if rows.count > 1 {
+            return true
+        }
+        if additionCoordinator.pending?.provider == provider {
+            return true
+        }
+        if provider == .claude, claudeConnection.pending != nil {
+            return true
+        }
+        if provider == .devin, devinConnection.pending != nil {
+            return true
+        }
+        if provider == .kiro, kiroConnection.pending != nil {
+            return true
+        }
+        if provider == .codex, codexReconnectCoordinator.isWaiting {
+            return true
+        }
+        if connectionCoordinator.state(for: provider) == .waitingForCredential {
+            return true
+        }
+        if accountRegistryController.keyStorageSource(for: provider) != nil {
+            return true
+        }
+        for row in rows {
+            let identity = row.accountProviderID
+            if viewModel.isDisconnected(identity) {
+                return true
+            }
+            switch viewModel.accountConnectionStates[identity] {
+            case .available, .failed, .schemaChanged:
+                return true
+            case .authenticationRequired, .unavailable, nil:
+                break
+            }
+        }
+        return false
+    }
+
+    @ViewBuilder
+    private func providerSettingsSection(for provider: ProviderID) -> some View {
+        ProviderSettingsSection(
+            provider: provider,
+            viewModel: viewModel,
+            connectionPresentation:
+                connectionCoordinator.state(for: provider),
+            connectionControlsDisabled:
+                connectionControlsDisabled(for: provider),
+            keyDraft: binding(for: provider),
+            keySource: accountRegistryController
+                .keyStorageSource(for: provider),
+            needsLegacyCleanup: accountRegistryController
+                .pendingLegacyCleanup.contains {
+                    $0.accountID == .legacy
+                        && $0.providerID == provider
+                },
+            onCleanupLegacy: retryLegacyKeyCleanup,
+            onSetup: {
+                connectProvider(provider)
+            },
+            onSave: { saveKey(for: provider) },
+            onRemove: { removeKey(for: provider) },
+            onDisconnect: {
+                disconnectProvider(provider)
+            },
+            onReconnect: {
+                reconnectProvider(provider)
+            },
+            onRetry: {
+                retryProvider(provider)
+            },
+            accounts: ProviderAccountRowPresentation.rows(
+                from: accountRegistryController
+                    .settingsAccounts(for: provider)
+            ),
+            newAccountLabel: accountLabelBinding(
+                for: provider
+            ),
+            newAccountKey: accountKeyBinding(
+                for: provider
+            ),
+            onAddAccount: {
+                addAccount(for: provider)
+            },
+            onRemoveAccount: removeAccount,
+            onRenameAccount: renameAccount,
+            onAliasOutcome: reportAliasOutcome,
+            additionAvailability:
+                ProviderAccountAdditionAvailability.resolve(
+                    provider: provider,
+                    viewModel: viewModel,
+                    additionState: additionState(for: provider)
+                ),
+            onCheckAgain: checkForCompanionCredential,
+            onCancelAddition: cancelAddition,
+            isAwaitingConnectionCredential:
+                provider == .codex
+                    && codexReconnectCoordinator
+                        .isWaiting,
+            onCheckAgainConnection:
+                checkForCodexReconnectCredential,
+            onCancelConnection: {
+                if provider == .kiro { cancelKiroConnection() }
+                else if provider == .devin { cancelDevinConnection() }
+                else if provider == .claude { cancelClaudeConnection() }
+                else { cancelCodexReconnect() }
+            },
+            browserConnectionTarget: devinConnection.pending,
+            kiroConnectionTarget: kiroConnection.pending,
+            claudeConnectionTarget: claudeConnection.pending,
+            onBrowserConnect: {
+                resetKeychainAuthorizationForUserAction()
+                startDevinConnection(.existing($0))
+            },
+            onKiroConnect: {
+                resetKeychainAuthorizationForUserAction()
+                startKiroConnection(.existing($0))
+            },
+            onClaudeConnect: {
+                resetKeychainAuthorizationForUserAction()
+                startClaudeConnection(.existing($0.accountID))
+            },
+            codexPlanMultiplier:
+                codexPlanMultiplierBinding(
+                    for: provider
+                )
+        )
+    }
+
     @ViewBuilder
     private var authSections: some View {
         if accountRegistryController.registry != nil {
-            ForEach(viewModel.providerOrder, id: \.self) { provider in
-                ProviderSettingsSection(
-                    provider: provider,
-                    viewModel: viewModel,
-                    connectionPresentation:
-                        connectionCoordinator.state(for: provider),
-                    connectionControlsDisabled:
-                        connectionControlsDisabled(for: provider),
-                    keyDraft: binding(for: provider),
-                    keySource: accountRegistryController
-                        .keyStorageSource(for: provider),
-                    needsLegacyCleanup: accountRegistryController
-                        .pendingLegacyCleanup.contains {
-                            $0.accountID == .legacy
-                                && $0.providerID == provider
-                        },
-                    onCleanupLegacy: retryLegacyKeyCleanup,
-                    onSetup: {
-                        connectProvider(provider)
-                    },
-                    onSave: { saveKey(for: provider) },
-                    onRemove: { removeKey(for: provider) },
-                    onDisconnect: {
-                        disconnectProvider(provider)
-                    },
-                    onReconnect: {
-                        reconnectProvider(provider)
-                    },
-                    onRetry: {
-                        retryProvider(provider)
-                    },
-                    accounts: ProviderAccountRowPresentation.rows(
-                        from: accountRegistryController
-                            .settingsAccounts(for: provider)
-                    ),
-                    newAccountLabel: accountLabelBinding(
-                        for: provider
-                    ),
-                    newAccountKey: accountKeyBinding(
-                        for: provider
-                    ),
-                    onAddAccount: {
-                        addAccount(for: provider)
-                    },
-                    onRemoveAccount: removeAccount,
-                    onRenameAccount: renameAccount,
-                    onAliasOutcome: reportAliasOutcome,
-                    additionAvailability:
-                        ProviderAccountAdditionAvailability.resolve(
+            let fullSectionProviders = Set(
+                viewModel.providerOrder.filter(showsFullProviderSection)
+            )
+            let partitioned = Self.partition(
+                providers: viewModel.providerOrder,
+                connected: fullSectionProviders
+            )
+
+            ForEach(partitioned.connected, id: \.self) { provider in
+                providerSettingsSection(for: provider)
+            }
+
+            if !partitioned.available.isEmpty {
+                Section {
+                    ForEach(partitioned.available, id: \.self) { provider in
+                        AvailableProviderRow(
                             provider: provider,
-                            viewModel: viewModel,
-                            additionState: additionState(for: provider)
-                        ),
-                    onCheckAgain: checkForCompanionCredential,
-                    onCancelAddition: cancelAddition,
-                    isAwaitingConnectionCredential:
-                        provider == .codex
-                            && codexReconnectCoordinator
-                                .isWaiting,
-                    onCheckAgainConnection:
-                        checkForCodexReconnectCredential,
-                    onCancelConnection: {
-                        if provider == .kiro { cancelKiroConnection() }
-                        else if provider == .devin { cancelDevinConnection() }
-                        else if provider == .claude { cancelClaudeConnection() }
-                        else { cancelCodexReconnect() }
-                    },
-                    browserConnectionTarget: devinConnection.pending,
-                    kiroConnectionTarget: kiroConnection.pending,
-                    claudeConnectionTarget: claudeConnection.pending,
-                    onBrowserConnect: {
-                        resetKeychainAuthorizationForUserAction()
-                        startDevinConnection(.existing($0))
-                    },
-                    onKiroConnect: {
-                        resetKeychainAuthorizationForUserAction()
-                        startKiroConnection(.existing($0))
-                    },
-                    onClaudeConnect: {
-                        resetKeychainAuthorizationForUserAction()
-                        startClaudeConnection(.existing($0.accountID))
-                    },
-                    codexPlanMultiplier:
-                        codexPlanMultiplierBinding(
-                            for: provider
+                            connectionControlsDisabled:
+                                connectionControlsDisabled(for: provider),
+                            onConnect: {
+                                let identity = AccountProviderID(
+                                    accountID: .legacy,
+                                    providerID: provider
+                                )
+                                switch provider {
+                                case .claude:
+                                    resetKeychainAuthorizationForUserAction()
+                                    startClaudeConnection(.existing(.legacy))
+                                case .kiro:
+                                    resetKeychainAuthorizationForUserAction()
+                                    startKiroConnection(.existing(identity))
+                                case .devin:
+                                    resetKeychainAuthorizationForUserAction()
+                                    startDevinConnection(.existing(identity))
+                                default:
+                                    connectProvider(provider)
+                                }
+                            },
+                            onExpandKeyEntry: {
+                                expandedAvailableProviders.insert(provider)
+                            }
                         )
-                )
+                    }
+                } header: {
+                    Text(localization.text(.availableServices))
+                }
             }
 
             Section {
@@ -1440,14 +1590,62 @@ struct SettingsView: View {
     }
 }
 
-/// The status line for the last Settings action. It lives in a section
-/// footer, so the grouped form already styles it as secondary text.
+/// The status line for the last Settings action. Failure lines use primary
+/// foreground so they are not visually demoted inside the secondary footer.
 private struct SettingsFeedbackText: View {
     let text: String
+    var isFailure = false
 
     var body: some View {
         Text(text)
+            .foregroundStyle(
+                isFailure ? HierarchicalShapeStyle.primary : .secondary
+            )
             .accessibilityIdentifier("settings-feedback")
+    }
+}
+
+extension LocalizedText {
+    /// Whether a Settings feedback line reports a failure. Failures stay in
+    /// primary inside the secondary footer; waiting instructions ("no new
+    /// credential yet") and successes keep the footer's secondary style.
+    var isSettingsFailureFeedback: Bool {
+        let key: AppStringKey
+        switch self {
+        case .key(let resolvedKey), .formatted(let resolvedKey, _):
+            key = resolvedKey
+        case .raw:
+            return false
+        }
+        switch key {
+        case .webDashboardOpenFailed,
+             .webDashboardLinkCreationFailed,
+             .connectionVerificationFailed,
+             .registryRecoveryFailed,
+             .companionRequired,
+             .companionCredentialUnavailable,
+             .saveKeyFailed,
+             .removeKeyFailed,
+             .legacyKeyCleanupFailed,
+             .accountAdditionFailed,
+             .claudeSignInTimedOut,
+             .claudeSignInFailed,
+             .claudeSignInSaveFailed,
+             .browserLoginFailed,
+             .browserSignInTimedOut,
+             .browserSignInDenied,
+             .browserUsageUnavailable,
+             .browserCredentialSaveFailed,
+             .kiroAccountMismatch,
+             .kiroAccountAlreadyConnected,
+             .kiroUnsupportedOrganization,
+             .accountAliasInvalid,
+             .saveAccountAliasFailed,
+             .accountChangeFailed:
+            return true
+        default:
+            return false
+        }
     }
 }
 
@@ -2308,6 +2506,7 @@ private struct WebDashboardSettingsSections: View {
     let status: WebDashboardStatus
     @Bindable var tailscaleController: TailscaleDashboardController
     let feedback: String?
+    var isFeedbackFailure = false
     let onOpen: () -> Void
     let onOpenQRCode: () -> Void
     let onShareLink: (NSView) -> Void
@@ -2340,9 +2539,13 @@ private struct WebDashboardSettingsSections: View {
                     Text(endpointDetails)
                     if let failure = status.failure {
                         Text(failureMessage(failure))
+                            .foregroundStyle(.primary)
                     }
                     if let feedback {
-                        SettingsFeedbackText(text: feedback)
+                        SettingsFeedbackText(
+                            text: feedback,
+                            isFailure: isFeedbackFailure
+                        )
                     }
                 }
             }
@@ -2735,6 +2938,7 @@ private struct ProviderSettingsSection: View {
 
     @State private var isHelpPresented = false
     @State private var isKeyRemovalConfirmationPresented = false
+    @State private var isEditingStoredKey = false
     @Environment(\.appLocalization)
     private var localization
 
@@ -2781,6 +2985,20 @@ private struct ProviderSettingsSection: View {
             SettingsSectionFooter {
                 Text(localization.providerText(descriptor.instruction))
             }
+        }
+        .confirmationDialog(
+            localization.format(.removeKeyTitle, provider.displayName),
+            isPresented: $isKeyRemovalConfirmationPresented,
+            titleVisibility: .visible
+        ) {
+            Button(
+                localization.text(.delete),
+                role: .destructive
+            ) {
+                isEditingStoredKey = false
+                onRemove()
+            }
+            Button(localization.text(.cancel), role: .cancel) {}
         }
     }
 
@@ -2916,35 +3134,53 @@ private struct ProviderSettingsSection: View {
                         .buttonStyle(.link)
                         .controlSize(.small)
                     }
+                    Spacer(minLength: 8)
+                    if !isEditingStoredKey {
+                        Button(localization.text(.changeAPIKey)) {
+                            isEditingStoredKey = true
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .accessibilityIdentifier(
+                            "change-key-\(provider.rawValue)"
+                        )
+                        Button(localization.text(.delete), role: .destructive) {
+                            isKeyRemovalConfirmationPresented = true
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
                 }
             }
-            HStack(spacing: 8) {
-                SecureField(localization.text(.apiKey), text: $keyDraft)
-                    .textFieldStyle(.roundedBorder)
-                    .accessibilityLabel(localization.text(.apiKey))
-                Button(localization.text(.save), action: onSave)
+            if keySource == nil || isEditingStoredKey {
+                HStack(spacing: 8) {
+                    SecureField(localization.text(.apiKey), text: $keyDraft)
+                        .textFieldStyle(.roundedBorder)
+                        .accessibilityLabel(localization.text(.apiKey))
+                    if keySource != nil {
+                        Button(localization.text(.cancel)) {
+                            keyDraft = ""
+                            isEditingStoredKey = false
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                    Button(localization.text(.save)) {
+                        onSave()
+                        isEditingStoredKey = false
+                    }
                     .buttonStyle(.borderedProminent)
                     .disabled(
-                        keyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        keyDraft.trimmingCharacters(
+                            in: .whitespacesAndNewlines
+                        ).isEmpty
                     )
-                Button(localization.text(.delete), role: .destructive) {
-                    isKeyRemovalConfirmationPresented = true
+                    Button(localization.text(.delete), role: .destructive) {
+                        isKeyRemovalConfirmationPresented = true
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(keySource == nil)
                 }
-                .buttonStyle(.bordered)
-                .disabled(keySource == nil)
-            }
-            .controlSize(.small)
-            .confirmationDialog(
-                localization.format(.removeKeyTitle, provider.displayName),
-                isPresented: $isKeyRemovalConfirmationPresented,
-                titleVisibility: .visible
-            ) {
-                Button(
-                    localization.text(.delete),
-                    role: .destructive,
-                    action: onRemove
-                )
-                Button(localization.text(.cancel), role: .cancel) {}
+                .controlSize(.small)
             }
         }
     }
@@ -2958,6 +3194,65 @@ private struct ProviderSettingsSection: View {
         "\(localization.text(.setupHelp)), \(provider.displayName)"
     }
 
+}
+
+/// Compact one-line row for an unconnected provider in the Accounts pane's
+/// Available Services section.
+private struct AvailableProviderRow: View {
+    let provider: ProviderID
+    let connectionControlsDisabled: Bool
+    let onConnect: () -> Void
+    let onExpandKeyEntry: () -> Void
+
+    @State private var isHelpPresented = false
+    @Environment(\.appLocalization) private var localization
+
+    var body: some View {
+        let suffix = "\(provider.rawValue)-\(AccountID.legacy.rawValue)"
+        HStack(spacing: 8) {
+            ProviderIcon(provider: provider)
+                .frame(width: 20, height: 20)
+            Text(provider.displayName)
+                .font(.system(size: 13, weight: .semibold))
+                .lineLimit(1)
+            Button {
+                isHelpPresented = true
+            } label: {
+                Image(systemName: "questionmark.circle")
+            }
+            .buttonStyle(.borderless)
+            .help(helpName)
+            .accessibilityLabel(helpName)
+            .popover(isPresented: $isHelpPresented, arrowEdge: .trailing) {
+                ProviderHelpPopover(
+                    provider: provider,
+                    help: descriptor.help
+                )
+            }
+            Spacer(minLength: 8)
+            if descriptor.acceptsAPIKey {
+                Button(localization.text(.addAPIKey), action: onExpandKeyEntry)
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(connectionControlsDisabled)
+                    .accessibilityIdentifier("account-connect-\(suffix)")
+            } else {
+                Button(localization.text(.startConnection), action: onConnect)
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(connectionControlsDisabled)
+                    .accessibilityIdentifier("account-connect-\(suffix)")
+            }
+        }
+    }
+
+    private var descriptor: ProviderSetupDescriptor {
+        ProviderSetup.descriptor(for: provider)!
+    }
+
+    private var helpName: String {
+        "\(localization.text(.setupHelp)), \(provider.displayName)"
+    }
 }
 
 private extension ProviderKeyStorageSource {

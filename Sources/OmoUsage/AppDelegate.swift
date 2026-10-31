@@ -666,6 +666,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let localization: LocalizationController
     private let accountRegistryController: ProviderAccountRegistryController
     private let accountDefaults: UserDefaults
+    private let experimentalFeatureStore: ExperimentalFeatureStore
     private let companionCapture: (ProviderID) throws -> String
     private let companionLaunch: (ProviderID) -> Result<
         ProviderSetupOutcome,
@@ -923,6 +924,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                     )
                 }
             },
+            excludedProviders: ExperimentalFeatureStore.excludedProviders(
+                in: defaults
+            ),
             disconnectedProviders: disconnectedProviders,
             disconnectedAccountProviders: accountComposition.disconnected,
             persistDisconnectedProviders: disconnectionStore.save,
@@ -989,6 +993,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         self.localization = localization
         self.accountRegistryController = accountRegistryController
         self.accountDefaults = defaults
+        self.experimentalFeatureStore = ExperimentalFeatureStore(defaults: defaults)
         self.companionCapture = companionCapture
         self.companionLaunch = companionLaunch
 #if OMO_USAGE_FIXTURES
@@ -1415,6 +1420,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                     Task { @MainActor in
                         self?.fitSettingsWindow(toContentHeight: height)
                     }
+                },
+                isKiroLBEnabled: experimentalFeatureStore.isKiroLBEnabled,
+                onKiroLBEnabledChange: { [weak self] enabled in
+                    guard let self else { return }
+                    self.experimentalFeatureStore.setKiroLBEnabled(enabled)
+                    self.applyExperimentalFeatureChange()
                 }
             )
         )
@@ -1496,6 +1507,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         return true
     }
 
+    /// Call after an experimental feature flag flips: rebuilds providers and
+    /// order the same way an account-registry change does.
+    func applyExperimentalFeatureChange() {
+        applyAccountRegistryChange()
+    }
+
     private func applyAccountRegistryChange() {
 #if OMO_USAGE_FIXTURES
         let composition = AppAccountCompositionFactory.make(
@@ -1518,7 +1535,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         viewModel.updateProviders(
             composition.providers,
             accountProviderOrder: composition.accountProviderOrder,
-            disconnected: composition.disconnected
+            disconnected: composition.disconnected,
+            excludedProviders: ExperimentalFeatureStore.excludedProviders(
+                in: accountDefaults
+            )
         )
         Task { [weak self] in
             guard let self else { return }

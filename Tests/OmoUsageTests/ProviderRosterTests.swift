@@ -19,7 +19,8 @@ struct ProviderRosterTests {
                 .kiro,
                 .opencode,
                 .openrouter,
-                .zai
+                .zai,
+                .kiroLB
             ]
         )
     }
@@ -27,7 +28,8 @@ struct ProviderRosterTests {
     @Test
     func factoryRegistersEveryProvider() {
         let providers = ProviderFactory.current(environment: [:])
-        #expect(providers.map(\.id) == ProviderID.allCases)
+        // Experimental Kiro LB is built only from the registry path, behind its flag.
+        #expect(providers.map(\.id) == ProviderID.allCases.filter { $0 != .kiroLB })
     }
 
     @Test
@@ -38,7 +40,7 @@ struct ProviderRosterTests {
         #expect(
             ProviderID.allCases.filter {
                 ProviderSetup.descriptor(for: $0)?.acceptsAPIKey == true
-            } == [.opencode, .openrouter, .zai]
+            } == [.opencode, .openrouter, .zai, .kiroLB]
         )
     }
 

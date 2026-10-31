@@ -97,7 +97,11 @@ other privileged controls remain native-only.
 - Provider colors identify brands without expanding the dashboard chrome.
 - Settings draws no row chrome of its own: every pane is one SwiftUI
   `Form` in the grouped style, so row backgrounds, separators, corner radii,
-  section headers, and footers are the system's. Meter tracks use 16%
+  section headers, and footers are the system's. `SettingsSectionFooter`
+  styles explanatory section footers as leading-aligned `.footnote` text in
+  `.secondary` foreground with no extra outer padding, matching native
+  grouped-form footers; failure feedback lines inside a footer override to
+  `.primary` so errors are never visually demoted. Meter tracks use 16%
   semantic contrast in both appearances.
 - Settings status is a symbol beside secondary text (`checkmark.circle.fill`,
   `exclamationmark.triangle.fill`, `minus.circle`, `clock`, `hourglass`);
@@ -277,30 +281,62 @@ other privileged controls remain native-only.
   32 pt targets are 60 pt apart center to center; the timestamp takes the
   remaining width.
 - Settings follows Apple's HIG for a macOS settings window: a noncustomizable
-  `.preference`-style toolbar switches five panes in the former section order -
-  General (language, Launch at Login, updates), Display, Web Access,
-  Dashboard Order, and Provider Authentication - labeled General, Display,
-  Web Access, Order, and Auth (Korean: 일반, 화면 표시, 웹 접근, 순서, 인증) - with
-  SF Symbols (`gearshape`, `macwindow`, `globe`, `list.number`,
-  `person.crop.circle`). Every toolbar item lists all five labels as its
-  `possibleLabels`, so the five items share the widest label's width in
-  each language and none truncates. The toolbar always marks the active pane, and titles the window with the visible pane's
-  name. The window reopens on the last viewed pane. Section headings inside a
-  pane are dropped because the toolbar and window title already name it; no
-  sidebar, nested scroll, checkbox, new palette, or new material is introduced.
+  `.preference`-style toolbar switches five panes in task order —
+  General (language, Launch at Login, updates), Accounts (provider
+  connections and multi-account management), Dashboard (presentation style,
+  Side Notch hide delay, popover text size, and Dashboard Order), Web Access
+  (loopback web dashboard and Tailscale Serve), and Labs (experimental
+  features) — labeled General, Accounts, Dashboard, Web Access, and Labs
+  (Korean: 일반, 계정, 대시보드, 웹 접근, 실험 기능) — with SF Symbols
+  (`gearshape`, `person.crop.circle`, `macwindow`, `globe`, `flask`). Every
+  toolbar item lists all five labels as its `possibleLabels`, so the five
+  items share the widest label's width in each language and none truncates.
+  The toolbar always marks the active pane, and titles the window with the
+  visible pane's name. The window reopens on the last viewed pane; a
+  persisted `"dashboardOrder"` value migrates to the merged `display`
+  (Dashboard) pane, and unknown values fall back to `general`. Section
+  headings inside a pane are added only where a pane holds more than one
+  group and the group needs a name (such as `표시 순서` / `Dashboard Order`
+  in Dashboard, and `연결 가능한 서비스` / `Available Services` in Accounts);
+  footers carry explanations, and no subtitle sits under every heading. No
+  sidebar, nested scroll, checkbox, new palette, or new material is
+  introduced.
+- Layout: toolbar-pane settings window; one grouped Form per pane owns vertical scroll; no nested scroll; width 480 pt fixed; height fits pane up to 640 pt.
+- Settings brief:
+  - Primary action per pane: General selects app language, Launch at Login,
+    and checks for updates; Accounts connects, disconnects, or adds provider
+    accounts and re-checks connections; Dashboard selects presentation style,
+    popover text size, and reorders visible dashboard accounts; Web Access
+    opens or shares the loopback/Tailscale dashboard; Labs toggles opt-in
+    experimental features (`Kiro LB 사용량` / `Kiro LB usage`).
+  - Information priorities: active/connected accounts and their health come
+    before unconnected available services; dashboard presentation controls
+    precede account display ordering; explanatory text lives in section
+    footers rather than competing with row labels.
+  - Left out on purpose: separate Dashboard Order tab (merged into
+    Dashboard), full multi-row sections for untouched unconnected providers
+    (collapsed into compact one-line rows under Available Services until
+    expanded or pending), always-visible empty API-key fields with disabled
+    Save/Delete on already-configured primary accounts (hidden behind a
+    `키 변경…` / `Change Key…` button until editing is requested), custom row
+    chrome, nested scroll containers, and save/apply buttons.
 - Every pane is a `Form` with `.formStyle(.grouped)`: `Section`s with native
   row anatomy (label leading, control trailing, explanatory text as a
   subtitle or section footer). General holds Language, Launch at Login, and
-  an Updates section; Display holds the presentation picker, the hide-delay
-  picker when Side Notch is selected, and a footer explaining both styles;
-  Web Access holds the dashboard status and address rows, then a Tailscale
-  row with its action and, once ready, the QR Code and Share Link buttons;
-  Order holds the account rows, the reorder instruction as footer, and Reset
-  to Default as its own row; Auth holds one section per provider (header =
-  icon, name, help button; footer = connection instruction) and ends with a
-  Connections section. While the account registry needs recovery, the
-  recovery section is the first section of whichever pane is shown.
-- Refresh lives only in the Auth pane's last section, as the "Check
+  an Updates section; Accounts holds full `ProviderSettingsSection` cards for
+  connected, pending, failed, disconnected, or expanded providers in
+  dashboard order, followed by one `연결 가능한 서비스` / `Available Services`
+  section of compact one-line rows for unconnected providers, and ends with
+  the Connections section; Dashboard holds the presentation picker (plus the
+  hide-delay picker when Side Notch is selected), the popover text-size
+  picker, and the titled `표시 순서` / `Dashboard Order` section with its
+  `Reset to Default` section; Web Access holds the dashboard status and
+  address rows, then a Tailscale row with its action and, once ready, the QR
+  Code and Share Link buttons; Labs holds the `Kiro LB 사용량` / `Kiro LB
+  usage` switch and its experimental notice footer. While the account
+  registry needs recovery, the recovery section is the first section of
+  whichever pane is shown.
+- Refresh lives only in the Accounts pane's last section, as the "Check
   connections again" row: it re-checks connections and usage, which is
   meaningful only next to the accounts it reports on. Feedback for the last
   action is that section's footer; Web Access reports in its own footer, and
@@ -396,9 +432,9 @@ other privileged controls remain native-only.
 - Each pane sizes the window to its content: the Form reports its content
   height through `onScrollGeometryChange`, and the window content height is
   that height capped at 640 pt (`SettingsWindowContract.maximumPaneContentHeight`).
-  Short panes fit exactly; Order and Auth scroll inside the cap. The window
-  keeps its top edge and animates to the new height on a pane switch; the
-  first fit, a hidden window, and Reduce Motion resize instantly
+  Short panes fit exactly; Dashboard and Accounts scroll inside the cap. The
+  window keeps its top edge and animates to the new height on a pane switch;
+  the first fit, a hidden window, and Reduce Motion resize instantly
   (`SettingsWindowContract.animatesFit`).
 - Each pane owns one scroll region: the grouped Form itself, flush with the
   window edge, is the only scroller. Nothing inside it, including `Dashboard
@@ -408,10 +444,20 @@ other privileged controls remain native-only.
   stays stable while the main region owns vertical scrolling. Per-provider
   account forms and account rows are ordinary form rows and never introduce
   another `List` or `ScrollView`.
-- `Dashboard Order` sits between the presentation settings group and the
-  `Provider Authentication` group. Ordering is a separate task from
-  authentication, so it gets its own titled section rather than controls
-  embedded in each auth row.
+- `Dashboard Order` lives inside the `Dashboard` pane after the presentation
+  and popover text-size sections. Ordering is a dashboard property and a
+  separate task from authentication, so it gets its own titled section
+  (`표시 순서` / `Dashboard Order`) rather than a dedicated tab or controls
+  embedded in each account row.
+- In the `Accounts` pane, providers with at least one connected or active
+  account appear first in dashboard order as full `ProviderSettingsSection`
+  groups. Providers with no connected account are grouped into one
+  `연결 가능한 서비스` / `Available Services` section as compact one-line
+  rows (20 pt icon, provider name, help button, and trailing connect action
+  sharing `"account-connect-<provider>-<accountID>"`). Providers that accept
+  an API key show `키 입력…` / `Add Key…` to expand their full section
+  inline, and any provider with a pending/waiting connection shows its full
+  section.
 - The ordering list is keyed by `AccountProviderID`, so two accounts on one
   provider are two independently draggable rows. Each row shows a drag handle,
   `ProviderIcon`, provider name, and the sanitized account alias when the
@@ -505,12 +551,23 @@ other privileged controls remain native-only.
 ## 5. Components
 
 - `ProviderSectionView`: authenticated provider usage only.
-- `ProviderSettingsSection`: one grouped-form section per provider. Its
-  header is the icon, name, and native help button; its footer is the
-  credential guidance. Connection status and controls belong to each account
-  row, not the header; the primary row also owns its editable API-key
-  controls. Every section embeds its provider-specific account manager. It
-  owns authentication only and carries no ordering affordance.
+- `ProviderSettingsSection`: one grouped-form section per connected, pending,
+  or expanded provider in the `Accounts` pane. Its header is the icon, name,
+  and native help button; its footer is the credential guidance in
+  `SettingsSectionFooter` (`.footnote`, `.secondary`, leading-aligned).
+  Connection status and controls belong to each account row, not the header;
+  the primary row also owns its editable API-key controls, showing the
+  `SecureField` immediately when no key is stored (`keySource == nil`) and
+  collapsing it behind a `키 변경…` / `Change Key…` button (paired with
+  `삭제` / `Delete`) while a key is already stored. Every section embeds its
+  provider-specific account manager. It owns authentication only and carries
+  no ordering affordance.
+- `AvailableProviderRow`: compact one-line row in the `Accounts` pane's
+  `연결 가능한 서비스` / `Available Services` section for a provider with no
+  connected account. Shows the 20 pt `ProviderIcon`, provider name, native
+  help popover button, and trailing primary connect button (or `키 입력…` /
+  `Add Key…` to expand `ProviderSettingsSection` inline for API-key
+  providers) using the `"account-connect-<provider>-<accountID>"` identifier.
 - `AppUpdateSettingsRow`: a labeled row with the installed version as its
   subtitle and one native Check for Updates… button; the update description
   is the section footer. No checkbox or automatic-check permission prompt is
@@ -521,7 +578,8 @@ other privileged controls remain native-only.
   current status; the Open Login Items Settings… row follows only while
   macOS waits for approval, and a failed change is reported as a symbol plus
   text in the section footer.
-- `ProviderOrderingView`: the `Dashboard Order` surface. Grouped-form rows
+- `ProviderOrderingView`: the `Dashboard Order` surface inside the
+  `Dashboard` pane, titled `표시 순서` / `Dashboard Order`. Grouped-form rows
   with an explicit native AppKit drag handle and account-qualified row drop
   destinations. The dragged row and its insertion position remain visible
   while neighboring rows move in a local preview. One completed drop commits

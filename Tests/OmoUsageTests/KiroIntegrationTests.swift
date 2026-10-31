@@ -11,7 +11,7 @@ struct KiroIntegrationTests {
     func registersKiroWithoutChangingExistingProviderOrder() throws {
         let existing = [
             "claude", "codex", "cursor", "antigravity", "copilot",
-            "devin", "grok", "opencode", "openrouter", "zai"
+            "devin", "grok", "opencode", "openrouter", "zai", "kiroLB"
         ]
         let kiro = try #require(ProviderID(rawValue: "kiro"))
         #expect(ProviderID.allCases.filter { $0 != kiro }.map(\.rawValue) == existing)

@@ -32,7 +32,8 @@ struct ProviderDisplayOrderStoreTests {
             .kiro,
             .opencode,
             .openrouter,
-            .zai
+            .zai,
+            .kiroLB
         ]
 
         #expect(store.load() == expected)

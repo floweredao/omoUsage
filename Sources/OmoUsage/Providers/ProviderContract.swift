@@ -25,6 +25,8 @@ enum ProviderEndpointPurpose: String, CaseIterable, Sendable {
     case openRouterKey = "openrouter.key"
     case zaiQuota = "zai.quota"
     case zaiSubscription = "zai.subscription"
+    case kiroLBLogin = "kirolb.login"
+    case kiroLBAccounts = "kirolb.accounts"
 }
 
 enum ProviderHTTPMethod: String, Sendable {

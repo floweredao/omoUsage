@@ -241,6 +241,11 @@ struct ProviderAPIKeyStore: Sendable {
         case .zai:
             fileName = "zai.json"
             environmentNames = ["ZAI_API_KEY", "GLM_API_KEY"]
+        case .kiroLB:
+            // The gateway dashboard password. The kiro-lb .env fallback is
+            // read by CredentialDiscovery, not by this store.
+            fileName = "kiroLB.json"
+            environmentNames = ["KIRO_LB_DASHBOARD_PASSWORD"]
         case .devin, .kiro:
             // Imported credentials use the same exact account-scoped store
             // and transaction journal as captured companion snapshots.
