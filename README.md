@@ -135,6 +135,13 @@ Services you are not signed in to stay hidden. An account you add in Settings
 gets its own Keychain item, so it never overwrites the official CLI's
 credential.
 
+**Kiro LB (Labs).** If you run a [kiro-lb](https://github.com/minpeter/kiro-lb)
+gateway, turn on **Settings › Labs › Kiro LB usage** to see the remaining
+usage of each account behind it. It is off by default, reads the gateway at
+`KIRO_LB_URL` or the `SERVER_PORT` in kiro-lb's `.env` (default
+`127.0.0.1:8000`), signs in with the gateway's dashboard password, and is
+never synced to the iPhone companion.
+
 ## Privacy
 
 - Everything runs on your Mac. OmoUsage talks only to each service's own usage

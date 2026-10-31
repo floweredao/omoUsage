@@ -22,9 +22,9 @@
 - Interaction mechanics adapt beui.dev `button` and `shared-layout-bg`:
   immediate hover tint, spring-like press scale, and interruptible return.
 - The private web dashboard follows this existing semantic system rather than
-  introducing a separate brand. Its spatial contract combines StyleGallery
-  `card-grid` for provider repetition with `scroll-body-shell` for one
-  document-owned vertical scroll region; cards never create nested scroll.
+  introducing a separate brand. Its spatial contract repeats provider
+  cards in a responsive grid inside one document-owned vertical scroll
+  region; cards never create nested scroll.
 
 ## 1. Product Intent
 
@@ -165,7 +165,7 @@ other privileged controls remain native-only.
   footer. Its ring track reuses `UsageMeterVisualTokens.trackOpacity`.
 - The rail keeps one optical gap, 11-12 pt of empty surface, at its top edge,
   above and below the footer divider, and at its bottom edge (HIG Layout:
-  consistent spacing, related items grouped; StyleGallery `stack`: one
+  consistent spacing, related items grouped, one
   vertical rhythm). `listTopPadding` is 10 pt and `listBottomPadding` 6 pt
   because a row's ring starts about 1 pt below the row top while its caption
   ends about 6 pt above the row bottom. `footerClearance` is 4 pt, which with
@@ -440,7 +440,7 @@ other privileged controls remain native-only.
   window edge, is the only scroller. Nothing inside it, including `Dashboard
   Order`, nests a second scroll region, so a wheel gesture anywhere in
   Settings always moves the same surface.
-- This follows StyleGallery `saas-settings` scroll ownership: the toolbar
+- Scroll ownership follows the usual settings layout: the toolbar
   stays stable while the main region owns vertical scrolling. Per-provider
   account forms and account rows are ordinary form rows and never introduce
   another `List` or `ScrollView`.
@@ -528,7 +528,7 @@ other privileged controls remain native-only.
   for usage"; a failed first load names the network, Mac refresh, and same
   Apple ID checks beside Retry.
 - Web owns one page-level vertical scroll. The sticky summary header remains
-  compact; account-provider cards follow StyleGallery `card-grid`, forming a
+  compact; account-provider cards form a
   single column below 640 px and a fluid two-column grid above it. Cards align
   to the top of their row and keep their own content height, so a short card
   never stretches to match a taller neighbor. Each card is keyed by `AccountProviderID`; DOM, reading, focus, and account order stay
