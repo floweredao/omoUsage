@@ -228,6 +228,8 @@ enum TailscaleDashboardFailure: Error, Equatable, Sendable {
     case verificationFailed
     case timedOut
     case offline
+    /// The dedicated Serve port already proxies a different local target.
+    case portInUse
 }
 
 enum TailscaleDashboardInspection: Equatable, Sendable {
@@ -245,7 +247,7 @@ protocol TailscaleDashboardServing: Sendable {
         dashboardPort: UInt16
     ) throws -> TailscaleDashboardInspection
     func enable(dashboardPort: UInt16) throws
-    func disable() throws
+    func disable(dashboardPort: UInt16) throws
 }
 
 enum TailscaleDashboardServiceFactory {
@@ -281,7 +283,7 @@ private struct FixtureTailscaleDashboardService:
     }
 
     func enable(dashboardPort: UInt16) throws {}
-    func disable() throws {}
+    func disable(dashboardPort: UInt16) throws {}
 }
 #endif
 
@@ -350,11 +352,25 @@ struct TailscaleCLIService: TailscaleDashboardServing, Sendable {
         return .ready(host: host, httpsPort: httpsPort)
     }
 
+    /// Maps the dedicated port to the dashboard. A dashboard that is already
+    /// served, on any port, is left as it is, and a dedicated port that
+    /// serves another app is never taken over.
     func enable(dashboardPort: UInt16) throws {
         try Task.checkCancellation()
         guard let executable else {
             throw TailscaleDashboardFailure.commandFailed
         }
+        let configuration = try serveConfiguration(executable)
+        if Self.servedPort(
+            in: configuration,
+            dashboardPort: dashboardPort
+        ) != nil {
+            return
+        }
+        guard !Self.isOccupied(Self.httpsPort, in: configuration) else {
+            throw TailscaleDashboardFailure.portInUse
+        }
+        try Task.checkCancellation()
         let result = try execute(
             executable,
             [
@@ -370,21 +386,93 @@ struct TailscaleCLIService: TailscaleDashboardServing, Sendable {
         }
     }
 
-    func disable() throws {
+    /// Turns off only the port that serves the dashboard, so another app's
+    /// mapping survives.
+    func disable(dashboardPort: UInt16) throws {
         try Task.checkCancellation()
         guard let executable else {
             throw TailscaleDashboardFailure.commandFailed
         }
+        let configuration = try serveConfiguration(executable)
+        guard let port = Self.servedPort(
+            in: configuration,
+            dashboardPort: dashboardPort
+        ) else {
+            return
+        }
+        try Task.checkCancellation()
         let result = try execute(
             executable,
             [
                 "serve",
-                "--https=\(Self.httpsPort)",
+                "--https=\(port)",
                 "off"
             ]
         )
         guard result.status == 0 else {
             throw TailscaleDashboardFailure.commandFailed
+        }
+    }
+
+    private func serveConfiguration(
+        _ executable: URL
+    ) throws -> ServeConfiguration {
+        let result = try execute(
+            executable,
+            ["serve", "status", "--json"]
+        )
+        guard result.status == 0 else {
+            throw TailscaleDashboardFailure.commandFailed
+        }
+        return try Self.decodeServeConfiguration(result.standardOutput)
+    }
+
+    /// The private HTTPS port whose root handler on this node proxies the
+    /// dashboard, under any of the node's names, preferring the dedicated
+    /// port.
+    private static func servedPort(
+        in configuration: ServeConfiguration,
+        dashboardPort: UInt16
+    ) -> UInt16? {
+        let target = "http://127.0.0.1:\(dashboardPort)"
+        let ports = (configuration.Web ?? [:]).compactMap {
+            authority, handler -> UInt16? in
+            guard
+                handler.Handlers?["/"]?.Proxy == target,
+                configuration.AllowFunnel?[authority] != true,
+                let separator = authority.lastIndex(of: ":"),
+                let port = UInt16(
+                    authority[authority.index(after: separator)...]
+                ),
+                configuration.TCP?[String(port)]?.HTTPS == true
+            else {
+                return nil
+            }
+            return port
+        }
+        return ports.contains(httpsPort) ? httpsPort : ports.min()
+    }
+
+    private static func isOccupied(
+        _ port: UInt16,
+        in configuration: ServeConfiguration
+    ) -> Bool {
+        configuration.TCP?[String(port)] != nil
+            || (configuration.Web ?? [:]).keys.contains {
+                $0.hasSuffix(":\(port)")
+            }
+    }
+
+    private static func decodeServeConfiguration(
+        _ data: Data
+    ) throws -> ServeConfiguration {
+        do {
+            return try JSONDecoder().decode(
+                ServeConfiguration.self,
+                from: data
+            )
+        } catch {
+            throw TailscaleDashboardFailure.invalidStatus
         }
     }
 
@@ -467,15 +555,7 @@ struct TailscaleCLIService: TailscaleDashboardServing, Sendable {
         host: String,
         dashboardPort: UInt16
     ) throws -> UInt16? {
-        let configuration: ServeConfiguration
-        do {
-            configuration = try JSONDecoder().decode(
-                ServeConfiguration.self,
-                from: data
-            )
-        } catch {
-            throw TailscaleDashboardFailure.invalidStatus
-        }
+        let configuration = try decodeServeConfiguration(data)
         func serves(_ port: UInt16) -> Bool {
             let authority = "\(host):\(port)"
             return configuration.TCP?[String(port)]?.HTTPS == true
@@ -709,7 +789,8 @@ final class TailscaleDashboardController {
                     switch action {
                     case .inspect: break
                     case .enable: try service.enable(dashboardPort: dashboardPort)
-                    case .disable: try service.disable()
+                    case .disable:
+                        try service.disable(dashboardPort: dashboardPort)
                     }
                     try Task.checkCancellation()
                     let inspection = try service.inspect(dashboardPort: dashboardPort)
@@ -773,6 +854,7 @@ final class TailscaleDashboardController {
         case .failed(.timedOut): status = .timedOut
         case .failed(.invalidStatus): status = .invalidResponse
         case .failed(.offline): status = .transient
+        case .failed(.portInUse): status = .blocked
         case .failed(.commandFailed), .failed(.verificationFailed): status = .failed
         case .checking, .enabling, .disabling: return
         }
