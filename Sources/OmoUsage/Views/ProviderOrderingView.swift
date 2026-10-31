@@ -277,6 +277,8 @@ struct ProviderOrderingView: View {
                         )
                     )
             }
+        } header: {
+            Text(localization.text(.dashboardOrder))
         } footer: {
             SettingsSectionFooter {
                 // Grouped-form rows share no container view, so the list's own

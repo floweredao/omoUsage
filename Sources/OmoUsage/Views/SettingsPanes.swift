@@ -2,35 +2,36 @@ import AppKit
 import Observation
 import OmoUsageCore
 
-/// The Settings window's toolbar panes, in toolbar order. Each pane holds
-/// one group of the former single scrolling page; its title is the existing
-/// section copy and becomes the window title while it is visible.
+/// The Settings window's toolbar panes, in task order. Each pane holds one
+/// task group; its title becomes the window title while it is visible.
 enum SettingsPane: String, CaseIterable, Identifiable, Sendable {
     case general
+    case accounts
     case display
     case webAccess
-    case dashboardOrder
-    case accounts
+    case experimental
+
+    static let legacyDashboardOrderRawValue = "dashboardOrder"
 
     var id: String { rawValue }
 
     var titleKey: AppStringKey {
         switch self {
         case .general: .generalSettings
+        case .accounts: .providerAuthentication
         case .display: .displaySettings
         case .webAccess: .webAccessSettings
-        case .dashboardOrder: .dashboardOrder
-        case .accounts: .providerAuthentication
+        case .experimental: .experimentalSettings
         }
     }
 
     var systemImageName: String {
         switch self {
         case .general: "gearshape"
+        case .accounts: "person.crop.circle"
         case .display: "macwindow"
         case .webAccess: "globe"
-        case .dashboardOrder: "list.number"
-        case .accounts: "person.crop.circle"
+        case .experimental: "flask"
         }
     }
 
@@ -44,6 +45,14 @@ enum SettingsPane: String, CaseIterable, Identifiable, Sendable {
         }) else { return nil }
         self = pane
     }
+
+    static func restored(from rawValue: String?) -> SettingsPane {
+        guard let rawValue else { return .general }
+        if rawValue == legacyDashboardOrderRawValue {
+            return .display
+        }
+        return SettingsPane(rawValue: rawValue) ?? .general
+    }
 }
 
 @MainActor
@@ -56,8 +65,9 @@ final class SettingsPaneSelection {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        pane = defaults.string(forKey: Self.defaultsKey)
-            .flatMap(SettingsPane.init(rawValue:)) ?? .general
+        pane = SettingsPane.restored(
+            from: defaults.string(forKey: Self.defaultsKey)
+        )
     }
 
     func select(_ pane: SettingsPane) {
