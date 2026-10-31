@@ -150,9 +150,50 @@ credential.
 - The iPhone companion never sees service credentials and never calls service
   APIs.
 
+## Configuration
+
+OmoUsage needs no configuration file; everything is set in Settings. It keeps
+its own state in these places:
+
+| What | Where |
+| --- | --- |
+| Accounts you add in Settings | `$XDG_CONFIG_HOME/openusage/accounts.json` (default `~/.config/openusage/accounts.json`) |
+| API keys and added-account credentials | macOS Keychain items owned by OmoUsage |
+| Latest Claude usage read, for other local tools to reuse (no tokens) | `~/Library/Application Support/OmoUsage/claude-usage.json` |
+| Display, language, and refresh preferences | the app's user defaults (`com.omo.usage`) |
+
+The app also reads these environment variables. A Mac app opened from Finder
+does not see your shell's variables, so set them when you launch it from a
+terminal, for example `open --env OPENROUTER_API_KEY=... /Applications/OmoUsage.app`.
+Each one is optional.
+
+| Variable | Effect |
+| --- | --- |
+| `CLAUDE_CODE_OAUTH_TOKEN` | Claude Code token, tried after the Keychain item and `~/.claude/.credentials.json` |
+| `CLAUDE_CONFIG_DIR` | Claude Code config folder instead of `~/.claude` (absolute path) |
+| `CODEX_HOME` | Codex folder instead of `~/.codex` |
+| `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN` | GitHub token for Copilot, checked in this order |
+| `GROK_HOME` | Grok folder instead of `~/.grok` |
+| `KIRO_DATA_DIR` | Kiro CLI data folder (absolute path) |
+| `KIRO_LB_URL` | Kiro LB gateway URL (Labs), instead of `http://127.0.0.1:<SERVER_PORT>` from `~/.local/share/kiro-lb/.env` (default port 8000) |
+| `OPENCODE_API_KEY` | OpenCode Go API key when none is saved in Settings |
+| `OPENCODE_DATA_DIR` | OpenCode data folder (absolute path) |
+| `OPENROUTER_API_KEY` or `OPENROUTER_KEY` | OpenRouter API key when none is saved in Settings |
+| `ZAI_API_KEY` or `GLM_API_KEY` | Z.ai API key when none is saved in Settings |
+| `XDG_CONFIG_HOME`, `XDG_DATA_HOME` | Base folders (absolute paths) for OmoUsage's account list and for Devin and OpenCode data |
+| `OMO_USAGE_FIXTURE_MODE=1` | Show sample data instead of calling any service (debug builds, or a `--fixtures` package) |
+
+Building a release uses `OMO_USAGE_CODESIGN_IDENTITY` and
+`OMO_USAGE_TEAM_IDENTIFIER`; see [`RELEASE.md`](RELEASE.md).
+
 ## Build from source
 
-Requires the Swift 6.1 toolchain (Xcode 26) or later.
+Requires Xcode 26 or later (Swift 6.1 or later) on an Apple silicon Mac. The
+Command Line Tools alone are not enough: they do not include the SwiftUI macro
+plugins, so the build fails with `plugin for module 'SwiftUIMacros' not found`.
+If `xcode-select -p` prints `/Library/Developer/CommandLineTools`, point the
+build at Xcode with `sudo xcode-select -s /Applications/Xcode.app` or prefix
+each command with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`.
 
 ```sh
 swift build                 # debug build
