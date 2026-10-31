@@ -1138,6 +1138,8 @@ struct CredentialDiscovery: Sendable {
             try openrouter()
         case .zai:
             try zai()
+        case .kiroLB:
+            try kiroLB()
         }
     }
 

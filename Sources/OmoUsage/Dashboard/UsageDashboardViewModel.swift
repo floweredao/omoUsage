@@ -95,6 +95,7 @@ final class UsageDashboardViewModel {
     @ObservationIgnored
     private var providerRosterVersion = 0
     private(set) var providerOrder: [ProviderID]
+    private(set) var excludedProviders: Set<ProviderID>
     private(set) var accountProviderOrder: [AccountProviderID]
     private(set) var disconnectedAccountProviders: Set<AccountProviderID>
     private(set) var schemaChangedAccountProviders: Set<AccountProviderID> = []
@@ -132,6 +133,7 @@ final class UsageDashboardViewModel {
         persistAccountProviderOrder: @escaping (
             [AccountProviderID]
         ) -> Void = { _ in },
+        excludedProviders: Set<ProviderID> = [],
         disconnectedProviders: Set<ProviderID> = [],
         disconnectedAccountProviders: Set<AccountProviderID>? = nil,
         persistDisconnectedProviders: @escaping (
@@ -177,8 +179,10 @@ final class UsageDashboardViewModel {
             configured: defaultAccountOrder
         )
         self.accountProviderOrder = repairedAccountOrder
-        self.providerOrder = ProviderDisplayOrder.repaired(
-            repairedAccountOrder.map(\.providerID)
+        self.excludedProviders = excludedProviders
+        self.providerOrder = Self.visibleOrder(
+            repairedAccountOrder.map(\.providerID),
+            excluding: excludedProviders
         )
         self.persistProviderOrder = persistProviderOrder
         self.persistAccountProviderOrder = persistAccountProviderOrder
@@ -223,8 +227,12 @@ final class UsageDashboardViewModel {
     func updateProviders(
         _ updatedProviders: [any UsageProvider],
         accountProviderOrder requestedOrder: [AccountProviderID],
-        disconnected requestedDisconnected: Set<AccountProviderID>
+        disconnected requestedDisconnected: Set<AccountProviderID>,
+        excludedProviders requestedExclusions: Set<ProviderID>? = nil
     ) {
+        if let requestedExclusions {
+            excludedProviders = requestedExclusions
+        }
         let uniqueProviders = Self.uniqueProviders(updatedProviders)
         let configured = uniqueProviders.map(\.accountProviderID)
         let configuredSet = Set(configured)
@@ -244,8 +252,9 @@ final class UsageDashboardViewModel {
         providers = uniqueProviders
         defaultAccountProviderOrder = updatedDefaultOrder
         accountProviderOrder = repairedOrder
-        providerOrder = ProviderDisplayOrder.repaired(
-            repairedOrder.map(\.providerID)
+        providerOrder = Self.visibleOrder(
+            repairedOrder.map(\.providerID),
+            excluding: excludedProviders
         )
         disconnectedAccountProviders = requestedDisconnected.intersection(
             configuredSet
@@ -375,8 +384,9 @@ final class UsageDashboardViewModel {
         )
         guard repaired != accountProviderOrder else { return }
         accountProviderOrder = repaired
-        providerOrder = ProviderDisplayOrder.repaired(
-            accountProviderOrder.map(\.providerID)
+        providerOrder = Self.visibleOrder(
+            accountProviderOrder.map(\.providerID),
+            excluding: excludedProviders
         )
         persistAccountProviderOrder(accountProviderOrder)
         persistProviderOrder(providerOrder)
@@ -828,6 +838,15 @@ final class UsageDashboardViewModel {
                 isRefreshing: isRefreshing
             )
         )
+    }
+
+    private static func visibleOrder(
+        _ providers: [ProviderID],
+        excluding excluded: Set<ProviderID>
+    ) -> [ProviderID] {
+        ProviderDisplayOrder.repaired(providers).filter {
+            !excluded.contains($0)
+        }
     }
 
     private static func uniqueProviders(
