@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import OmoUsageCore
 import Testing
 @testable import OmoUsage
 
@@ -111,11 +112,14 @@ struct ApplicationConfigurationTests {
     @Test
     func settingsPanesFollowTheFormerSectionOrderWithStableIdentifiers() {
         #expect(SettingsPane.allCases == [
-            .general, .display, .webAccess, .dashboardOrder, .accounts
+            .general, .accounts, .display, .webAccess, .experimental
         ])
         #expect(SettingsPane.allCases.map(\.titleKey) == [
-            .generalSettings, .displaySettings, .webAccessSettings,
-            .dashboardOrder, .providerAuthentication
+            .generalSettings, .providerAuthentication, .displaySettings,
+            .webAccessSettings, .experimentalSettings
+        ])
+        #expect(SettingsPane.allCases.map(\.systemImageName) == [
+            "gearshape", "person.crop.circle", "macwindow", "globe", "flask"
         ])
         for pane in SettingsPane.allCases {
             #expect(
@@ -141,8 +145,29 @@ struct ApplicationConfigurationTests {
         SettingsPaneSelection(defaults: defaults).select(.webAccess)
         #expect(SettingsPaneSelection(defaults: defaults).pane == .webAccess)
 
+        defaults.set(
+            SettingsPane.legacyDashboardOrderRawValue,
+            forKey: SettingsPaneSelection.defaultsKey
+        )
+        #expect(SettingsPaneSelection(defaults: defaults).pane == .display)
+
         defaults.set("removed-pane", forKey: SettingsPaneSelection.defaultsKey)
         #expect(SettingsPaneSelection(defaults: defaults).pane == .general)
+    }
+
+    @Test
+    func accountsPanePartitionPlacesConnectedProvidersFirstInDashboardOrder() {
+        let order: [ProviderID] = [
+            .claude, .codex, .cursor, .openrouter, .kiro
+        ]
+        let connected: Set<ProviderID> = [.codex, .kiro]
+        let partitioned = SettingsView.partition(
+            providers: order,
+            connected: connected
+        )
+
+        #expect(partitioned.connected == [.codex, .kiro])
+        #expect(partitioned.available == [.claude, .cursor, .openrouter])
     }
 
     @Test @MainActor

@@ -3,8 +3,10 @@ public enum AppStringKey: String, CaseIterable, Sendable {
     case settingsTitle
     case settingsSubtitle
     case generalSettings
+    case accountsSettings
     case displaySettings
     case webAccessSettings
+    case experimentalSettings
     case dashboardEmptyTitle
     case dashboardEmptyDescription
     case dashboardChecking
@@ -203,6 +205,10 @@ public enum AppStringKey: String, CaseIterable, Sendable {
     case checkConnectionsAgainDescription
     case dashboardPresentationDescription
     case dashboardOrderDescription
+    case availableServices
+    case addAPIKey
+    case kiroLBUsage
+    case kiroLBUsageDescription
 }
 
 public struct AppStrings: Sendable {
@@ -226,8 +232,10 @@ public struct AppStrings: Sendable {
         .settingsTitle: "설정",
         .settingsSubtitle: "프로바이더 인증과 앱 설정을 관리합니다.",
         .generalSettings: "일반",
-        .displaySettings: "화면 표시",
+        .accountsSettings: "계정",
+        .displaySettings: "대시보드",
         .webAccessSettings: "웹 접근",
+        .experimentalSettings: "실험 기능",
         .dashboardEmptyTitle: "표시할 사용량이 없습니다",
         .dashboardEmptyDescription: "설정에서 계정을 연결하거나 표시 상태를 확인하세요.",
         .dashboardChecking: "사용량을 확인하고 있습니다",
@@ -263,8 +271,8 @@ public struct AppStrings: Sendable {
             "팝오버의 글자와 아이콘을 최대 200%까지 키웁니다. 팝오버는 글자가 잘리지 않도록 함께 넓어집니다.",
         .sideNotchShowDetails: "사용량 상세 보기",
         .sideNotchRunningLow: "얼마 남지 않음",
-        .providerAuthentication: "인증",
-        .dashboardOrder: "순서",
+        .providerAuthentication: "계정",
+        .dashboardOrder: "표시 순서",
         .resetToDefault: "기본 순서로 재설정",
         .orderPosition: "%d / %d",
         .hiddenFromDashboard: "대시보드에서 숨김",
@@ -453,7 +461,12 @@ public struct AppStrings: Sendable {
         .dashboardPresentationDescription:
             "팝오버는 메뉴 막대 아이콘에서 열립니다. 사이드 노치는 화면 오른쪽 가장자리에 얇은 손잡이를 두고, 손잡이에 포인터를 가져가거나 메뉴 막대 아이콘을 클릭하면 사용량을 보여줍니다.",
         .dashboardOrderDescription:
-            "행의 손잡이를 드래그하거나 Command-위/아래 화살표 키를 눌러 대시보드에 표시되는 순서를 바꿉니다."
+            "행의 손잡이를 드래그하거나 Command-위/아래 화살표 키를 눌러 대시보드에 표시되는 순서를 바꿉니다.",
+        .availableServices: "연결 가능한 서비스",
+        .addAPIKey: "키 입력\u{2026}",
+        .kiroLBUsage: "Kiro LB 사용량",
+        .kiroLBUsageDescription:
+            "로컬에서 실행 중인 kiro-lb 게이트웨이의 계정별 남은 사용량을 대시보드에 표시합니다. 실험 기능이라 동작이 바뀔 수 있어요."
     ]
 
     private static let english: [AppStringKey: String] = [
@@ -461,8 +474,10 @@ public struct AppStrings: Sendable {
         .settingsTitle: "Settings",
         .settingsSubtitle: "Manage provider authentication and app settings.",
         .generalSettings: "General",
-        .displaySettings: "Display",
+        .accountsSettings: "Accounts",
+        .displaySettings: "Dashboard",
         .webAccessSettings: "Web Access",
+        .experimentalSettings: "Labs",
         .dashboardEmptyTitle: "No usage to display",
         .dashboardEmptyDescription: "Connect an account or check its visibility in Settings.",
         .dashboardChecking: "Checking usage",
@@ -498,8 +513,8 @@ public struct AppStrings: Sendable {
             "Enlarges popover text and icons up to 200%. The popover widens with them so nothing is clipped.",
         .sideNotchShowDetails: "Show usage details",
         .sideNotchRunningLow: "Running low",
-        .providerAuthentication: "Auth",
-        .dashboardOrder: "Order",
+        .providerAuthentication: "Accounts",
+        .dashboardOrder: "Dashboard Order",
         .resetToDefault: "Reset to Default",
         .orderPosition: "%d of %d",
         .hiddenFromDashboard: "Hidden from dashboard",
@@ -688,6 +703,11 @@ public struct AppStrings: Sendable {
         .dashboardPresentationDescription:
             "Popover opens from the menu bar icon. Side Notch keeps a thin handle at the right edge of the screen and shows usage when you point at the handle or click the menu bar icon.",
         .dashboardOrderDescription:
-            "Drag a row's handle, or press Command-Up Arrow and Command-Down Arrow, to change the order shown in the dashboard."
+            "Drag a row's handle, or press Command-Up Arrow and Command-Down Arrow, to change the order shown in the dashboard.",
+        .availableServices: "Available Services",
+        .addAPIKey: "Add Key\u{2026}",
+        .kiroLBUsage: "Kiro LB usage",
+        .kiroLBUsageDescription:
+            "Shows remaining usage for each account behind a kiro-lb gateway running on this Mac. Experimental; behavior may change."
     ]
 }
