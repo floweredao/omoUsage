@@ -46,6 +46,10 @@ enum ProviderContractCatalog {
             .zai: [
                 .get(.zaiQuota, ["Authorization", "Accept"]),
                 .get(.zaiSubscription, ["Authorization", "Accept"])
+            ],
+            .kiroLB: [
+                .post(.kiroLBLogin, ["Content-Type", "Accept"], safety: .unsafe),
+                .get(.kiroLBAccounts, ["Accept"])
             ]
         ]
         return Dictionary(uniqueKeysWithValues: definitions.map { provider, endpoints in

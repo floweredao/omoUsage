@@ -306,7 +306,8 @@ struct UsageDashboardViewModelTests {
                     .kiro,
                     .opencode,
                     .openrouter,
-                    .zai
+                    .zai,
+                    .kiroLB
                 ]
         )
         #expect(

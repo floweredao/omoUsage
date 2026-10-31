@@ -7,7 +7,7 @@ enum ProviderFactory {
     ) -> [any UsageProvider] {
 #if OMO_USAGE_FIXTURES
         if environment["OMO_USAGE_FIXTURE_MODE"] == "1" {
-            return ProviderID.allCases.map {
+            return ProviderID.allCases.filter { $0 != .kiroLB }.map {
                 FixtureUsageProvider(id: $0)
             }
         }
@@ -29,7 +29,15 @@ enum ProviderFactory {
         discovery: CredentialDiscovery = .live(),
         http: ProviderHTTP = ProviderHTTP()
     ) -> [any UsageProvider] {
-        let references = Set(registry.providerReferences)
+        let legacyKiroLB = AccountProviderID(
+            accountID: .legacy,
+            providerID: .kiroLB
+        )
+        // The experimental Kiro LB gateway is never persisted as a registry
+        // reference: the flag alone adds its legacy row or removes every row.
+        let references = ExperimentalFeatureStore.isKiroLBEnabled(in: defaults)
+            ? Set(registry.providerReferences).union([legacyKiroLB])
+            : Set(registry.providerReferences.filter { $0.providerID != .kiroLB })
         let referencedAccounts = ProviderID.allCases.flatMap { provider in
             registry.accounts.compactMap { account -> (ProviderID, ProviderAccount)? in
                 let identity = AccountProviderID(
@@ -132,6 +140,13 @@ enum ProviderFactory {
                 )
             case .zai:
                 ZAIUsageProvider(
+                    discovery: discovery,
+                    http: http,
+                    accountID: account.id,
+                    accountLabel: account.label
+                )
+            case .kiroLB:
+                KiroLBUsageProvider(
                     discovery: discovery,
                     http: http,
                     accountID: account.id,
