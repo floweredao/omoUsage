@@ -716,6 +716,7 @@ final class ProviderAccountRegistryController {
 
     private func requireAPIKeyProvider(_ provider: ProviderID) throws {
         guard provider == .opencode || provider == .openrouter || provider == .zai
+            || provider == .kiroLB
         else {
             throw ProviderAccountRegistryControllerError.unsupportedProvider
         }

@@ -99,7 +99,7 @@ struct FixtureUsageProvider: UsageProvider {
                 updatedAt: now
             )
         case .cursor, .copilot, .devin, .grok, .opencode,
-             .openrouter, .zai:
+             .openrouter, .zai, .kiroLB:
             return Self.additionalFixture(provider: id, now: now)
         }
     }

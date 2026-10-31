@@ -1047,7 +1047,7 @@ enum SideNotchBrandVisualTokens {
         case .codex: VisualRGB(red: 0x75, green: 0x76, blue: 0xC6)
         case .antigravity: VisualRGB(red: 0x54, green: 0x80, blue: 0xC7)
         case .devin: VisualRGB(red: 0x99, green: 0x6A, blue: 0xB3)
-        case .kiro: VisualRGB(red: 0x8A, green: 0x6F, blue: 0xBE)
+        case .kiro, .kiroLB: VisualRGB(red: 0x8A, green: 0x6F, blue: 0xBE)
         case .openrouter: VisualRGB(red: 0xBD, green: 0x60, blue: 0x65)
         case .zai: VisualRGB(red: 0x4D, green: 0x82, blue: 0xC6)
         case .cursor, .copilot, .grok, .opencode: nil
