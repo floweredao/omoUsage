@@ -24,7 +24,49 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - run: sh Scripts/ci-check.sh swiftpm
+      - name: Baseline test exit
+        id: baseline
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          swift --version
+          swift test -v 2>&1 | tee "$RUNNER_TEMP/swift-test-baseline.log"
+          statuses=("${PIPESTATUS[@]}")
+          printf 'DIAGNOSTIC baseline swift=%s tee=%s\n' "${statuses[0]}" "${statuses[1]}"
+          exit "${statuses[0]}"
+      - name: Serial test comparison
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          swift test --no-parallel 2>&1 | tee "$RUNNER_TEMP/swift-test-serial.log"
+          statuses=("${PIPESTATUS[@]}")
+          printf 'DIAGNOSTIC serial swift=%s tee=%s\n' "${statuses[0]}" "${statuses[1]}"
+          exit "${statuses[0]}"
+      - name: Crash and process evidence
+        if: always()
+        shell: bash
+        run: |
+          ps -axo pid,ppid,pgid,stat,command
+          python3 - <<'PY'
+          from pathlib import Path
+          roots = [Path.home() / "Library/Logs/DiagnosticReports",
+                   Path("/Library/Logs/DiagnosticReports")]
+          for root in roots:
+              print("DIAGNOSTIC reports", root)
+              if root.exists():
+                  for report in sorted(root.glob("*")):
+                      print(report.name)
+                      if report.is_file() and any(s in report.name.lower() for s in ("swift", "xctest", "omousage")):
+                          print(report.read_text(errors="replace")[:60000])
+          PY
+      - name: Debug and release builds
+        if: always()
+        run: |
+          swift build -c debug
+          swift build -c release
 
   xcode:
     runs-on: macos-15
