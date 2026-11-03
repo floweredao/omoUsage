@@ -117,7 +117,8 @@ to execute. `OMO_USAGE_SIGNING_KEYCHAIN` can select a dedicated signing
 keychain. Run `prepare-update.sh` on the resulting **stapled** app, not on a
 subsequently rebuilt ad-hoc app. Retain the release manifest alongside the
 update artifacts. Neither this manual path nor update preparation needs
-GitHub Actions. The existing tag-triggered CI workflow remains separate.
+GitHub Actions. The tag-triggered release workflow is kept but disabled in the
+repository's Actions settings; CI runs on pull requests only.
 
 The desktop and mobile targets must be registered under the same Apple
 Developer team and use the same team-prefixed iCloud KVS identifier

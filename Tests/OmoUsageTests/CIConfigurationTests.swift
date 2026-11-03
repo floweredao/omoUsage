@@ -6,11 +6,12 @@ struct CIConfigurationTests {
     private let checkoutSHA = "11d5960a326750d5838078e36cf38b85af677262"
 
     @Test
-    func workflowHasBoundedLeastPrivilegePullRequestAndPushJobs() throws {
+    func workflowHasBoundedLeastPrivilegePullRequestOnlyJobs() throws {
         let workflow = try contents(".github/workflows/ci.yml")
 
-        #expect(workflow.contains("pull_request:"))
-        #expect(workflow.contains("push:"))
+        #expect(workflow.contains("on:\n  pull_request:\n"))
+        #expect(!workflow.contains("push:"))
+        #expect(!workflow.contains("schedule:"))
         #expect(workflow.contains("permissions:\n  contents: read"))
         #expect(workflow.contains("concurrency:"))
         #expect(workflow.contains("cancel-in-progress: true"))

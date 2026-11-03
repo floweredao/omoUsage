@@ -116,6 +116,6 @@ sh Scripts/package-app.sh
 - Both app targets must use the same development team and `$(TeamIdentifierPrefix)com.omo.usage` iCloud identifier.
 - The checked-in `.xcodeproj` mirrors `project.yml`; treat the YAML as the target-definition source.
 - `sh Scripts/ci-check.sh policy` regenerates the Xcode project; it is not a read-only check. `swiftpm`, `xcode`, and `package-smoke` are separate local lanes.
-- GitHub workflows run on push, pull request, and tag events.
+- The GitHub CI workflow runs on pull requests only. `release.yml` (tag-triggered) is kept but disabled in the repository's Actions settings.
 - `UsageSnapshotCodec` currently uses schema version 4, decodes versions 1–3, and keeps a 256 KB payload ceiling.
 - `NWWebDashboardListener` binds production `127.0.0.1:7827`; fixture mode may override the port. Optional Tailscale Serve supplies private HTTPS access. `WebDashboardAccessGateway` validates Host/Origin before the router checks routes and mutation nonces.

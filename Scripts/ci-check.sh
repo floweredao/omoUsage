@@ -22,7 +22,8 @@ policy() {
 }
 
 swiftpm() {
-    swift test
+    # Keep concurrent process fixtures within hosted runner memory limits.
+    swift test --no-parallel
     swift build -c debug
     swift build -c release
 }
