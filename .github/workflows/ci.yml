@@ -27,14 +27,7 @@ jobs:
       - name: Baseline test exit
         id: baseline
         continue-on-error: true
-        shell: bash
-        run: |
-          set +e
-          swift --version
-          swift test -v 2>&1 | tee "$RUNNER_TEMP/swift-test-baseline.log"
-          statuses=("${PIPESTATUS[@]}")
-          printf 'DIAGNOSTIC baseline swift=%s tee=%s\n' "${statuses[0]}" "${statuses[1]}"
-          exit "${statuses[0]}"
+        run: sh Scripts/ci-check.sh swiftpm
       - name: Serial test comparison
         if: always()
         continue-on-error: true
@@ -51,6 +44,7 @@ jobs:
         run: |
           ps -axo pid,ppid,pgid,stat,command
           python3 - <<'PY'
+          import json
           from pathlib import Path
           roots = [Path.home() / "Library/Logs/DiagnosticReports",
                    Path("/Library/Logs/DiagnosticReports")]
@@ -61,6 +55,16 @@ jobs:
                       print(report.name)
                       if report.is_file() and any(s in report.name.lower() for s in ("swift", "xctest", "omousage")):
                           print(report.read_text(errors="replace")[:60000])
+                      if report.is_file() and "JetsamEvent-2026-11-03" in report.name:
+                          text = report.read_text(errors="replace").lstrip()
+                          decoder = json.JSONDecoder()
+                          while text:
+                              document, end = decoder.raw_decode(text)
+                              text = text[end:].lstrip()
+                              if "processes" in document:
+                                  print(json.dumps({key: value for key, value in document.items() if key != "processes"}))
+                                  for process in sorted(document["processes"], key=lambda item: item.get("rpages", 0), reverse=True)[:20]:
+                                      print(json.dumps(process))
           PY
       - name: Debug and release builds
         if: always()
