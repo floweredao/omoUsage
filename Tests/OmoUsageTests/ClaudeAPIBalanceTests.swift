@@ -8,6 +8,9 @@ struct ClaudeAPIBalanceTests {
     @Test(arguments: [
         (#"{"amount":25000,"currency":"USD","promo_tranches":[{"remaining_amount_minor_units":20000}]}"#, 250.0),
         (#"{"amount":0,"currency":"USD"}"#, 0.0),
+        (#"{"amount":2599,"promo_tranches":[]}"#, 25.99),
+        (#"{"amount":0,"promo_tranches":[]}"#, 0.0),
+        (#"{"amount":1250,"balance":{"money":{"currency":"USD","exponent":3}}}"#, 1.25),
         (#"{"amount":1250,"currency":"usd","balance":{"credits":{"exponent":3}}}"#, 1.25),
         (#"{"amount":125,"currency":"USD","balance":{"money":{"exponent":0}}}"#, 125.0)
     ])
@@ -28,7 +31,8 @@ struct ClaudeAPIBalanceTests {
         #"{"amount":true,"currency":"USD"}"#,
         #"{"amount":-1,"currency":"USD"}"#,
         #"{"amount":100,"currency":"EUR"}"#,
-        #"{"amount":100}"#,
+        #"{"amount":100,"currency":true}"#,
+        #"{"amount":100,"balance":{"money":{"currency":"EUR","exponent":2}}}"#,
         #"{"amount":100,"currency":"USD","balance":{"credits":{"exponent":1.5}}}"#,
         #"{"amount":100,"currency":"USD","balance":{"credits":{"exponent":5}}}"#,
         #"{"amount":1e20,"currency":"USD"}"#
