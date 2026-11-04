@@ -334,9 +334,13 @@ enum ClaudeUsageParser {
             let balance = UsageJSON.object(object["balance"])
             let denomination = UsageJSON.object(balance?["credits"])
                 ?? UsageJSON.object(balance?["money"])
-            // The legacy Console response has only `amount`, in USD cents.
+            // Legacy Console responses omit or null their USD-cent metadata.
             // Honor explicit denominations before using that legacy unit.
-            let currency = object["currency"] ?? denomination?["currency"] ?? "USD"
+            let declaredCurrency = object["currency"]
+            let denominationCurrency = denomination?["currency"]
+            let currency = (declaredCurrency is NSNull ? nil : declaredCurrency)
+                ?? (denominationCurrency is NSNull ? nil : denominationCurrency)
+                ?? "USD"
             guard (currency as? String)?.uppercased() == "USD" else { return nil }
             let exponent: Double
             if let value = denomination?["exponent"] {
