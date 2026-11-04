@@ -313,7 +313,7 @@ struct ClaudeUsageProvider: UsageProvider {
         return usage
     }
 
-    /// Appends the Claude-granted API credits of the account's Console
+    /// Appends the total balance and promotional credits of the account's Console
     /// organizations. A secondary read: its failure keeps the last answer
     /// (or none) and never fails the usage card.
     private func addingAPICredits(
@@ -350,16 +350,23 @@ struct ClaudeUsageProvider: UsageProvider {
                 )
             }
         }
-        guard
-            let meter = ClaudeUsageParser.apiCreditMeter(payloads, now: now),
-            let first = usage.groups.first
-        else {
+        let meters = [
+            ClaudeUsageParser.apiBalanceMeter(payloads) ?? UsageMeter(
+                id: "claude.api-balance",
+                title: "API 총잔액",
+                period: .extra,
+                metric: .informational(value: "조회 불가"),
+                resetText: nil
+            ),
+            ClaudeUsageParser.apiCreditMeter(payloads, now: now)
+        ].compactMap { $0 }
+        guard !meters.isEmpty, let first = usage.groups.first else {
             return usage
         }
         let group = UsageGroup(
             id: first.id,
             title: first.title,
-            meters: first.meters + [meter],
+            meters: first.meters + meters,
             creditText: first.creditText
         )
         return ProviderUsage(

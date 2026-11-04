@@ -102,6 +102,11 @@ struct ClaudeReliabilityTests {
                 .first { $0.id == "claude.api-credits" }
         )
         #expect(meter.metric == .credit(balance: 200, unit: .usd))
+        let balance = try #require(
+            usage.groups.flatMap(\.meters)
+                .first { $0.id == "claude.api-balance" }
+        )
+        #expect(balance.metric == .credit(balance: 250, unit: .usd))
         #expect(
             HephaestusAPICreditRecorder.shared.creditPaths()
                 == ["/api/oauth/organizations/console-org/prepaid/credits"]
@@ -116,6 +121,9 @@ struct ClaudeReliabilityTests {
         let ids = degraded.groups.flatMap(\.meters).map(\.id)
         #expect(ids.contains("claude.session"))
         #expect(!ids.contains("claude.api-credits"))
+        #expect(degraded.groups.flatMap(\.meters)
+            .first { $0.id == "claude.api-balance" }?.metric
+            == .informational(value: "조회 불가"))
     }
 
     @Test
@@ -331,7 +339,7 @@ private final class HephaestusAPICreditURLProtocol: URLProtocol,
                 .recordCredits(request)
             respond(status, Data(
                 """
-                {"amount": 20000, "promo_tranches": [
+                {"amount": 25000, "currency": "USD", "promo_tranches": [
                   {"remaining_amount_minor_units": 20000, "currency": "USD",
                    "expires_at": "2026-08-20T00:00:00Z"}
                 ]}

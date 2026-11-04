@@ -320,6 +320,43 @@ enum ClaudeUsageParser {
         }
     }
 
+    /// Console's total includes purchased and promotional credit. Never add
+    /// the tranche amounts again, and never label a partial sum as the total.
+    static func apiBalanceMeter(_ payloads: [Data]) -> UsageMeter? {
+        guard !payloads.isEmpty else { return nil }
+        var total = 0.0
+        for payload in payloads {
+            guard
+                let object = try? UsageJSON.object(payload),
+                let amount = UsageJSON.number(object["amount"]),
+                amount.isFinite, amount >= 0,
+                (object["currency"] as? String)?.uppercased() == "USD"
+            else { return nil }
+            let balance = UsageJSON.object(object["balance"])
+            let denomination = UsageJSON.object(balance?["credits"])
+                ?? UsageJSON.object(balance?["money"])
+            let exponent: Double
+            if let value = denomination?["exponent"] {
+                guard let parsed = UsageJSON.number(value),
+                      (0...4).contains(parsed), parsed.rounded() == parsed
+                else { return nil }
+                exponent = parsed
+            } else {
+                exponent = 2
+            }
+            total += amount / pow(10, exponent)
+        }
+        guard let metric = UsageMetric.credit(validating: total, unit: .usd)
+        else { return nil }
+        return UsageMeter(
+            id: "claude.api-balance",
+            title: "API 총잔액",
+            period: .extra,
+            metric: metric,
+            resetText: nil
+        )
+    }
+
     /// Claude-granted API credits: the `promo_tranches` of each Console
     /// organization's `prepaid/credits` (the Console's "Promotional
     /// credits"). Purchased balance is excluded. Only unexpired USD tranches
@@ -363,7 +400,7 @@ enum ClaudeUsageParser {
         guard remainingMinorUnits > 0 else { return nil }
         return UsageMeter(
             id: "claude.api-credits",
-            title: "API 크레딧",
+            title: "API 프로모션",
             period: .extra,
             metric: .credit(balance: remainingMinorUnits / 100, unit: .usd),
             resetText: ProviderPayload.expiryText(earliestExpiry, now: now)

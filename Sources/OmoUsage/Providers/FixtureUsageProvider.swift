@@ -55,10 +55,27 @@ struct FixtureUsageProvider: UsageProvider {
             let json = claudeCredentialDiscovery == nil
                 ? Self.claudeJSON
                 : Self.claudeAuthenticationUIJSON
-            return try ClaudeUsageParser.parse(
+            let usage = try ClaudeUsageParser.parse(
                 Data(Self.anchoring(json, to: now).utf8),
                 planName: "Pro",
                 now: now.addingTimeInterval(-60)
+            )
+            let balance = ClaudeUsageParser.apiBalanceMeter([
+                Data(#"{"amount":25000,"currency":"USD"}"#.utf8)
+            ])
+            return ProviderUsage(
+                provider: usage.provider,
+                planName: usage.planName,
+                groups: usage.groups.map { group in
+                    UsageGroup(
+                        id: group.id,
+                        title: group.title,
+                        meters: group.meters + [balance].compactMap { $0 },
+                        creditText: group.creditText
+                    )
+                },
+                availability: usage.availability,
+                updatedAt: usage.updatedAt
             )
         case .codex:
             return try CodexUsageParser.parse(
