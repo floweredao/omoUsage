@@ -547,16 +547,14 @@ enum ProviderSetup {
                 )
             )
         case .codex:
-            terminal(
-                instruction: "codex 실행 후 ChatGPT로 로그인",
-                executable: "codex",
-                arguments: ["login"],
-                opensFallback: false,
+            ProviderSetupDescriptor(
+                instruction: "브라우저에서 ChatGPT로 로그인",
+                action: .browserOAuth,
                 help: help(
                     provider,
                     [
-                        "Codex CLI를 실행해 ChatGPT 계정으로 로그인하세요.",
-                        "OmoUsage는 Codex가 저장한 로컬 인증값을 자동으로 찾습니다."
+                        "연결 시작을 눌러 브라우저에서 ChatGPT 계정으로 로그인하세요. Codex CLI는 필요 없습니다.",
+                        "연결한 계정의 인증은 이 Mac의 키체인에 안전하게 저장합니다."
                     ],
                     "https://chatgpt.com/codex"
                 )
@@ -853,15 +851,6 @@ enum ProviderSetup {
         homeDirectory: URL,
         isExecutable: (String) -> Bool
     ) -> String? {
-        if
-            executable == "codex",
-            let bundled = bundledCodexExecutable(
-                homeDirectory: homeDirectory,
-                isExecutable: isExecutable
-            )
-        {
-            return bundled
-        }
         let temporaryDirectory = FileManager.default.temporaryDirectory
             .resolvingSymlinksInPath()
             .standardizedFileURL
@@ -909,24 +898,6 @@ enum ProviderSetup {
             }
         }
         return nil
-    }
-
-    private static func bundledCodexExecutable(
-        homeDirectory: URL,
-        isExecutable: (String) -> Bool
-    ) -> String? {
-        let relativePath = "ChatGPT.app/Contents/Resources/codex"
-        let candidates = [
-            homeDirectory.appending(
-                components: "Applications",
-                relativePath
-            ),
-            URL(filePath: "/Applications", directoryHint: .isDirectory)
-                .appending(path: relativePath)
-        ]
-        return candidates
-            .map(\.path)
-            .first(where: isExecutable)
     }
 
     static func terminalCommandFile(

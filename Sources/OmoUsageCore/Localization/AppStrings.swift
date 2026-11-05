@@ -88,6 +88,10 @@ public enum AppStringKey: String, CaseIterable, Sendable {
     case claudeSignInCancelled
     case claudeSignInFailed
     case claudeSignInSaveFailed
+    case codexSignInTimedOut
+    case codexSignInCancelled
+    case codexSignInFailed
+    case codexSignInSaveFailed
     case browserSignInTimedOut
     case browserSignInDenied
     case browserUsageUnavailable
@@ -331,6 +335,10 @@ public struct AppStrings: Sendable {
         .claudeSignInCancelled: "Claude 로그인이 취소되었습니다.",
         .claudeSignInFailed: "Claude 로그인에 실패했습니다. 다시 연결해 주세요.",
         .claudeSignInSaveFailed: "Claude 인증을 저장하지 못했습니다. 다시 연결해 주세요.",
+        .codexSignInTimedOut: "Codex 로그인 시간이 초과되었습니다. 다시 연결해 주세요.",
+        .codexSignInCancelled: "Codex 로그인이 취소되었습니다.",
+        .codexSignInFailed: "Codex 로그인에 실패했습니다. 다시 연결해 주세요.",
+        .codexSignInSaveFailed: "Codex 인증을 저장하지 못했습니다. 다시 연결해 주세요.",
         .browserSignInTimedOut: "브라우저 로그인 시간이 초과되었습니다. 다시 연결해 주세요.",
         .browserSignInDenied: "브라우저에서 로그인이 거부되었습니다.",
         .browserUsageUnavailable: "로그인했지만 사용량을 확인하지 못했습니다. 잠시 후 다시 연결해 주세요.",
@@ -574,6 +582,10 @@ public struct AppStrings: Sendable {
         .claudeSignInCancelled: "Claude sign-in was cancelled.",
         .claudeSignInFailed: "Claude sign-in failed. Please connect again.",
         .claudeSignInSaveFailed: "Couldn't save the Claude credential. Please connect again.",
+        .codexSignInTimedOut: "Codex sign-in timed out. Please connect again.",
+        .codexSignInCancelled: "Codex sign-in was cancelled.",
+        .codexSignInFailed: "Codex sign-in failed. Please connect again.",
+        .codexSignInSaveFailed: "Couldn't save the Codex credential. Please connect again.",
         .browserSignInTimedOut: "Browser sign-in timed out. Please connect again.",
         .browserSignInDenied: "Sign-in was declined in the browser.",
         .browserUsageUnavailable: "Signed in, but usage couldn't be verified. Try connecting again later.",

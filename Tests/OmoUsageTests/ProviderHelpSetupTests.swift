@@ -26,16 +26,7 @@ struct ProviderHelpSetupTests {
     @Test
     func companionProvidersExposeDirectConnectionActions() throws {
         #expect(try descriptor(.claude).action == .browserOAuth)
-        #expect(
-            try descriptor(.codex).action
-                == .terminal(
-                    TerminalLaunchSpecification(
-                        executable: "codex",
-                        arguments: ["login"]
-                    ),
-                    fallbackURL: nil
-                )
-        )
+        #expect(try descriptor(.codex).action == .browserOAuth)
         #expect(
             try descriptor(.cursor).action
                 == .application(
@@ -135,52 +126,6 @@ struct ProviderHelpSetupTests {
         )
 
         #expect(resolved == nil)
-    }
-
-    @Test
-    func installedChatGPTBundleLaunchesCodexOAuthWithoutDownloadPage() throws {
-        let home = FileManager.default.temporaryDirectory
-            .appending(path: "OmoUsageCodexCLI-\(UUID().uuidString)")
-        let executable = home.appending(
-            components: "Applications",
-            "ChatGPT.app",
-            "Contents",
-            "Resources",
-            "codex"
-        )
-        try FileManager.default.createDirectory(
-            at: executable.deletingLastPathComponent(),
-            withIntermediateDirectories: true
-        )
-        try Data().write(to: executable)
-        defer {
-            try? FileManager.default.removeItem(at: home)
-        }
-        var launchedCommands: [String] = []
-        var openedURLs: [URL] = []
-
-        let result = ProviderSetup.performTerminal(
-            TerminalLaunchSpecification(
-                executable: "codex",
-                arguments: ["login"]
-            ),
-            fallbackURL: URL(string: "https://chatgpt.com/codex")!,
-            environment: ["PATH": ""],
-            homeDirectory: home,
-            isExecutable: { $0 == executable.path },
-            launchTerminal: {
-                launchedCommands.append($0)
-                return true
-            },
-            openURL: {
-                openedURLs.append($0)
-                return true
-            }
-        )
-
-        #expect(result == .success(.launched))
-        #expect(launchedCommands == ["'\(executable.path)' 'login'"])
-        #expect(openedURLs.isEmpty)
     }
 
     @Test

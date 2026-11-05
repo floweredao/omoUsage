@@ -1,9 +1,29 @@
 import Foundation
 import Network
 
-/// Loopback-only OAuth callback for Claude. Binds 127.0.0.1 on the preferred
-/// port, falling back to an ephemeral port when it is busy, and accepts only
-/// `GET /callback`. All Network callbacks run on the main queue.
+/// Where a provider's registered OAuth redirect may land. Claude accepts any
+/// loopback port; Codex accepts only the ports its CLI registered.
+struct BrowserAuthenticationCallback: Equatable, Sendable {
+    var providerName: String
+    var redirectHost: String
+    var path: String
+    var ports: [UInt16]
+    var allowsEphemeralPort: Bool
+
+    static func claude(preferredPort: UInt16) -> BrowserAuthenticationCallback {
+        BrowserAuthenticationCallback(
+            providerName: "Claude",
+            redirectHost: "localhost",
+            path: "/callback",
+            ports: preferredPort == 0 ? [] : [preferredPort],
+            allowsEphemeralPort: true
+        )
+    }
+}
+
+/// Loopback-only OAuth callback. Binds 127.0.0.1 on the first free configured
+/// port, falling back to an ephemeral port only when the provider allows it,
+/// and accepts only `GET <path>`. All Network callbacks run on the main queue.
 @MainActor
 final class ClaudeBrowserAuthenticationListener {
     static let maximumConnections = 8
@@ -12,7 +32,9 @@ final class ClaudeBrowserAuthenticationListener {
     var callback: ((Result<String, ClaudeBrowserAuthenticationError>) -> Void)?
     private(set) var port: UInt16?
     private var listener: NWListener
-    private var tryingPreferredPort: Bool
+    /// Ports still to try after the current one; `.any` is the ephemeral fallback.
+    private var remainingPorts: [NWEndpoint.Port]
+    private let configuration: BrowserAuthenticationCallback
     private let state: String
     private var expectedHosts: Set<String> = []
     private var started = false
@@ -28,16 +50,24 @@ final class ClaudeBrowserAuthenticationListener {
         let deadline: DispatchWorkItem
     }
 
-    init(state: String, preferredPort: UInt16) throws {
+    convenience init(state: String, preferredPort: UInt16) throws {
+        try self.init(state: state, configuration: .claude(preferredPort: preferredPort))
+    }
+
+    init(state: String, configuration: BrowserAuthenticationCallback) throws {
         self.state = state
-        if let port = NWEndpoint.Port(rawValue: preferredPort), preferredPort != 0,
-           let preferred = try? Self.makeListener(port: port) {
-            listener = preferred
-            tryingPreferredPort = true
-        } else {
-            listener = try Self.makeListener(port: .any)
-            tryingPreferredPort = false
+        self.configuration = configuration
+        var ports = configuration.ports.compactMap { NWEndpoint.Port(rawValue: $0) }
+        if configuration.allowsEphemeralPort { ports.append(.any) }
+        while !ports.isEmpty {
+            let port = ports.removeFirst()
+            if let candidate = try? Self.makeListener(port: port) {
+                listener = candidate
+                remainingPorts = ports
+                return
+            }
         }
+        throw ClaudeBrowserAuthenticationError.listenerFailed
     }
 
     private static func makeListener(port: NWEndpoint.Port) throws -> NWListener {
@@ -101,13 +131,16 @@ final class ClaudeBrowserAuthenticationListener {
         case .ready:
             guard !stopping, let port = listener.port else { return }
             self.port = port.rawValue
-            tryingPreferredPort = false
+            remainingPorts = []
             expectedHosts = ["localhost:\(port.rawValue)", "127.0.0.1:\(port.rawValue)"]
-            ready?.resume(returning: URL(string: "http://localhost:\(port.rawValue)/callback")!)
+            ready?.resume(returning: URL(
+                string: "http://\(configuration.redirectHost):\(port.rawValue)\(configuration.path)"
+            )!)
             ready = nil
         case .waiting, .failed:
-            if tryingPreferredPort, !stopping, fallBackToEphemeralPort() { return }
-            guard case .failed = state else { return }
+            if !stopping, fallBackToNextPort() { return }
+            // A loopback listener waits only when its port is taken; with no
+            // port left to try, waiting would hold the sign-in until timeout.
             callback?(.failure(.listenerFailed))
             stop()
         case .cancelled:
@@ -120,9 +153,10 @@ final class ClaudeBrowserAuthenticationListener {
         }
     }
 
-    private func fallBackToEphemeralPort() -> Bool {
-        tryingPreferredPort = false
-        guard let replacement = try? Self.makeListener(port: .any) else { return false }
+    private func fallBackToNextPort() -> Bool {
+        guard !remainingPorts.isEmpty,
+              let replacement = try? Self.makeListener(port: remainingPorts.removeFirst())
+        else { return false }
         let busy = listener
         busy.stateUpdateHandler = nil
         busy.newConnectionHandler = nil
@@ -195,8 +229,9 @@ final class ClaudeBrowserAuthenticationListener {
         let lines = text.dropLast(4).components(separatedBy: "\r\n")
         guard let first = lines.first else { return .invalid }
         let request = first.split(separator: " ", omittingEmptySubsequences: false)
+        let prefix = configuration.path + "?"
         guard request.count == 3, request[0] == "GET", request[2] == "HTTP/1.1",
-              request[1].hasPrefix("/callback?")
+              request[1].hasPrefix(prefix)
         else { return .invalid }
         var headers: [String: String] = [:]
         for line in lines.dropFirst() {
@@ -215,7 +250,7 @@ final class ClaudeBrowserAuthenticationListener {
               headers["content-length"] == nil || headers["content-length"] == "0"
         else { return .invalid }
         var query: [String: String] = [:]
-        for parameter in request[1].dropFirst("/callback?".count).split(separator: "&", omittingEmptySubsequences: false) {
+        for parameter in request[1].dropFirst(prefix.count).split(separator: "&", omittingEmptySubsequences: false) {
             let pair = parameter.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
             guard pair.count == 2,
                   let key = String(pair[0]).removingPercentEncoding,
@@ -271,8 +306,8 @@ final class ClaudeBrowserAuthenticationListener {
         afterSend: (@MainActor () -> Void)? = nil
     ) {
         let message = status == 200
-            ? "Claude sign-in received. You can close this tab and return to OmoUsage."
-            : "Claude sign-in callback was not accepted."
+            ? "\(configuration.providerName) sign-in received. You can close this tab and return to OmoUsage."
+            : "\(configuration.providerName) sign-in callback was not accepted."
         let body = "<!doctype html><html><head><meta charset=\"utf-8\"><title>OmoUsage</title></head>"
             + "<body><p>\(message)</p></body></html>\n"
         let reason = status == 200 ? "OK" : status == 409 ? "Conflict" : "Bad Request"

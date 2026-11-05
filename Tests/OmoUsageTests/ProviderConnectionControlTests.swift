@@ -80,7 +80,6 @@ struct ProviderConnectionControlTests {
         ProviderConnectionControl.performConnect(
             provider: .claude,
             startConnection: { events.append("terminal-\($0.rawValue)") },
-            startGuardedCodexConnection: { events.append("guarded-\($0.rawValue)") },
             startBrowserConnection: { events.append("browser-\($0.rawValue)") }
         )
         // Claude is re-enabled only after the browser sign-in succeeds.
@@ -109,7 +108,7 @@ struct ProviderConnectionControlTests {
         #expect(events == ["reenable-grok", "start-grok"])
     }
 
-    @Test(arguments: [ProviderID.claude, .kiro, .devin])
+    @Test(arguments: [ProviderID.claude, .codex, .kiro, .devin])
     @MainActor
     func browserSignInProvidersConnectAndReconnectThroughBrowserOnly(
         _ provider: ProviderID
@@ -118,7 +117,6 @@ struct ProviderConnectionControlTests {
         ProviderConnectionControl.performConnect(
             provider: provider,
             startConnection: { events.append("start-\($0.rawValue)") },
-            startGuardedCodexConnection: { events.append("guarded-\($0.rawValue)") },
             startBrowserConnection: { events.append("browser-\($0.rawValue)") }
         )
         // No re-enable before the sign-in succeeds.
@@ -130,28 +128,6 @@ struct ProviderConnectionControlTests {
         )
 
         #expect(events == ["browser-\(provider.rawValue)", "browser-\(provider.rawValue)"])
-    }
-
-    @Test
-    @MainActor
-    func disconnectCancelsWaitingReconnectBeforeDisconnecting() {
-        var events: [String] = []
-        ProviderConnectionControl.performDisconnect(
-            provider: .codex,
-            isAwaitingReconnect: true,
-            cancelReconnect: { events.append("cancel") },
-            disconnect: { events.append("disconnect-\($0.rawValue)") }
-        )
-        #expect(events == ["cancel", "disconnect-codex"])
-
-        events.removeAll()
-        ProviderConnectionControl.performDisconnect(
-            provider: .codex,
-            isAwaitingReconnect: false,
-            cancelReconnect: { events.append("cancel") },
-            disconnect: { events.append("disconnect-\($0.rawValue)") }
-        )
-        #expect(events == ["disconnect-codex"])
     }
 
     @Test
