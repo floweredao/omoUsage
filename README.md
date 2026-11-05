@@ -37,8 +37,9 @@ and runs without an account or server of its own. The app is called
   panes scroll inside the window.
 - **Several accounts per service.** Add a second Claude, Codex, or other
   account and see them side by side, each with its own name.
-- **Your existing sign-ins.** Most services reuse the credential their official
-  app or CLI already stored. OpenRouter and Z.ai take an API key.
+- **Sign in from Settings.** Claude, Codex, Copilot, Devin, Kiro, and
+  OpenRouter sign in inside the app, with no CLI to install. The rest reuse
+  the credential their official app or CLI already stored, or take an API key.
 - **Numbers that stay put.** Each service refreshes on its own every 60
   seconds, so one failing service never blanks the rest; the last good numbers
   stay with a clear "refresh failed" label.
@@ -120,15 +121,15 @@ iOS 18.
 | Service | How you sign in | What OmoUsage reads |
 | --- | --- | --- |
 | Claude Code | `claude auth login`, or sign in with your browser from Settings | `Claude Code-credentials` Keychain item, `~/.claude/.credentials.json`, or `CLAUDE_CODE_OAUTH_TOKEN` |
-| Codex | `codex login` | `~/.codex/auth.json` (honours `CODEX_HOME`) or the Codex Keychain item |
+| Codex | Sign in with ChatGPT from Settings, or `codex login` | OmoUsage's own Keychain item, `~/.codex/auth.json` (honours `CODEX_HOME`), or the Codex Keychain item |
 | Cursor | Cursor app › Account | Cursor's local database |
 | Antigravity | Antigravity app or `agy` | `gemini` Keychain item |
-| Copilot | `copilot login` or `gh auth login` | `copilot-cli` Keychain item, `~/.config/gh/hosts.yml`, or an editor's OAuth token |
+| Copilot | Sign in with a GitHub device code from Settings, or `copilot login` / `gh auth login` | OmoUsage's own Keychain item, `copilot-cli` Keychain item, `~/.config/gh/hosts.yml`, or an editor's OAuth token |
 | Devin | `devin auth login`, or browser sign-in from Settings | `~/.local/share/devin/credentials.toml` (honours `XDG_DATA_HOME`) |
 | Grok | `grok login` | `~/.grok/auth.json` |
 | Kiro | Connect from Settings (reuses an existing login or opens browser sign-in) | Account-scoped Keychain credential or Kiro CLI's `data.sqlite3` |
 | OpenCode | `opencode auth login` or an API key in Settings | OpenCode's `auth.json` plus local usage records |
-| OpenRouter | API key in Settings | OmoUsage's own Keychain item |
+| OpenRouter | Sign in from Settings (creates a key for you), or paste an API key; the account credit balance needs a management key | OmoUsage's own Keychain item |
 | Z.ai | API key in Settings | OmoUsage's own Keychain item |
 
 Services you are not signed in to stay hidden. An account you add in Settings

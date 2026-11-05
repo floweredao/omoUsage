@@ -34,7 +34,9 @@ credential discovery, owns API-key entry where required, and launches each
 companion provider's official connection flow. Adding a non-default account
 captures that provider's currently authenticated credential into an isolated
 OmoUsage Keychain item without rewriting the companion's credential store.
-Devin also supports browser PKCE sign-in without a companion installation.
+Claude, Codex, Devin, Kiro, and OpenRouter also support browser PKCE sign-in,
+and Copilot a GitHub device-code sign-in, without a companion installation.
+These in-app flows are the default connection where they exist.
 Its callback validates state, and OmoUsage verifies usage before storing the
 credential for the selected account. Cancelled or rejected sign-ins do not
 replace that account's credential. Existing Devin CLI and app credentials
@@ -475,9 +477,17 @@ other privileged controls remain native-only.
   the official installed authentication flow. If the required tool is absent,
   the control reports which executable must be installed; help links remain
   available separately and are never reported as successful authentication.
-- Copilot prefers its official CLI, then an installed GitHub CLI, with no web
-  fallback. Launch remains pending because GitHub OAuth alone does not prove
-  Copilot quota access; the refreshed provider endpoint decides availability.
+- Copilot signs in through a GitHub device code: Connect copies the code to
+  the clipboard, shows it in the Settings feedback line, and opens GitHub's
+  device page. The grant is stored only after GitHub issues the token, and the
+  refreshed provider endpoint still decides availability. Existing Copilot CLI
+  and GitHub CLI credentials remain discovery sources when no app-owned grant
+  exists.
+- Codex signs in with ChatGPT in the browser and no longer needs the Codex
+  CLI. Existing `~/.codex/auth.json` credentials remain discovery sources and
+  are never rewritten for app-owned accounts.
+- OpenRouter offers browser sign-in that mints a user API key, stored exactly
+  like a pasted key; the key field stays available.
   OpenCode Go uses an OmoUsage-owned API-key field and still discovers official
   `auth.json` and local usage as lower-priority fallbacks.
 - API-key fields appear only for OpenCode Go, OpenRouter, and Z.ai.
