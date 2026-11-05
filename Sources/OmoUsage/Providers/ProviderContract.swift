@@ -15,6 +15,8 @@ enum ProviderEndpointPurpose: String, CaseIterable, Sendable {
     case cursorAccount = "cursor.account"
     case antigravityAvailableModels = "antigravity.available-models"
     case copilotUser = "copilot.user"
+    case copilotDeviceCode = "copilot.device-code"
+    case copilotDeviceToken = "copilot.device-token"
     case devinUserStatus = "devin.user-status"
     case grokBilling = "grok.billing"
     case grokSettings = "grok.settings"

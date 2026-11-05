@@ -43,7 +43,15 @@ enum ProviderConnectionMutationPolicy {
     }
 }
 
-/// Settings copy for a failed Claude or Codex browser sign-in. `nil` means the
+/// The GitHub device code of a Copilot sign-in in progress, shown in the
+/// Settings feedback line until the sign-in ends.
+@MainActor
+@Observable
+final class CopilotDeviceCodeDisplay {
+    var code: CopilotDeviceCode?
+}
+
+/// Settings copy for a failed Claude, Codex, or Copilot sign-in. `nil` means the
 /// attempt needs no message (a second tap while one is already running).
 enum ClaudeBrowserConnectionFeedback {
     static func message(for error: Error) -> AppStringKey? {
@@ -51,6 +59,7 @@ enum ClaudeBrowserConnectionFeedback {
     }
 
     static func message(for error: Error, provider: ProviderID) -> AppStringKey? {
+        if provider == .copilot { return copilotMessage(for: error) }
         let codex = provider == .codex
         if error is CancellationError { return codex ? .codexSignInCancelled : .claudeSignInCancelled }
         if case ProviderAccountRegistryControllerError.invalidLabel? =
@@ -65,6 +74,17 @@ enum ClaudeBrowserConnectionFeedback {
         case .storageFailed: return codex ? .codexSignInSaveFailed : .claudeSignInSaveFailed
         case .stateMismatch, .authorizationFailed, .exchangeFailed, nil:
             return codex ? .codexSignInFailed : .claudeSignInFailed
+        }
+    }
+
+    private static func copilotMessage(for error: Error) -> AppStringKey? {
+        if error is CancellationError { return nil }
+        if error is ProviderAccountRegistryControllerError { return .accountAdditionFailed }
+        switch error as? ClaudeBrowserConnectionError {
+        case .alreadyConnecting, .cancelled: return nil
+        case .timedOut: return .browserSignInTimedOut
+        case .storageFailed: return .browserCredentialSaveFailed
+        case .stateMismatch, .authorizationFailed, .exchangeFailed, nil: return .browserLoginFailed
         }
     }
 }
@@ -211,6 +231,8 @@ struct SettingsView: View {
     @State private var expandedAvailableProviders: Set<ProviderID> = []
     @State private var claudeConnection: ClaudeBrowserConnectionCoordinator
     @State private var codexConnection: ClaudeBrowserConnectionCoordinator
+    @State private var copilotConnection: ClaudeBrowserConnectionCoordinator
+    @State private var copilotDeviceCode: CopilotDeviceCodeDisplay
     @State private var oauthLoginTasks: [ProviderID: Task<Void, Never>] = [:]
     @State private var devinConnection = DevinBrowserConnectionCoordinator()
     @State private var devinLoginTask: Task<Void, Never>?
@@ -255,6 +277,7 @@ struct SettingsView: View {
             CredentialDiscovery.live().snapshotStore,
         authenticateClaude: ClaudeBrowserConnectionCoordinator.Authenticate? = nil,
         authenticateCodex: ClaudeBrowserConnectionCoordinator.Authenticate? = nil,
+        authenticateCopilot: ClaudeBrowserConnectionCoordinator.Authenticate? = nil,
         authenticateDevin: @escaping @MainActor () async throws -> CredentialSnapshot = {
             try await DevinBrowserAuthenticationClient().authenticate {
                 NSWorkspace.shared.open($0)
@@ -358,6 +381,28 @@ struct SettingsView: View {
                 registerAccount: { label, secret in
                     try accountRegistryController.addCapturedCompanionAccount(
                         provider: .codex, label: label, encodedSecret: secret
+                    ).accountID
+                }
+            )
+        )
+        let copilotCode = CopilotDeviceCodeDisplay()
+        _copilotDeviceCode = State(initialValue: copilotCode)
+        _copilotConnection = State(
+            initialValue: ClaudeBrowserConnectionCoordinator(
+                provider: .copilot,
+                snapshotStore: claudeSnapshotStore,
+                authenticate: authenticateCopilot ?? {
+                    defer { copilotCode.code = nil }
+                    return try await CopilotDeviceAuthenticationClient().authenticate { code in
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(code.userCode, forType: .string)
+                        copilotCode.code = code
+                        return NSWorkspace.shared.open(code.verificationURL)
+                    }
+                },
+                registerAccount: { label, secret in
+                    try accountRegistryController.addCapturedCompanionAccount(
+                        provider: .copilot, label: label, encodedSecret: secret
                     ).accountID
                 }
             )
@@ -482,9 +527,13 @@ struct SettingsView: View {
         .onDisappear {
             cancelOAuthConnection(.claude)
             cancelOAuthConnection(.codex)
+            cancelOAuthConnection(.copilot)
             cancelDevinConnection()
             cancelKiroConnection()
             openRouterSignInTask?.cancel()
+        }
+        .onChange(of: copilotDeviceCode.code) { _, code in
+            if let code { feedback = .formatted(.copilotDeviceCodePrompt, code.userCode) }
         }
         .onChange(of: feedback) { _, newFeedback in
             // The feedback line is a status message: announce each new one
@@ -775,6 +824,9 @@ struct SettingsView: View {
         if provider == .codex, codexConnection.pending != nil {
             return true
         }
+        if provider == .copilot, copilotConnection.pending != nil {
+            return true
+        }
         if provider == .devin, devinConnection.pending != nil {
             return true
         }
@@ -868,8 +920,7 @@ struct SettingsView: View {
             },
             browserConnectionTarget: devinConnection.pending,
             kiroConnectionTarget: kiroConnection.pending,
-            claudeConnectionTarget: provider == .codex
-                ? codexConnection.pending : claudeConnection.pending,
+            claudeConnectionTarget: oauthConnection(for: provider).pending,
             onBrowserConnect: {
                 resetKeychainAuthorizationForUserAction()
                 startDevinConnection(.existing($0))
@@ -917,7 +968,7 @@ struct SettingsView: View {
                                     providerID: provider
                                 )
                                 switch provider {
-                                case .claude, .codex:
+                                case .claude, .codex, .copilot:
                                     resetKeychainAuthorizationForUserAction()
                                     startOAuthConnection(provider, .existing(.legacy))
                                 case .kiro:
@@ -1048,7 +1099,7 @@ struct SettingsView: View {
     /// Primary-account browser sign-in for Claude, Codex, Kiro, and Devin.
     private func startBrowserConnection(for provider: ProviderID) {
         switch provider {
-        case .claude, .codex:
+        case .claude, .codex, .copilot:
             startOAuthConnection(provider, .existing(.legacy))
         case .kiro:
             startKiroConnection(.existing(
@@ -1201,7 +1252,7 @@ struct SettingsView: View {
 
     private func addAccount(for provider: ProviderID) {
         resetKeychainAuthorizationForUserAction()
-        if provider == .claude || provider == .codex {
+        if provider.usesOAuthConnection {
             startOAuthConnection(provider, .newAccount(label: newAccountLabels[provider, default: ""]))
             return
         }
@@ -1234,6 +1285,7 @@ struct SettingsView: View {
     private func cancelAddition() {
         if case .newAccount = claudeConnection.pending { cancelOAuthConnection(.claude) }
         if case .newAccount = codexConnection.pending { cancelOAuthConnection(.codex) }
+        if case .newAccount = copilotConnection.pending { cancelOAuthConnection(.copilot) }
         if case .newAccount = devinConnection.pending { cancelDevinConnection() }
         if case .newAccount = kiroConnection.pending { cancelKiroConnection() }
         additionCoordinator.cancel()
@@ -1246,6 +1298,7 @@ struct SettingsView: View {
         let browserAddition: ProviderID?
         if case .newAccount = claudeConnection.pending { browserAddition = .claude }
         else if case .newAccount = codexConnection.pending { browserAddition = .codex }
+        else if case .newAccount = copilotConnection.pending { browserAddition = .copilot }
         else if case .newAccount = devinConnection.pending { browserAddition = .devin }
         else if case .newAccount = kiroConnection.pending { browserAddition = .kiro }
         else { browserAddition = nil }
@@ -1253,6 +1306,7 @@ struct SettingsView: View {
         if devinLoginTask != nil && browserAddition == nil { guardedReconnect = .devin }
         else if case .existing = claudeConnection.pending { guardedReconnect = .claude }
         else if case .existing = codexConnection.pending { guardedReconnect = .codex }
+        else if case .existing = copilotConnection.pending { guardedReconnect = .copilot }
         else { guardedReconnect = nil }
         return ProviderAccountAdditionRowState.resolve(
             provider: provider,
@@ -1268,7 +1322,7 @@ struct SettingsView: View {
         _ provider: ProviderID,
         _ target: ClaudeBrowserConnectionTarget
     ) {
-        let connection = provider == .codex ? codexConnection : claudeConnection
+        let connection = oauthConnection(for: provider)
         guard oauthLoginTasks[provider] == nil, additionCoordinator.pending == nil else { return }
         if case .newAccount(let label) = target,
            (try? ProviderAccountRegistryController.validatedAccountLabel(label)) == nil {
@@ -1291,6 +1345,14 @@ struct SettingsView: View {
                     for: error, provider: provider
                 ).map { .key($0) }
             }
+        }
+    }
+
+    private func oauthConnection(for provider: ProviderID) -> ClaudeBrowserConnectionCoordinator {
+        switch provider {
+        case .codex: codexConnection
+        case .copilot: copilotConnection
+        default: claudeConnection
         }
     }
 
@@ -2929,7 +2991,7 @@ private struct ProviderSettingsSection: View {
         let primary = row.role == .primary
         let availability = viewModel.accountConnectionStates[row.identity]
         let disconnected = viewModel.isDisconnected(row.identity)
-        let waiting = provider == .claude || provider == .codex
+        let waiting = provider.usesOAuthConnection
             ? claudeConnectionTarget == .existing(row.identity.accountID)
             : provider == .kiro
             ? kiroConnectionTarget == .existing(row.identity)
@@ -2940,7 +3002,7 @@ private struct ProviderSettingsSection: View {
             ConnectionBadge(
                 availability: disconnected ? .authenticationRequired : availability,
                 presentation: waiting ? .waitingForCredential : primary ? connectionPresentation : nil,
-                waitingForBrowser: provider == .kiro || provider == .claude || provider == .codex
+                waitingForBrowser: provider == .kiro || provider.usesOAuthConnection
             )
             .accessibilityIdentifier("account-connection-status-\(suffix)")
             Spacer(minLength: 8)
@@ -2954,7 +3016,7 @@ private struct ProviderSettingsSection: View {
             ) { control in
                 switch control {
                 case .connect:
-                    if provider == .claude || provider == .codex {
+                    if provider.usesOAuthConnection {
                         Button(localization.text(.startConnection)) { onClaudeConnect(row.identity) }
                             .buttonStyle(.bordered)
                             .accessibilityIdentifier("account-connect-\(suffix)")
@@ -2988,7 +3050,7 @@ private struct ProviderSettingsSection: View {
                     .accessibilityIdentifier("account-disconnect-\(suffix)")
                 case .reconnect:
                     Button(localization.text(.reconnectProvider)) {
-                        if provider == .claude || provider == .codex { onClaudeConnect(row.identity) }
+                        if provider.usesOAuthConnection { onClaudeConnect(row.identity) }
                         else if provider == .kiro { onKiroConnect(row.identity) }
                         else if provider == .devin { onBrowserConnect(row.identity) }
                         else if primary && !descriptor.acceptsAPIKey { onReconnect() }
@@ -3363,5 +3425,10 @@ private extension ProviderID {
     /// Providers whose Settings connection runs an in-app browser sign-in.
     var usesBrowserSignIn: Bool {
         ProviderSetup.descriptor(for: self)?.action == .browserOAuth
+    }
+
+    /// Browser sign-ins that store their grant through `ClaudeBrowserConnectionCoordinator`.
+    var usesOAuthConnection: Bool {
+        [.claude, .codex, .copilot].contains(self)
     }
 }

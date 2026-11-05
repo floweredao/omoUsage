@@ -1042,6 +1042,33 @@ struct AdditionalCredentialDiscoveryTests {
     }
 
     @Test
+    func copilotDeviceSignInOutranksCompanionTokensForThePrimaryAccount() throws {
+        try withFixtureDirectory { home in
+            let providerKeychain = AdditionalProviderKeychain()
+            try ProviderCredentialSnapshotStore(keychain: providerKeychain).save(
+                CredentialSnapshot(
+                    provider: .copilot, accessToken: "device-flow-token", refreshToken: nil,
+                    accountReference: nil, planName: nil, expiresAt: nil, source: .keychain
+                ),
+                for: AccountProviderID(accountID: .legacy, providerID: .copilot)
+            )
+            let discovery = CredentialDiscovery(
+                paths: CredentialPaths(
+                    claude: home.appending(path: ".claude/credentials.json"),
+                    codex: home.appending(path: ".codex/auth.json")
+                ),
+                environment: ["GH_TOKEN": "environment-token"],
+                keychain: AdditionalKeychain(),
+                providerKeychain: providerKeychain,
+                homeDirectory: home,
+                commandPaths: []
+            )
+
+            #expect(try discovery.copilot().accessToken == "device-flow-token")
+        }
+    }
+
+    @Test
     func copilotKeychainFailureDoesNotSelectBroaderCredential() throws {
         try withFixtureDirectory { home in
             try writeText(
