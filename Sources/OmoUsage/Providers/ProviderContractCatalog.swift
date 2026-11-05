@@ -42,7 +42,8 @@ enum ProviderContractCatalog {
             ],
             .openrouter: [
                 .get(.openRouterCredits, ["Authorization", "Accept"]),
-                .get(.openRouterKey, ["Authorization", "Accept"])
+                .get(.openRouterKey, ["Authorization", "Accept"]),
+                .post(.openRouterKeyExchange, ["Content-Type", "Accept"], safety: .unsafe)
             ],
             .zai: [
                 .get(.zaiQuota, ["Authorization", "Accept"]),

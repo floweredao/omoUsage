@@ -678,7 +678,8 @@ enum ProviderSetup {
                 help: help(
                     provider,
                     [
-                        "OpenRouter의 Keys 페이지에서 API 키를 생성하세요.",
+                        "브라우저로 로그인을 누르면 OpenRouter가 키를 만들어 바로 저장합니다.",
+                        "직접 만든 키는 OpenRouter의 Keys 페이지에서 생성할 수 있습니다.",
                         "생성한 키를 API 키 입력란에 붙여 넣고 저장을 누르세요."
                     ],
                     "https://openrouter.ai/keys"

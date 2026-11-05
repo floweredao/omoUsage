@@ -204,6 +204,7 @@ struct SettingsView: View {
     private let onKiroLBEnabledChange: (Bool) -> Void
     private let authenticateDevin: @MainActor () async throws -> CredentialSnapshot
     private let authenticateKiro: @MainActor () async throws -> CredentialSnapshot
+    private let authenticateOpenRouter: @MainActor () async throws -> String
     private let discoverKiro: (KiroBrowserConnectionTarget) throws -> CredentialSnapshot
     private let validateKiro: @MainActor (CredentialSnapshot) async throws -> ProviderUsage
     @State private var isKiroLBEnabled: Bool
@@ -215,6 +216,7 @@ struct SettingsView: View {
     @State private var devinLoginTask: Task<Void, Never>?
     @State private var kiroConnection = KiroBrowserConnectionCoordinator()
     @State private var kiroLoginTask: Task<Void, Never>?
+    @State private var openRouterSignInTask: Task<Void, Never>?
     @State private var keyDrafts: [ProviderID: String] = [:]
     @State private var newAccountLabels: [ProviderID: String] = [:]
     @State private var newAccountKeys: [ProviderID: String] = [:]
@@ -255,6 +257,11 @@ struct SettingsView: View {
         authenticateCodex: ClaudeBrowserConnectionCoordinator.Authenticate? = nil,
         authenticateDevin: @escaping @MainActor () async throws -> CredentialSnapshot = {
             try await DevinBrowserAuthenticationClient().authenticate {
+                NSWorkspace.shared.open($0)
+            }
+        },
+        authenticateOpenRouter: @escaping @MainActor () async throws -> String = {
+            try await OpenRouterBrowserAuthenticationClient().authenticate {
                 NSWorkspace.shared.open($0)
             }
         },
@@ -328,6 +335,7 @@ struct SettingsView: View {
         self.onKiroLBEnabledChange = onKiroLBEnabledChange
         self.authenticateDevin = authenticateDevin
         self.authenticateKiro = authenticateKiro
+        self.authenticateOpenRouter = authenticateOpenRouter
         self.discoverKiro = discoverKiro
         self.validateKiro = validateKiro
         _isKiroLBEnabled = State(initialValue: isKiroLBEnabled)
@@ -476,6 +484,7 @@ struct SettingsView: View {
             cancelOAuthConnection(.codex)
             cancelDevinConnection()
             cancelKiroConnection()
+            openRouterSignInTask?.cancel()
         }
         .onChange(of: feedback) { _, newFeedback in
             // The feedback line is a status message: announce each new one
@@ -815,6 +824,9 @@ struct SettingsView: View {
                 connectProvider(provider)
             },
             onSave: { saveKey(for: provider) },
+            onBrowserKeySignIn: provider == .openrouter
+                ? { startOpenRouterSignIn(newAccount: $0) } : nil,
+            isBrowserKeySignInRunning: openRouterSignInTask != nil,
             onRemove: { removeKey(for: provider) },
             onDisconnect: {
                 disconnectProvider(provider)
@@ -1131,6 +1143,34 @@ struct SettingsView: View {
             onRegistryChange()
         } catch {
             feedback = .key(.saveKeyFailed)
+        }
+    }
+
+    /// OpenRouter mints a user key through browser sign-in; the key then
+    /// takes the same save or add path as a pasted one.
+    private func startOpenRouterSignIn(newAccount: Bool) {
+        guard openRouterSignInTask == nil else { return }
+        feedback = .key(.waitingForBrowserLogin)
+        openRouterSignInTask = Task { @MainActor in
+            defer { openRouterSignInTask = nil }
+            do {
+                let key = try await authenticateOpenRouter()
+                if newAccount {
+                    newAccountKeys[.openrouter] = key
+                    addAccount(for: .openrouter)
+                } else {
+                    keyDrafts[.openrouter] = key
+                    saveKey(for: .openrouter)
+                }
+            } catch is CancellationError {
+                feedback = nil
+            } catch ClaudeBrowserAuthenticationError.timedOut {
+                feedback = .key(.browserSignInTimedOut)
+            } catch ClaudeBrowserAuthenticationError.authorizationDenied {
+                feedback = .key(.browserSignInDenied)
+            } catch {
+                feedback = .key(.browserLoginFailed)
+            }
         }
     }
 
@@ -1835,6 +1875,8 @@ private struct ProviderAccountsSection<
     @Binding var label: String
     @Binding var key: String
     let onAdd: () -> Void
+    let onBrowserKeySignIn: (() -> Void)?
+    let isBrowserKeySignInRunning: Bool
     let onRemove: (AccountProviderID) -> Void
     let onRename: (AccountProviderID, String) throws -> Void
     let onAliasOutcome: (AccountAliasEdit.Outcome) -> Void
@@ -1970,6 +2012,12 @@ private struct ProviderAccountsSection<
                     )
             }
             HStack(spacing: 8) {
+                if let onBrowserKeySignIn {
+                    Button(localization.text(.signInWithBrowser), action: onBrowserKeySignIn)
+                        .buttonStyle(.bordered)
+                        .disabled(isBrowserKeySignInRunning || !canAddWithoutKey)
+                        .accessibilityIdentifier("add-account-browser-key-\(provider.rawValue)")
+                }
                 Spacer(minLength: 0)
                 Button(localization.text(.cancel)) {
                     isAddingAccount = false
@@ -2223,11 +2271,15 @@ private struct ProviderAccountsSection<
         ProviderSetup.descriptor(for: provider)?.acceptsAPIKey == true
     }
 
-    private var canAdd: Bool {
+    private var canAddWithoutKey: Bool {
         additionAvailability == .offered
             && !label.trimmingCharacters(
                 in: .whitespacesAndNewlines
             ).isEmpty
+    }
+
+    private var canAdd: Bool {
+        canAddWithoutKey
             && (
                 !acceptsAPIKey
                     || !key.trimmingCharacters(
@@ -2790,6 +2842,8 @@ private struct ProviderSettingsSection: View {
     let onCleanupLegacy: () -> Void
     let onSetup: () -> Void
     let onSave: () -> Void
+    let onBrowserKeySignIn: ((_ newAccount: Bool) -> Void)?
+    let isBrowserKeySignInRunning: Bool
     let onRemove: () -> Void
     let onDisconnect: () -> Void
     let onReconnect: () -> Void
@@ -2829,6 +2883,8 @@ private struct ProviderSettingsSection: View {
                 label: $newAccountLabel,
                 key: $newAccountKey,
                 onAdd: onAddAccount,
+                onBrowserKeySignIn: onBrowserKeySignIn.map { signIn in { signIn(true) } },
+                isBrowserKeySignInRunning: isBrowserKeySignInRunning,
                 onRemove: onRemoveAccount,
                 onRename: onRenameAccount,
                 onAliasOutcome: onAliasOutcome,
@@ -3034,6 +3090,12 @@ private struct ProviderSettingsSection: View {
                             isKeyFieldRevealed = false
                         }
                         .buttonStyle(.bordered)
+                    }
+                    if let onBrowserKeySignIn {
+                        Button(localization.text(.signInWithBrowser)) { onBrowserKeySignIn(false) }
+                            .buttonStyle(.bordered)
+                            .disabled(isBrowserKeySignInRunning)
+                            .accessibilityIdentifier("browser-key-\(provider.rawValue)")
                     }
                     Button(localization.text(.save)) {
                         onSave()

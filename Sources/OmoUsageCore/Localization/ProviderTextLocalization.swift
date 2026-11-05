@@ -464,7 +464,8 @@ public enum ProviderTextLocalization {
         "OmoUsage는 Grok의 로컬 auth.json을 자동으로 찾습니다.": "OmoUsage automatically finds Grok's local auth.json.",
         "OpenCode Go에서 API 키를 생성하세요.": "Create an API key in OpenCode Go.",
         "OmoUsage는 저장된 키를 공식 auth.json과 로컬 사용 기록보다 먼저 사용합니다.": "OmoUsage uses the saved key before official auth.json and local usage.",
-        "OpenRouter의 Keys 페이지에서 API 키를 생성하세요.": "Create an API key on OpenRouter's Keys page.",
+        "브라우저로 로그인을 누르면 OpenRouter가 키를 만들어 바로 저장합니다.": "Choose Sign In with Browser and OpenRouter creates a key that is saved right away.",
+        "직접 만든 키는 OpenRouter의 Keys 페이지에서 생성할 수 있습니다.": "You can also create a key yourself on OpenRouter's Keys page.",
         "생성한 키를 API 키 입력란에 붙여 넣고 저장을 누르세요.": "Paste the key into the API Key field and choose Save.",
         "개인 플랜은 Z.ai API 키 관리 페이지에서 키를 생성하세요.": "For an individual plan, create a key on the Z.ai API key management page.",
         "팀 플랜은 https://z.ai/manage-apikey/coding-plan/team/my-plan 에서 전용 키를 생성하세요.": "For a team plan, create its dedicated key at https://z.ai/manage-apikey/coding-plan/team/my-plan."
