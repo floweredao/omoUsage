@@ -100,12 +100,22 @@ and runs without an account or server of its own. The app is called
 
 ## Install
 
-1. Download `OmoUsage-<version>.zip` from the
-   [latest release](https://github.com/floweredao/omoUsage/releases/latest).
-2. Unzip it and move `OmoUsage.app` to `/Applications`.
-3. Open it. Releases are not notarized, so the first time macOS may refuse to
-   open it: go to **System Settings › Privacy & Security** and choose
-   **Open Anyway**.
+Run this in Terminal:
+
+```sh
+curl -fsSL https://github.com/floweredao/omoUsage/releases/latest/download/install.sh | sh
+```
+
+It downloads the latest release, checks its SHA-256 checksum and code
+signature, replaces `OmoUsage.app` in `/Applications` (or `~/Applications`
+when `/Applications` is not writable), and opens it. Running it again
+updates an existing install.
+
+To install by hand instead, download `OmoUsage-<version>.zip` from the
+[latest release](https://github.com/floweredao/omoUsage/releases/latest),
+unzip it, and move `OmoUsage.app` to `/Applications`. Releases are not
+notarized, so a browser-downloaded copy opens only after **System Settings ›
+Privacy & Security › Open Anyway**.
 
 OmoUsage lives in the menu bar, with no Dock icon. Click the gauge icon for
 the popover; the gear opens Settings, where **Auth** shows every service's
