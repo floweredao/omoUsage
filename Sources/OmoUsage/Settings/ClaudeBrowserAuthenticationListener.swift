@@ -252,10 +252,12 @@ final class ClaudeBrowserAuthenticationListener {
         var query: [String: String] = [:]
         for parameter in request[1].dropFirst(prefix.count).split(separator: "&", omittingEmptySubsequences: false) {
             let pair = parameter.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+            // RFC 6749 4.1.2: ignore unrecognized response parameters (ChatGPT adds `scope`).
+            guard let key = String(pair[0]).removingPercentEncoding,
+                  ["code", "state", "error", "error_description"].contains(key)
+            else { continue }
             guard pair.count == 2,
-                  let key = String(pair[0]).removingPercentEncoding,
                   let value = String(pair[1]).removingPercentEncoding,
-                  ["code", "state", "error", "error_description"].contains(key),
                   query[key] == nil,
                   value.utf8.allSatisfy({ $0 >= 32 && $0 != 127 }),
                   !parameter.contains("#")
