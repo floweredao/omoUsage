@@ -35,7 +35,9 @@ Mobile/                  read-only iOS/Catalyst snapshot UI
   `ProviderMutationCoordinator.swift` govern account identity, durable registry
   recovery, per-account ordering, and visibility. Do not collapse account
   identity into the provider enum.
-- `Settings/ProviderSetup.swift` owns official app/CLI setup and login actions;
+- `Settings/ProviderSetup.swift` owns setup actions: in-app browser or device
+  sign-in where a provider offers one (`*BrowserAuthentication*.swift`,
+  `CopilotDeviceAuthentication.swift`), official app/CLI launch otherwise;
   `ProviderAPIKeyStore.swift` owns API-key persistence for supported providers.
 - `Views/` contains the native popover and Side Notch surfaces. Presentation
   style, settings actions, provider ordering, account aliases, and accessibility

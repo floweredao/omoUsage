@@ -42,7 +42,7 @@ OmoUsage is a native Swift 6 menu-bar app that aggregates remaining quota from t
 | Change provider requests/parsing | `Providers/` | Shared boundaries are `ProviderHTTP`, `UsageJSON`, and `ProviderPayload` |
 | Change refresh/failure behavior | `Dashboard/UsageDashboardViewModel.swift` | Concurrent fetch, cancellation, last-good retention |
 | Change provider accounts | `Settings/ProviderAccountStore.swift`, `ProviderAccountRegistryController.swift` | Registry changes rebuild account-scoped providers and repair persisted order |
-| Change provider setup/login | `Settings/ProviderSetup.swift` | Official apps/CLIs; OpenCode Go, OpenRouter, and Z.ai accept API keys |
+| Change provider setup/login | `Settings/ProviderSetup.swift`, `Settings/*BrowserAuthentication*.swift` | In-app sign-in for Claude, Codex, Copilot, Devin, Kiro, and OpenRouter; official apps/CLIs otherwise; OpenCode Go, OpenRouter, and Z.ai accept API keys |
 | Change desktop UI | `Views/`, `SideNotchPanelController.swift`, `AppDelegate.swift`, `DESIGN.md` | Default 320 pt popover; optional nonactivating Side Notch |
 | Change app updates/version | `Settings/AppUpdateController.swift`, `Config/Version.xcconfig` | Sparkle is macOS-only; packaging embeds its framework |
 | Change web dashboard | `WebDashboard/`, `Resources/WebDashboard/index.html` | Loopback-only sanitized surface; mutations require a launch nonce |
@@ -83,7 +83,8 @@ Paths below are repository-relative. Other macOS paths in the lookup table are r
 - Never put credentials, cookies, API keys, local paths, or diagnostics into `DashboardSnapshot` or iCloud.
 - Never render or log stored secrets. `DiscoveredCredential.description` and diagnostics must remain redacted.
 - Never treat documentation or help links as successful authentication; missing tools must report the required executable.
-- Never resolve similarly named third-party executables such as `opencodex`; launch only the provider's official app or CLI.
+- Prefer the provider's public sign-in flow inside the app (browser PKCE or device flow) where one exists; store the grant as an app-owned, account-scoped Keychain secret and never write it back to a companion CLI's credential store.
+- Where no public flow exists, launch only the provider's official app or CLI. Never resolve similarly named third-party executables such as `opencodex`.
 - Never route provider help through OpenUsage or copy its unrelated product surfaces.
 - Never force Aqua, Dark Aqua, or a SwiftUI color scheme. The app follows system appearance.
 - Preserve the native status-item-anchored `NSPopover` in default Popover mode. Optional Side Notch uses its separate `NSPanel` and layout contract.

@@ -8,7 +8,8 @@ Native account setup, durable registry/credential mutations, preferences, and ma
 
 | Task | Location |
 |------|----------|
-| Official setup flows and connection completion | `ProviderSetup.swift` |
+| Setup flows and connection completion | `ProviderSetup.swift` |
+| In-app sign-in clients and the shared loopback runner | `ClaudeBrowserAuthentication*.swift`, `CodexBrowserAuthentication.swift`, `OpenRouterBrowserAuthentication.swift`, `CopilotDeviceAuthentication.swift` |
 | Registry schema, validation, backup recovery | `ProviderAccountStore.swift` |
 | Account add/remove/rename/order and provider rebuild | `ProviderAccountRegistryController.swift` |
 | Advisory lock, intent journal, interrupted mutation recovery | `ProviderMutationCoordinator.swift` |
@@ -27,6 +28,7 @@ Native account setup, durable registry/credential mutations, preferences, and ma
 - The legacy account cannot be removed. API-key account setup covers OpenCode Go, OpenRouter, and Z.ai.
 - Captured companion credentials are prepared by the setup caller; the registry controller persists the supplied capture rather than reading live credentials itself.
 - Labels are trimmed/sanitized, nonempty, and case-insensitively unique per provider. Persist order and visibility using composite account/provider IDs.
+- In-app sign-in (Claude, Codex, Copilot, Devin, Kiro, OpenRouter) stores a grant only after the provider's token or key exchange succeeds; cancelled, denied, or timed-out sign-ins leave the account's credential unchanged.
 - Official app/CLI launch is a pending connection. Only the subsequent available usage result completes authentication.
 - `AppUpdateController` initializes Sparkle only in a packaged `.app`; unavailable update state is expected for a plain SwiftPM executable.
 
