@@ -339,7 +339,7 @@ private final class HephaestusAPICreditURLProtocol: URLProtocol,
                 .recordCredits(request)
             respond(status, Data(
                 """
-                {"amount": 25000, "currency": "USD", "promo_tranches": [
+                {"amount": 25000, "currency": null, "balance": null, "promo_tranches": [
                   {"remaining_amount_minor_units": 20000, "currency": "USD",
                    "expires_at": "2026-08-20T00:00:00Z"}
                 ]}

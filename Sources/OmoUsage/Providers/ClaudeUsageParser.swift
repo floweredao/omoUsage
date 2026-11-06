@@ -329,12 +329,19 @@ enum ClaudeUsageParser {
             guard
                 let object = try? UsageJSON.object(payload),
                 let amount = UsageJSON.number(object["amount"]),
-                amount.isFinite, amount >= 0,
-                (object["currency"] as? String)?.uppercased() == "USD"
+                amount.isFinite, amount >= 0
             else { return nil }
             let balance = UsageJSON.object(object["balance"])
             let denomination = UsageJSON.object(balance?["credits"])
                 ?? UsageJSON.object(balance?["money"])
+            // Legacy Console responses omit or null their USD-cent metadata.
+            // Honor explicit denominations before using that legacy unit.
+            let declaredCurrency = object["currency"]
+            let denominationCurrency = denomination?["currency"]
+            let currency = (declaredCurrency is NSNull ? nil : declaredCurrency)
+                ?? (denominationCurrency is NSNull ? nil : denominationCurrency)
+                ?? "USD"
+            guard (currency as? String)?.uppercased() == "USD" else { return nil }
             let exponent: Double
             if let value = denomination?["exponent"] {
                 guard let parsed = UsageJSON.number(value),
