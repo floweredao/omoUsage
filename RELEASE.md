@@ -82,8 +82,10 @@ codesign --verify --deep --strict --verbose=2 dist/OmoUsage.app
 
 Before manually attaching assets to a GitHub release, inspect the enclosure's
 URL, version/build, minimum OS/architecture requirements, signature and byte
-length. Upload the unchanged ZIP, `appcast.xml`, and `SHA256SUMS` together to
-the matching release, then make it the latest stable release. The configured
+length. Upload the unchanged ZIP, `appcast.xml`, `SHA256SUMS`, and
+`Scripts/install.sh` together to the matching release, then make it the latest
+stable release. `install.sh` must be attached to every release: the README's
+`releases/latest/download/install.sh` one-line install depends on it. The configured
 feed is:
 
 `https://github.com/floweredao/omoUsage/releases/latest/download/appcast.xml`
