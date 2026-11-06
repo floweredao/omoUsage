@@ -24,6 +24,7 @@ enum ProviderEndpointPurpose: String, CaseIterable, Sendable {
     case openCodeGoUsage = "opencode.go-usage"
     case openRouterCredits = "openrouter.credits"
     case openRouterKey = "openrouter.key"
+    case openRouterKeyExchange = "openrouter.key-exchange"
     case zaiQuota = "zai.quota"
     case zaiSubscription = "zai.subscription"
     case kiroLBLogin = "kirolb.login"
