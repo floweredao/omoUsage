@@ -1286,13 +1286,13 @@ struct CredentialDiscovery: Sendable {
         return Date(timeIntervalSince1970: expiration)
     }
 
-    fileprivate static func codexIdentityEmail(_ token: String) -> String? {
+    static func codexIdentityEmail(_ token: String) -> String? {
         guard let payload = codexJWTPayload(token) else { return nil }
         return payload["email"] as? String
             ?? (payload["https://api.openai.com/profile"] as? [String: Any])?["email"] as? String
     }
 
-    private static func codexJWTPayload(_ token: String) -> [String: Any]? {
+    static func codexJWTPayload(_ token: String) -> [String: Any]? {
         let parts = token.split(separator: ".", omittingEmptySubsequences: false)
         guard parts.count >= 2 else { return nil }
         var payload = String(parts[1])

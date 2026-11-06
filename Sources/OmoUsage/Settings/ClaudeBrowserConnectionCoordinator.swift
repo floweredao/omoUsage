@@ -20,9 +20,9 @@ enum ClaudeBrowserConnectionError: Error, Equatable {
     case storageFailed
 }
 
-/// Signs a Claude account in through the in-app browser flow and stores the
-/// grant as that account's app-owned snapshot (`claude/<account>`). Neither
-/// the Claude CLI nor any `Claude Code-credentials*` Keychain item is used.
+/// Signs a Claude or Codex account in through the in-app browser flow and
+/// stores the grant as that account's app-owned snapshot
+/// (`<provider>/<account>`). No companion CLI or its credential store is used.
 @MainActor
 @Observable
 final class ClaudeBrowserConnectionCoordinator {
@@ -31,21 +31,26 @@ final class ClaudeBrowserConnectionCoordinator {
     /// e.g. `ProviderAccountRegistryController.addCapturedCompanionAccount`.
     typealias RegisterAccount = @MainActor (_ label: String, _ encodedSecret: String) throws -> AccountID
 
+    let provider: ProviderID
     private(set) var pending: ClaudeBrowserConnectionTarget?
     @ObservationIgnored private let snapshotStore: ProviderCredentialSnapshotStore
     @ObservationIgnored private let authenticate: Authenticate
     @ObservationIgnored private let registerAccount: RegisterAccount
 
     init(
+        provider: ProviderID = .claude,
         snapshotStore: ProviderCredentialSnapshotStore,
         authenticate: Authenticate? = nil,
         registerAccount: @escaping RegisterAccount
     ) {
+        precondition(provider == .claude || provider == .codex)
+        self.provider = provider
         self.snapshotStore = snapshotStore
         self.authenticate = authenticate ?? {
-            try await ClaudeBrowserAuthenticationClient().authenticate {
-                NSWorkspace.shared.open($0)
-            }
+            let open: @MainActor (URL) async -> Bool = { NSWorkspace.shared.open($0) }
+            return provider == .codex
+                ? try await CodexBrowserAuthenticationClient().authenticate(openURL: open)
+                : try await ClaudeBrowserAuthenticationClient().authenticate(openURL: open)
         }
         self.registerAccount = registerAccount
     }
@@ -67,13 +72,13 @@ final class ClaudeBrowserConnectionCoordinator {
             throw Self.connectionError(error)
         }
         guard !Task.isCancelled else { throw ClaudeBrowserConnectionError.cancelled }
-        guard snapshot.provider == .claude else { throw ClaudeBrowserConnectionError.exchangeFailed }
+        guard snapshot.provider == provider else { throw ClaudeBrowserConnectionError.exchangeFailed }
         switch target {
         case .existing(let accountID):
             do {
                 try snapshotStore.save(
                     snapshot,
-                    for: AccountProviderID(accountID: accountID, providerID: .claude)
+                    for: AccountProviderID(accountID: accountID, providerID: provider)
                 )
             } catch {
                 throw ClaudeBrowserConnectionError.storageFailed

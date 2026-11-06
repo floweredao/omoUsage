@@ -166,6 +166,51 @@ struct ClaudeBrowserConnectionTests {
         #expect(message(ClaudeBrowserConnectionError.alreadyConnecting) == nil)
     }
 
+    @Test
+    func codexConnectionStoresOnlyACodexGrantUnderTheCodexAccount() async throws {
+        let keychain = ClaudeConnectionKeychain()
+        let accountID = AccountID()
+        let codexGrant = CredentialSnapshot(
+            provider: .codex, accessToken: "codex-access", refreshToken: "codex-refresh",
+            accountReference: "chatgpt-account", planName: nil,
+            expiresAt: now.addingTimeInterval(3600), source: .keychain
+        )
+        var grant = codexGrant
+        let coordinator = ClaudeBrowserConnectionCoordinator(
+            provider: .codex,
+            snapshotStore: ProviderCredentialSnapshotStore(keychain: keychain),
+            authenticate: { grant },
+            registerAccount: { _, _ in AccountID() }
+        )
+
+        #expect(try await coordinator.connect(target: .existing(accountID)) == accountID)
+        #expect(keychain.writes == [ClaudeConnectionKeychain.Access(
+            service: ProviderAPIKeyStore.serviceName, account: "codex/\(accountID.rawValue)"
+        )])
+
+        grant = snapshot("claude-access")
+        await #expect(throws: ClaudeBrowserConnectionError.exchangeFailed) {
+            try await coordinator.connect(target: .existing(accountID))
+        }
+        #expect(keychain.writes.count == 1)
+    }
+
+    @Test
+    func codexFailuresUseCodexCopy() {
+        #expect(ClaudeBrowserConnectionFeedback.message(
+            for: ClaudeBrowserConnectionError.timedOut, provider: .codex
+        ) == .codexSignInTimedOut)
+        #expect(ClaudeBrowserConnectionFeedback.message(
+            for: ClaudeBrowserConnectionError.storageFailed, provider: .codex
+        ) == .codexSignInSaveFailed)
+        #expect(ClaudeBrowserConnectionFeedback.message(
+            for: CancellationError(), provider: .codex
+        ) == .codexSignInCancelled)
+        #expect(ClaudeBrowserConnectionFeedback.message(
+            for: ClaudeBrowserConnectionError.exchangeFailed, provider: .codex
+        ) == .codexSignInFailed)
+    }
+
     private func snapshot(_ access: String) -> CredentialSnapshot {
         CredentialSnapshot(
             provider: .claude, accessToken: access, refreshToken: "browser-refresh",

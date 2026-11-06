@@ -112,37 +112,6 @@ struct ProviderSetupTruthfulnessTests {
     }
 
     @Test
-    func missingCodexCompanionReturnsTypedRequirementWithoutOpeningHelp() throws {
-        guard
-            case .terminal(let specification, let fallbackURL) =
-                try #require(ProviderSetup.descriptor(for: .codex)).action
-        else {
-            Issue.record("Codex must use its installed companion")
-            return
-        }
-        var openedURLs: [URL] = []
-
-        let result = ProviderSetup.performTerminal(
-            specification,
-            fallbackURL: fallbackURL,
-            companionProvider: .codex,
-            environment: ["PATH": ""],
-            homeDirectory: URL(filePath: "/Users/test"),
-            isExecutable: { _ in false },
-            launchTerminal: { _ in true },
-            openURL: {
-                openedURLs.append($0)
-                return true
-            }
-        )
-
-        #expect(
-            result == .failure(.companionRequired(.codex, ["codex"]))
-        )
-        #expect(openedURLs.isEmpty)
-    }
-
-    @Test
     func missingCursorAppReturnsTypedRequirementWithoutOpeningFallback() throws {
         guard
             case .application(let specification) =
@@ -288,25 +257,6 @@ struct ProviderSetupTruthfulnessTests {
 
         #expect(outcome == .openedOfficialGuide(url))
         #expect(!coordinator.isWaiting)
-        #expect(
-            CodexReconnectFeedback.update(for: outcome, userInitiated: true)
-                == .show(.formatted(.openedOfficialAuthentication, ProviderID.codex.displayName))
-        )
-    }
-
-    @Test
-    func codexActivationCheckClearsWaitingOnlyWhenReconnected() {
-        #expect(CodexReconnectFeedback.update(for: .reconnected, userInitiated: false) == .clear)
-        #expect(CodexReconnectFeedback.update(for: .credentialUnchanged, userInitiated: false) == .keep)
-        #expect(CodexReconnectFeedback.update(for: .credentialMissing, userInitiated: false) == .keep)
-        #expect(
-            CodexReconnectFeedback.update(for: .credentialUnavailable, userInitiated: false)
-                == .show(.key(.companionCredentialUnavailable))
-        )
-        #expect(
-            CodexReconnectFeedback.update(for: .credentialUnchanged, userInitiated: true)
-                == .show(.key(.companionCredentialUnchanged))
-        )
     }
 
     @Test
@@ -435,33 +385,17 @@ struct ProviderSetupTruthfulnessTests {
 
     @Test
     @MainActor
-    func codexConnectUsesGuardedLegacySnapshotReplacement() {
+    func codexConnectUsesInAppBrowserSignIn() {
         var events: [String] = []
         ProviderConnectionControl.performConnect(
             provider: .codex,
             startConnection: { events.append("start-\($0.rawValue)") },
-            startGuardedCodexConnection: {
-                events.append("guarded-\($0.rawValue)")
-            },
             startBrowserConnection: {
                 events.append("browser-\($0.rawValue)")
             }
         )
 
-        #expect(events == ["guarded-codex"])
-
-        events.removeAll()
-        ProviderConnectionControl.performConnect(
-            provider: .claude,
-            startConnection: { events.append("start-\($0.rawValue)") },
-            startGuardedCodexConnection: {
-                events.append("guarded-\($0.rawValue)")
-            },
-            startBrowserConnection: {
-                events.append("browser-\($0.rawValue)")
-            }
-        )
-        #expect(events == ["browser-claude"])
+        #expect(events == ["browser-codex"])
     }
 
     @Test
@@ -572,20 +506,20 @@ struct ProviderSetupTruthfulnessTests {
     }
 
     @Test
-    func codexGuardedReconnectWaitingOffersCheckAgainAndCancel() {
+    func waitingSignInOffersOnlyCancel() {
         #expect(
             ProviderConnectionControl.resolve(
                 availability: nil,
                 isDisconnected: true,
                 isAwaitingCredential: true
-            ) == [.checkAgainConnection, .cancelConnection]
+            ) == [.cancelConnection]
         )
         #expect(
             ProviderConnectionControl.resolve(
                 availability: .authenticationRequired,
                 isDisconnected: false,
                 isAwaitingCredential: true
-            ) == [.checkAgainConnection, .cancelConnection]
+            ) == [.cancelConnection]
         )
         #expect(
             ProviderConnectionControl.resolve(

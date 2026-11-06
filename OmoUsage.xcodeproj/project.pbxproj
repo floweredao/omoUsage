@@ -95,6 +95,7 @@
 		CEA7FD1A9E623ADA5DA54F92 /* ClaudeBrowserAuthentication.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29F6ADB0CB7BEAD8D90AF893 /* ClaudeBrowserAuthentication.swift */; };
 		CF517B2AAF7E6F099AA01C20 /* UnifiedProviderKeychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1087695DA3ACF137ADC91C6 /* UnifiedProviderKeychain.swift */; };
 		D0C4057361D5DE869F36320A /* CursorUsageProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25DDBD14AFA75AB0522C6FDD /* CursorUsageProvider.swift */; };
+		D13ED9893857A01C6C36A7E2 /* CodexBrowserAuthentication.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A0A6A75A338A1807D9E6B4 /* CodexBrowserAuthentication.swift */; };
 		D1D669FE091363FA8F5C9F6D /* SingleInstanceController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3D3D4A69F4FA62AD31142D2 /* SingleInstanceController.swift */; };
 		D2AEF7EE1438AD4BD92ED58C /* ProviderDisconnectionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61F5278036864C9CBF1983DB /* ProviderDisconnectionStore.swift */; };
 		D35DE7464B36DF24F1C5A1C9 /* ProviderTextLocalization.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57298D98E6BA5B39C881BBE7 /* ProviderTextLocalization.swift */; };
@@ -194,6 +195,7 @@
 		5026452A4FFB4EC36C26BBF8 /* ProviderHTTP.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderHTTP.swift; sourceTree = "<group>"; };
 		502CAD368A22EC9E4F6FEE6B /* codex.svg */ = {isa = PBXFileReference; path = codex.svg; sourceTree = "<group>"; };
 		5043503948695FCA371FC1C2 /* ProviderVisualStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderVisualStyle.swift; sourceTree = "<group>"; };
+		51A0A6A75A338A1807D9E6B4 /* CodexBrowserAuthentication.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexBrowserAuthentication.swift; sourceTree = "<group>"; };
 		51C20C1CEFEC9033E27C2270 /* UsageSnapshotSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageSnapshotSync.swift; sourceTree = "<group>"; };
 		56DAA835165D9917F4E0C489 /* LocalDataAccess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalDataAccess.swift; sourceTree = "<group>"; };
 		57298D98E6BA5B39C881BBE7 /* ProviderTextLocalization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderTextLocalization.swift; sourceTree = "<group>"; };
@@ -507,6 +509,7 @@
 				29F6ADB0CB7BEAD8D90AF893 /* ClaudeBrowserAuthentication.swift */,
 				687CB8227B3969297CADD756 /* ClaudeBrowserAuthenticationListener.swift */,
 				8154B52246A85E41B7B8D1DC /* ClaudeBrowserConnectionCoordinator.swift */,
+				51A0A6A75A338A1807D9E6B4 /* CodexBrowserAuthentication.swift */,
 				DA2DFDCC52C819D174BBECE1 /* CodexPlanMultiplierStore.swift */,
 				6EE503F1840C89846ED927FF /* DashboardPresentationStyleStore.swift */,
 				AF9D6DDBF0F39BD9CA0B4AE7 /* DevinBrowserAuthentication.swift */,
@@ -714,6 +717,7 @@
 				F18D2152109273D7B1A2C6FD /* ClaudeUsageParser.swift in Sources */,
 				19EFE0542B4CA456C58C9A74 /* ClaudeUsageProvider.swift in Sources */,
 				59B520A26723036A8DB353F6 /* CloudSyncStatus.swift in Sources */,
+				D13ED9893857A01C6C36A7E2 /* CodexBrowserAuthentication.swift in Sources */,
 				AE3D66BA181CF528785B9141 /* CodexPlanMultiplierStore.swift in Sources */,
 				69CED2C3D7304C984EE2EFE7 /* CodexUsageParser.swift in Sources */,
 				C8791D837E30716C7F09C57C /* CodexUsageProvider.swift in Sources */,

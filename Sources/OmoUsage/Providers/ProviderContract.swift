@@ -10,6 +10,7 @@ enum ProviderEndpointPurpose: String, CaseIterable, Sendable {
     case claudeOAuthAccount = "claude.oauth-account"
     case claudeAPICredits = "claude.api-credits"
     case codexUsage = "codex.usage"
+    case codexTokenExchange = "codex.token-exchange"
     case cursorUsageSummary = "cursor.usage-summary"
     case cursorAccount = "cursor.account"
     case antigravityAvailableModels = "antigravity.available-models"

@@ -54,40 +54,19 @@ struct ClaudeBrowserAuthenticationClient {
         // Claude's authorize endpoint echoes the verifier back as `state`.
         let verifier = try Self.randomValue()
         let flow = try ClaudeBrowserAuthenticationAttempt(
-            verifier: verifier,
-            preferredPort: preferredPort,
+            state: verifier,
+            callback: .claude(preferredPort: preferredPort),
             exchange: exchange,
-            now: now
-        )
-        return try await withTaskCancellationHandler {
-            flow.startTimeout(timeout)
-            do {
-                let redirect = try await flow.listener.start()
-                try Task.checkCancellation()
-                try flow.checkActive()
-                flow.redirectURI = redirect.absoluteString
-                let opened = await openURL(
-                    Self.authorizationURL(redirectURI: redirect.absoluteString, verifier: verifier)
+            now: now,
+            tokenRequest: { code, redirectURI in
+                try Self.tokenRequest(
+                    code: code, state: verifier, verifier: verifier, redirectURI: redirectURI
                 )
-                try Task.checkCancellation()
-                // An async opener can return after cancellation or the deadline.
-                try flow.checkActive()
-                guard opened else { throw ClaudeBrowserAuthenticationError.browserOpenFailed }
-                let snapshot = try await flow.value()
-                await flow.listener.close()
-                try Task.checkCancellation()
-                return snapshot
-            } catch {
-                flow.finish(.failure(error))
-                await flow.listener.close()
-                try Task.checkCancellation()
-                // Stopping a listener that is still binding reports listenerFailed to
-                // start(); retain the timeout/cancellation that actually ended the attempt.
-                try flow.checkActive()
-                throw error
-            }
-        } onCancel: {
-            Task { @MainActor in flow.finish(.failure(CancellationError())) }
+            },
+            snapshot: { try Self.snapshot($0, now: $1) }
+        )
+        return try await flow.run(timeout: timeout, openURL: openURL) {
+            Self.authorizationURL(redirectURI: $0, verifier: verifier)
         }
     }
 
@@ -164,7 +143,7 @@ struct ClaudeBrowserAuthenticationClient {
         return text
     }
 
-    nonisolated private static func randomValue() throws -> String {
+    nonisolated static func randomValue() throws -> String {
         var bytes = [UInt8](repeating: 0, count: 32)
         guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else {
             throw ClaudeBrowserAuthenticationError.randomGenerationFailed
@@ -172,37 +151,84 @@ struct ClaudeBrowserAuthenticationClient {
         return base64URL(Data(bytes))
     }
 
-    nonisolated private static func base64URL(_ data: Data) -> String {
+    nonisolated static func base64URL(_ data: Data) -> String {
         data.base64EncodedString().replacingOccurrences(of: "+", with: "-")
             .replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
     }
 }
 
+/// One loopback authorization-code attempt: listener, deadline, and a single
+/// token exchange. Providers supply how the exchange request is built and how
+/// its response becomes a snapshot.
 @MainActor
-private final class ClaudeBrowserAuthenticationAttempt {
+final class ClaudeBrowserAuthenticationAttempt {
+    typealias TokenRequest = @MainActor (_ code: String, _ redirectURI: String) throws -> URLRequest
+    typealias Snapshot = @MainActor (_ data: Data, _ now: Date) throws -> CredentialSnapshot
+
     let listener: ClaudeBrowserAuthenticationListener
     var redirectURI = ""
-    private let verifier: String
     private let exchange: ClaudeBrowserAuthenticationClient.Exchange
     private let now: @MainActor () -> Date
+    private let tokenRequest: TokenRequest
+    private let makeSnapshot: Snapshot
     private var result: Result<CredentialSnapshot, Error>?
     private var continuation: CheckedContinuation<CredentialSnapshot, Error>?
     private var exchangeTask: Task<Void, Never>?
     private var timeoutTask: Task<Void, Never>?
 
     init(
-        verifier: String,
-        preferredPort: UInt16,
+        state: String,
+        callback: BrowserAuthenticationCallback,
         exchange: @escaping ClaudeBrowserAuthenticationClient.Exchange,
-        now: @escaping @MainActor () -> Date
+        now: @escaping @MainActor () -> Date,
+        tokenRequest: @escaping TokenRequest,
+        snapshot: @escaping Snapshot
     ) throws {
-        self.verifier = verifier
         self.exchange = exchange
         self.now = now
+        self.tokenRequest = tokenRequest
+        makeSnapshot = snapshot
         listener = try ClaudeBrowserAuthenticationListener(
-            state: verifier, preferredPort: preferredPort
+            state: state, configuration: callback
         )
         listener.callback = { [weak self] result in self?.received(result) }
+    }
+
+    /// Binds the callback, opens the authorization page, and waits for the
+    /// exchanged snapshot, the deadline, or cancellation, whichever ends first.
+    func run(
+        timeout: @escaping ClaudeBrowserAuthenticationClient.Timeout,
+        openURL: @MainActor (URL) async -> Bool,
+        authorizationURL: @MainActor (_ redirectURI: String) -> URL
+    ) async throws -> CredentialSnapshot {
+        try await withTaskCancellationHandler {
+            startTimeout(timeout)
+            do {
+                let redirect = try await listener.start()
+                try Task.checkCancellation()
+                try checkActive()
+                redirectURI = redirect.absoluteString
+                let opened = await openURL(authorizationURL(redirect.absoluteString))
+                try Task.checkCancellation()
+                // An async opener can return after cancellation or the deadline.
+                try checkActive()
+                guard opened else { throw ClaudeBrowserAuthenticationError.browserOpenFailed }
+                let snapshot = try await value()
+                await listener.close()
+                try Task.checkCancellation()
+                return snapshot
+            } catch {
+                finish(.failure(error))
+                await listener.close()
+                try Task.checkCancellation()
+                // Stopping a listener that is still binding reports listenerFailed to
+                // start(); retain the timeout/cancellation that actually ended the attempt.
+                try checkActive()
+                throw error
+            }
+        } onCancel: {
+            Task { @MainActor in self.finish(.failure(CancellationError())) }
+        }
     }
 
     func startTimeout(_ timeout: @escaping ClaudeBrowserAuthenticationClient.Timeout) {
@@ -246,15 +272,13 @@ private final class ClaudeBrowserAuthenticationAttempt {
         case .failure(let error):
             finish(.failure(error))
         case .success(let code):
-            exchangeTask = Task { [weak self, exchange, verifier, redirectURI, now] in
+            exchangeTask = Task { [weak self, exchange, tokenRequest, makeSnapshot, redirectURI, now] in
                 do {
                     try Task.checkCancellation()
-                    let request = try ClaudeBrowserAuthenticationClient.tokenRequest(
-                        code: code, state: verifier, verifier: verifier, redirectURI: redirectURI
-                    )
+                    let request = try tokenRequest(code, redirectURI)
                     let data = try await exchange(request)
                     try Task.checkCancellation()
-                    let snapshot = try ClaudeBrowserAuthenticationClient.snapshot(data, now: now())
+                    let snapshot = try makeSnapshot(data, now())
                     self?.finish(.success(snapshot))
                 } catch {
                     let safeError: Error

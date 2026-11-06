@@ -12,7 +12,8 @@ enum ProviderContractCatalog {
                 .get(.claudeAPICredits, ["Authorization", "Accept", "anthropic-beta"], userAgent: .requiredStable, retriesRateLimit: false)
             ],
             .codex: [
-                .get(.codexUsage, ["Authorization", "Accept"], userAgent: .requiredStable)
+                .get(.codexUsage, ["Authorization", "Accept"], userAgent: .requiredStable),
+                .post(.codexTokenExchange, ["Content-Type", "Accept"], userAgent: .requiredStable, safety: .unsafe)
             ],
             .cursor: [
                 .get(.cursorUsageSummary, ["Authorization", "Accept"]),
