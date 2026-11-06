@@ -43,7 +43,8 @@ final class ClaudeBrowserConnectionCoordinator {
         authenticate: Authenticate? = nil,
         registerAccount: @escaping RegisterAccount
     ) {
-        precondition(provider == .claude || provider == .codex)
+        precondition([.claude, .codex, .copilot].contains(provider))
+        precondition(provider != .copilot || authenticate != nil)
         self.provider = provider
         self.snapshotStore = snapshotStore
         self.authenticate = authenticate ?? {

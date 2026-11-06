@@ -92,6 +92,7 @@
 		C5EF94BD9C75D85DE6C6731D /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 73AD61AC65FDFD58179E6224 /* Sparkle */; };
 		C651CDE479CE00263FEFA40E /* KiroBuilderIDAuthentication.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A4FC7D5621656A0D4BEE25F /* KiroBuilderIDAuthentication.swift */; };
 		C735F22F7038352377B48760 /* KiroLBUsageProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 210A21BF185A0CB53EAAC5B0 /* KiroLBUsageProvider.swift */; };
+		C7C641B1ECD4E3A4690CBA31 /* CopilotDeviceAuthentication.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E52709EAB4DB7DA959BB63D /* CopilotDeviceAuthentication.swift */; };
 		C8791D837E30716C7F09C57C /* CodexUsageProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4ECD87E197A72829FA4FEF8F /* CodexUsageProvider.swift */; };
 		CEA7FD1A9E623ADA5DA54F92 /* ClaudeBrowserAuthentication.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29F6ADB0CB7BEAD8D90AF893 /* ClaudeBrowserAuthentication.swift */; };
 		CF517B2AAF7E6F099AA01C20 /* UnifiedProviderKeychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1087695DA3ACF137ADC91C6 /* UnifiedProviderKeychain.swift */; };
@@ -209,6 +210,7 @@
 		687CB8227B3969297CADD756 /* ClaudeBrowserAuthenticationListener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeBrowserAuthenticationListener.swift; sourceTree = "<group>"; };
 		6B53BDC090D74645E8E79C45 /* LocalizationMacExtensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalizationMacExtensions.swift; sourceTree = "<group>"; };
 		6C3BFF00D4540808AB1C860C /* AntigravityUsageProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AntigravityUsageProvider.swift; sourceTree = "<group>"; };
+		6E52709EAB4DB7DA959BB63D /* CopilotDeviceAuthentication.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopilotDeviceAuthentication.swift; sourceTree = "<group>"; };
 		6EE503F1840C89846ED927FF /* DashboardPresentationStyleStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardPresentationStyleStore.swift; sourceTree = "<group>"; };
 		703B4FB64DE1CE619CB4CBF3 /* OmoUsageApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OmoUsageApp.swift; sourceTree = "<group>"; };
 		704F0659E7DABE1646D48DE4 /* FixtureUsageProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixtureUsageProvider.swift; sourceTree = "<group>"; };
@@ -513,6 +515,7 @@
 				8154B52246A85E41B7B8D1DC /* ClaudeBrowserConnectionCoordinator.swift */,
 				51A0A6A75A338A1807D9E6B4 /* CodexBrowserAuthentication.swift */,
 				DA2DFDCC52C819D174BBECE1 /* CodexPlanMultiplierStore.swift */,
+				6E52709EAB4DB7DA959BB63D /* CopilotDeviceAuthentication.swift */,
 				6EE503F1840C89846ED927FF /* DashboardPresentationStyleStore.swift */,
 				AF9D6DDBF0F39BD9CA0B4AE7 /* DevinBrowserAuthentication.swift */,
 				C4B872B2A57A896FFDF03140 /* DevinBrowserAuthenticationListener.swift */,
@@ -724,6 +727,7 @@
 				AE3D66BA181CF528785B9141 /* CodexPlanMultiplierStore.swift in Sources */,
 				69CED2C3D7304C984EE2EFE7 /* CodexUsageParser.swift in Sources */,
 				C8791D837E30716C7F09C57C /* CodexUsageProvider.swift in Sources */,
+				C7C641B1ECD4E3A4690CBA31 /* CopilotDeviceAuthentication.swift in Sources */,
 				0599F5C016D60F67403C42C2 /* CopilotUsageProvider.swift in Sources */,
 				8A7A8F4EE1ABDAA16CA411FE /* CredentialDiscovery.swift in Sources */,
 				D0C4057361D5DE869F36320A /* CursorUsageProvider.swift in Sources */,

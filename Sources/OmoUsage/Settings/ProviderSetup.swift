@@ -595,27 +595,17 @@ enum ProviderSetup {
                 )
             )
         case .copilot:
-            terminalAlternatives(
-                instruction: "Copilot CLI 또는 GitHub CLI에서 로그인",
-                specifications: [
-                    TerminalLaunchSpecification(
-                        executable: "copilot",
-                        arguments: ["login"]
-                    ),
-                    TerminalLaunchSpecification(
-                        executable: "gh",
-                        arguments: ["auth", "login"]
-                    )
-                ],
-                opensFallback: false,
+            ProviderSetupDescriptor(
+                instruction: "GitHub에서 기기 코드로 로그인",
+                action: .browserOAuth,
                 help: help(
                     provider,
                     [
-                        "Copilot CLI가 있으면 브라우저 OAuth 로그인을 엽니다.",
-                        "없으면 설치된 GitHub CLI 인증을 엽니다.",
-                        "일반 GitHub OAuth 로그인만으로는 Copilot quota 접근이 확인되지 않으며 OmoUsage가 endpoint에서 확인합니다."
+                        "연결 시작을 누르면 GitHub 기기 코드가 클립보드에 복사되고 GitHub 페이지가 열립니다.",
+                        "페이지에 코드를 붙여 넣고 승인하면 OmoUsage가 Copilot 사용량을 바로 확인합니다.",
+                        "연결한 계정의 인증은 이 Mac의 키체인에 안전하게 저장합니다."
                     ],
-                    "https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up/install-copilot-cli"
+                    "https://github.com/login/device"
                 )
             )
         case .devin:

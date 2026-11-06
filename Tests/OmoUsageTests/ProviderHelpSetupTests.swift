@@ -59,22 +59,7 @@ struct ProviderHelpSetupTests {
                     fallbackURL: nil
                 )
         )
-        #expect(
-            try descriptor(.copilot).action
-                == .terminalAlternatives(
-                    [
-                        TerminalLaunchSpecification(
-                            executable: "copilot",
-                            arguments: ["login"]
-                        ),
-                        TerminalLaunchSpecification(
-                            executable: "gh",
-                            arguments: ["auth", "login"]
-                        )
-                    ],
-                    fallbackURL: nil
-                )
-        )
+        #expect(try descriptor(.copilot).action == .browserOAuth)
         #expect(
             try descriptor(.devin).action
                 == .browserOAuth

@@ -145,6 +145,7 @@ public enum AppStringKey: String, CaseIterable, Sendable {
     case confirm
     case openedConnection
     case openedOfficialAuthentication
+    case copilotDeviceCodePrompt
     case disconnectedProvider
     case reconnectedProvider
     case savedKey
@@ -399,6 +400,7 @@ public struct AppStrings: Sendable {
         .confirm: "확인",
         .openedConnection: "%@ 연결 화면을 열었습니다.",
         .openedOfficialAuthentication: "%@ 공식 인증 페이지를 열었습니다.",
+        .copilotDeviceCodePrompt: "GitHub 페이지에 다음 코드를 입력하세요: %@ (클립보드에 복사됨)",
         .disconnectedProvider:
             "%@ 연결을 OmoUsage에서 해제했습니다. 외부 로그인은 유지됩니다.",
         .reconnectedProvider: "%@ 연결을 OmoUsage에서 다시 사용합니다.",
@@ -647,6 +649,7 @@ public struct AppStrings: Sendable {
         .confirm: "OK",
         .openedConnection: "Opened the %@ connection flow.",
         .openedOfficialAuthentication: "Opened the official %@ authentication page.",
+        .copilotDeviceCodePrompt: "Enter code %@ on the GitHub page. The code is copied to the clipboard.",
         .disconnectedProvider:
             "Disconnected %@ from OmoUsage. The external login remains active.",
         .reconnectedProvider: "Re-enabled %@ in OmoUsage.",

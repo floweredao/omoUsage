@@ -23,7 +23,9 @@ enum ProviderContractCatalog {
                 .post(.antigravityAvailableModels, ["Authorization", "Content-Type"], userAgent: .requiredStable)
             ],
             .copilot: [
-                .get(.copilotUser, ["Authorization", "Accept", "Editor-Version", "Editor-Plugin-Version", "X-Github-Api-Version"], userAgent: .requiredStable)
+                .get(.copilotUser, ["Authorization", "Accept", "Editor-Version", "Editor-Plugin-Version", "X-Github-Api-Version"], userAgent: .requiredStable),
+                .post(.copilotDeviceCode, ["Content-Type", "Accept"], safety: .unsafe),
+                .post(.copilotDeviceToken, ["Content-Type", "Accept"], safety: .unsafe)
             ],
             .devin: [
                 .post(.devinUserStatus, ["Content-Type", "Connect-Protocol-Version"])

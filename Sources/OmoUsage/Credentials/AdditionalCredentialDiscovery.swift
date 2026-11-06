@@ -102,6 +102,16 @@ extension CredentialDiscovery {
                 allowingExpired: true
             )
         }
+        let legacy = AccountProviderID(accountID: .legacy, providerID: .copilot)
+        let stored: CredentialSnapshot?
+        do {
+            stored = try snapshotStore.snapshot(for: legacy)
+        } catch {
+            throw CredentialDiscoveryError.malformed(.copilot)
+        }
+        if let stored {
+            return stored.credential(storage: .accountSnapshot(legacy))
+        }
         for name in [
             "COPILOT_GITHUB_TOKEN",
             "GH_TOKEN",
