@@ -63,6 +63,17 @@ struct CodexBrowserAuthenticationTests {
     }
 
     @Test
+    func callbackWithUnrecognizedParametersIsAccepted() async throws {
+        let exchange = CodexAuthExchangeGate()
+        let flow = try await begin(exchange: { try await exchange.exchange($0) })
+        defer { flow.task.cancel() }
+        let query = "code=fixture-code&scope=openid+profile+email+offline_access&state=\(flow.state)"
+        try #require(try await Self.http(flow.callback, query: query) == 200)
+        let request = try await exchange.started.nextValue()
+        #expect(try Self.form(try #require(request.httpBody))["code"] == "fixture-code")
+    }
+
+    @Test
     func busyRegisteredPortNeverFallsBackToAnUnregisteredPort() async throws {
         let occupant = try CodexAuthPortOccupant()
         let busy = try await occupant.start()
